@@ -1,0 +1,761 @@
+"use client"
+
+import "./globals.css"
+
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { 
+    LayoutDashboard, FileInput, Table, BarChart3, ArrowLeftRight, 
+    Users, ClipboardCheck, Settings, LogOut, Menu, ChevronDown, ChevronLeft,
+    Dumbbell, Shield, UserCircle, Activity, Swords, Target, Footprints,
+    UserCog, FileText, Scale, GraduationCap, Shirt, FolderKanban, ShieldAlert, User,
+    Loader2,
+    ShieldCheck,Badge // 👈 أضف هذه الكلمة هنا
+} from "lucide-react"
+// 1. استيراد مكتبة الرسائل (لحل خطأ toast)
+import { toast } from "sonner"
+
+// 2. استيراد مكونات النافذة (لحل أخطاء Dialog و DialogContent و DialogTitle)
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription, // 👈 أضف هذه الكلمة هنا
+} from "@/components/ui/dialog"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import {
+	Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle
+} from "@/components/ui/sheet"
+import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/sonner"
+import { setupFetchInterceptor } from "@/lib/api";
+
+// =========================================================
+// 🔑 1. تعريف الأدوار والصلاحيات (الإضافات الوحيدة في هذا القسم)
+// =========================================================
+const OWNER_ROLE = ["owner"];
+const ADMIN_ROLES = ["owner", "manager", "admin"];
+const ASSISTANT_ADMIN_ROLES = ["owner", "manager", "admin", "assistant_admin"];
+
+// 🔑 مجموعات التدريب العسكري
+const MILITARY_ROLES = [...ADMIN_ROLES, "military_officer", "military_supervisor", "military_trainer"];
+// 🔑 المجموعة الإدارية العسكرية (لصفحة ملف المجند)
+const MILITARY_ADMINS = [...ADMIN_ROLES, "military_officer", "military_trainer"];
+
+// 🔑 مجموعات التدريب الرياضي (افتراضاً كما في خطتك الشاملة)
+const SPORTS_ROLES = [...ASSISTANT_ADMIN_ROLES, "sports_officer", "sports_supervisor", "sports_trainer"];
+// 🔑 المجموعة الإدارية الرياضية (افتراضاً لملف المجند الرياضي)
+const SPORTS_SOLDIER_ADMINS = [...ASSISTANT_ADMIN_ROLES, "sports_officer", "sports_supervisor", "sports_trainer"];
+// =========================================================
+// نهاية تعريف الأدوار
+// =========================================================
+
+
+// تعريف هيكل القائمة
+type NavItem = {
+	id: string;
+	name: string;
+	href?: string;
+	icon: any;
+	children?: NavItem[];
+}
+
+// هيكل القائمة الجديد
+const navigationStructure: NavItem[] = [
+	{ id: "home", name: "الرئيسية", href: "/dashboard", icon: LayoutDashboard },
+	
+	// 1. إدارة الاختبارات
+	{
+		id: "exams-mgmt",
+		name: "إدارة الاختبارات",
+		icon: ClipboardCheck,
+		children: [
+			{ id: "data-entry", name: "إدخال البيانات", href: "/data-entry", icon: FileInput },
+			{ id: "results", name: "سجل النتائج", href: "/results", icon: Table },
+			{ id: "stats", name: "الإحصائيات", href: "/statistics", icon: BarChart3 },
+			{ id: "compare", name: "المقارنات", href: "/comparisons", icon: ArrowLeftRight },
+		]
+	},
+
+	// 2. الاختبارات الرقمية
+	{
+		id: "digital-exams",
+		name: "الاختبارات الرقمية",
+		icon: Users,
+		children: [
+			{ 
+				id: "dig-sports",
+				name: "التدريب الرياضي", 
+				icon: Dumbbell,
+				children: [
+					{ 
+    id: "dig-sports-fit", 
+    name: "اختبار اللياقة", 
+    icon: Activity,
+    children: [
+        { id: "dig-sports-fit-entry", name: "رصد النتائج", href: "/exams/sports/fitness/merge", icon: ClipboardCheck },
+        { id: "cs-sp-sha", name: "إدخال الشباحات", href: "/exams/sports/fitness/shabaha-entry", icon: Shirt }, 
+        { id: "dig-sports-fit-download", name: "تنزيل الاختبارات", href: "/exams/sports/fitness/download", icon: FileText },
+    ]
+},
+					{ id: "dig-sports-com", name: "اختبار الاشتباك", href: "/exams/sports/engagement", icon: Swords },
+					{ id: "dig-sports-results", name: "سجل النتائج ", href: "/exams/sports/fitness-records", icon: Table },
+				]
+			},
+			{ 
+				id: "dig-military",
+				name: "التدريب العسكري", 
+				icon: Shield,
+				children: [
+					{ id: "dig-mil-shoot", name: "اختبار الرماية", href: "/exams/military/shooting", icon: Target },
+					{ id: "dig-mil-inf", name: "اختبار المشاة", href: "/exams/military/infantry", icon: Footprints },
+					{ id: "dig-mil-results", name: "سجل النتائج", href: "/exams/military/results", icon: Table },
+				]
+			},
+			
+		]
+	},
+
+	// 3. إدارة المدربين
+	{
+		id: "trainers-mgmt",
+		name: "إدارة المدربين",
+		icon: UserCog,
+		children: [
+			{
+				id: "trainers-sports",
+				name: "فرع التدريب الرياضي",
+				icon: Dumbbell,
+				children: [
+					{ id: "tr-sp-fit", name: "مدربين اللياقة", href: "/trainers/sports/fitness", icon: User },
+					{ id: "tr-sp-com", name: "مدربين الاشتباك", href: "/trainers/sports/combat", icon: Swords },
+					{ id: "tr-sp-rep", name: "تقرير شخصي ", href: "/trainers/sports/reports", icon: FileText },
+					{ id: "tr-sp-adm", name: "الملف الإداري", href: "/trainers/admin-file?branch=sports", icon: Activity },
+					{ id: "tr-sp-forms", name: "النماذج الإدارية", href: "/trainers/sports/admin-forms", icon: FileText },
+				]
+			},
+			{
+				id: "trainers-military",
+				name: "فرع التدريب العسكري",
+				icon: Shield,
+				children: [
+					{ id: "tr-mil-list", name: "مدربين التدريب العسكري", href: "/trainers/military/list", icon: User },
+					{ id: "tr-mil-rep", name: "تقرير شخصي ", href: "/trainers/military/reports", icon: FileText },
+					{ id: "tr-mil-adm", name: "الملف الإداري", href: "/trainers/admin-file?branch=military", icon: Activity },
+				]
+			}
+		]
+	},
+
+	// 4. الملف الإداري للدورات
+    {
+        id: "courses-mgmt",
+        name: "إدارة الدورات",
+        icon: FolderKanban,
+        children: [
+            {
+                id: "courses-sports",
+                name: "فرع التدريب الرياضي",
+                icon: Dumbbell,
+                children: [
+                    { id: "cs-sp-sol", name: "بيانات المجندين", href: "/courses/sports/soldiers-data", icon: User },
+                    
+                    // 🟢 إضافة الرابط الجديد هنا للقسم الرياضي
+                    { id: "cs-sp-day-new", name: "تسجيل الحالات", href: "/daily-schedule?branch=sports", icon: ClipboardCheck },
+                    { id: "cs-sp-audit", name: "عرض التكميل اليومي ", href: "/daily-audit?branch=sports", icon: ShieldCheck },
+                    { id: "cs-sp-vio-new", name: "تسجيل المخالفات", href: "/violations", icon: ShieldAlert },
+                    { id: "cs-sp-vio-history", name: "عرض المخالفات ", href: "/violations/history", icon: FileText },
+                    { id: "cs-sp-rep", name: "تقرير عن مجند  ", href: "/courses/sports/reports", icon: FileText },
+                    { id: "cs-sp-grad", name: "الدرجات الأسبوعية", href: "/courses/sports/weekly-grades", icon: Table },
+                    { id: "cs-sp-wgt", name: "متابعة الأوزان", href: "/courses/sports/weights", icon: Scale },
+                    { id: "cs-sp-soldiers", name: "ملف المجند", href: "/courses/sports/soldiers", icon: Users },
+                ]
+            },
+            {
+                id: "courses-military",
+                name: "فرع التدريب العسكري",
+                icon: Shield,
+                children: [
+                    
+                    // 🟢 إضافة الرابط الجديد هنا للقسم العسكري
+                    { id: "cs-mil-day-new", name: "تسجيل الحالات", href: "/daily-schedule?branch=military", icon: ClipboardCheck },
+                    { id: "cs-mil-audit", name: " عرض التكميل اليومي", href: "/daily-audit?branch=military", icon: ShieldCheck },
+                    { id: "cs-mil-vio-new", name: "تسجيل المخالفات ", href: "/violations", icon: ShieldAlert },
+                    { id: "cs-mil-vio-history", name: "عرض المخالفات ", href: "/violations/history", icon: FileText },
+                    { id: "cs-mil-rep", name: "تقرير عن مجند ", href: "/courses/military/reports", icon: FileText }, 
+                    { id: "cs-mil-soldiers", name: "ملف المجند", href: "/courses/military/soldiers", icon: Users },
+                ]
+            }
+        ]
+    },
+
+	// 👇 التعديل: إضافة "إدارة المستخدمين" (سنخفيها برمجياً لغير المالك)
+	{ id: "users-mgmt", name: "إدارة المستخدمين", href: "/admin/users", icon: ShieldAlert },
+	
+	{ id: "settings", name: "الإعدادات", href: "/settings", icon: Settings },
+]
+
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
+	const pathname = usePathname()
+	const [isMounted, setIsMounted] = useState(false)
+	const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({})
+	
+	// 1. 👇 الحالة المصححة: تقبل null كقيمة أولية
+	const [userRole, setUserRole] = useState<string | null>(null);
+    const [userBranch, setUserBranch] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+const [isLogoutDialogOpen, setIsLogoutDialogOpen] = useState(false);
+const [isAboutOpen, setIsAboutOpen] = useState(false);
+const handleLogout = async () => {
+    try {
+        // إبلاغ السيرفر بالخروج (لتسجيل النشاط)
+        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/logout`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+    } catch (e) {
+        console.log("Logout log failed");
+    }
+
+    // ثم باقي خطوات المسح والتوجيه...
+    localStorage.clear();
+    window.location.replace("/");
+};
+	useEffect(() => {
+        setIsMounted(true); // لضمان عمل الواجهة
+        setupFetchInterceptor();
+        const verifySession = async () => {
+            const token = localStorage.getItem("token");
+
+            if (!token) {
+                setUserRole(null);
+                setUserBranch(null);
+                setIsLoading(false);
+                return;
+            }
+
+            try {
+                // 🛡️ طلب التأكيد اللحظي من السيرفر
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/me`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (res.ok) {
+                    const userData = await res.json();
+                    setUserRole(userData.role || "");
+                    setUserBranch(userData.branch || ""); // حفظ الفرع الحقيقي
+                    localStorage.setItem("user", JSON.stringify(userData));
+                } else {
+                    // إذا فشل السيرفر في التعرف على التوكن
+                    localStorage.removeItem("token");
+                    localStorage.removeItem("user");
+                    setUserRole(null);
+                    setUserBranch(null);
+                }
+            } catch (error) {
+                console.error("خطأ اتصال:", error);
+                setUserRole(null);
+            } finally {
+                setIsLoading(false); // انتهاء التحميل
+            }
+        };
+
+        verifySession();
+    }, [pathname]); // ⬅️ هذا هو السر: إعادة التحقق عند كل تغيير في الرابط
+
+
+
+
+	const toggleMenu = (id: string) => {
+		setOpenMenus(prev => ({ ...prev, [id]: !prev[id] }))
+	}
+
+	const renderMenuItem = (item: NavItem, depth = 0) => {
+        
+    // ----------------------------------------------------------------
+    // 1. إدارة الاختبارات (للمالك ومساعد المسؤول فقط) - كما طلبت
+    // ----------------------------------------------------------------
+    if (item.id === "exams-mgmt") {
+        const allowedUsers = ["owner", "assistant_admin"];
+        if (isLoading || !allowedUsers.includes(userRole || "")) {
+            return null;
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // 2. إدارة المدربين (المنطق الموجود سابقاً)
+    // ----------------------------------------------------------------
+    if (item.id === "trainers-sports") {
+        const isHighAdmin = ["owner", "manager", "admin"].includes(userRole || "");
+        const isSportsTeam = ["assistant_admin", "sports_officer", "sports_supervisor", "sports_trainer"].includes(userRole || "");
+        const isSportsBranch = userBranch === "تدريب رياضي";
+        const isMilitaryStaff = ["military_officer", "military_supervisor", "military_trainer"].includes(userRole || "");
+        
+        if (isMilitaryStaff && !isHighAdmin) return null;
+        if (!isHighAdmin && !isSportsTeam && !isSportsBranch) return null;
+    }
+
+    if (item.id === "trainers-military") {
+        const isHighAdmin = ["owner", "manager", "admin"].includes(userRole || "");
+        const isMilitaryTeam = ["military_officer", "military_supervisor", "military_trainer"].includes(userRole || "");
+        const isMilitaryBranch = userBranch === "تدريب عسكري";
+        const isSportsTeam = ["assistant_admin", "sports_officer", "sports_supervisor", "sports_trainer"].includes(userRole || "");
+        
+        if (isSportsTeam && !isHighAdmin) return null;
+        if (!isHighAdmin && !isMilitaryTeam && !isMilitaryBranch) return null;
+    }
+
+    // ----------------------------------------------------------------
+    // 3. تفاصيل المدربين والملفات الإدارية (كما هي)
+    // ----------------------------------------------------------------
+    if (item.id === "tr-sp-fit" || item.id === "tr-sp-com") {
+        const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+
+    if (item.id === "tr-sp-adm") {
+    const allowed = ["owner", "manager", "admin" ,"assistant_admin"]; 
+    if (isLoading || !allowed.includes(userRole || "")) return null;
+}
+
+   if (item.id === "tr-sp-forms") {
+        // التعديل: أضفنا sports_supervisor
+        const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "sports_supervisor"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+
+    if (item.id === "tr-mil-list") {
+        const allowed = ["owner", "manager", "admin", "military_officer"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+
+    if (item.id === "tr-mil-adm") {
+    const allowed = ["owner", "manager", "admin"]; 
+    if (isLoading || !allowed.includes(userRole || "")) return null;
+}
+// 🛡️ حماية رابط "المقارنات" - يظهر للمالك (Owner) فقط
+if (item.id === "compare") {
+    if (isLoading || userRole !== "owner") {
+        return null; // سيختفي الرابط تماماً من القائمة لأي رتبة أخرى
+    }
+}
+    // ----------------------------------------------------------------
+    // 4. الاختبارات الرقمية (التعديلات الجديدة المطلوبة)
+    // ----------------------------------------------------------------
+
+    // أ. التدريب العسكري (يخفى عن الرياضيين ومساعد المسؤول)
+    if (item.id === "dig-military") {
+        const allowed = ["owner", "manager", "admin", "military_officer", "military_supervisor", "military_trainer"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+
+    // ب. التدريب الرياضي (يخفى عن العسكريين)
+    if (item.id === "dig-sports") {
+        const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "sports_supervisor", "sports_trainer"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+
+    // ج. سجل النتائج الرياضي (للكل ما عدا المدرب)
+    if (item.id === "dig-sports-results") {
+        const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "sports_supervisor"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+
+    // د. رصد الدرجات (للكل ما عدا المشرف والمدرب)
+    // ⚠️ هذا الشرط الجديد الخاص برصد الدرجات فقط
+    if (item.id === "dig-sports-fit-entry") {
+        const allowed = ["owner",  "assistant_admin"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+
+    // هـ. الشباحات وتنزيل الاختبارات (للكل)
+    // ⚠️ قمنا بفصل "dig-sports-fit-entry" من هنا لأنه أصبح له شرط خاص أعلاه
+    if (item.id === "cs-sp-sha" || item.id === "dig-sports-fit-download") {
+        const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "sports_supervisor", "sports_trainer"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+
+    // سجل النتائج العسكري (منطق قديم حافظنا عليه)
+    if (item.id === "dig-mil-results") {
+        const allowed = ["owner", "manager", "admin", "military_officer", "military_supervisor"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+
+    // ----------------------------------------------------------------
+    // 5. إدارة المستخدمين وبقية الأقسام
+    // ----------------------------------------------------------------
+    if (item.id === "users-mgmt") {
+        if (isLoading) return null; 
+        const allowedToSeeUsers = ["owner", "manager", "admin"].includes(userRole || "");
+        if (!allowedToSeeUsers) return null; 
+    }
+
+    // إدارة الدورات - عسكري
+    if (item.id === "courses-military") {
+        if (isLoading || !userRole || !MILITARY_ROLES.includes(userRole)) return null;
+    }
+
+    // إدارة الدورات - رياضي
+    if (item.id === "courses-sports") {
+        if (isLoading || !userRole || !SPORTS_ROLES.includes(userRole)) return null;
+    }
+
+    // ملف المجند - عسكري
+    if (item.id === "cs-mil-soldiers") {
+        if (isLoading || !userRole || !MILITARY_ROLES.includes(userRole)) return null;
+    }
+    
+    // ملف المجند - رياضي
+    if (item.id === "cs-sp-soldiers") {
+        if (isLoading || !userRole || !SPORTS_SOLDIER_ADMINS.includes(userRole)) return null;
+    }
+    if (item.id === "cs-sp-audit" || item.id === "cs-mil-audit") {
+        const allowed = ["owner", "manager", "admin", "assistant_admin", "military_officer", "sports_officer", "military_supervisor", "sports_supervisor"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+    if (item.id === "cs-sp-vio-history" || item.id === "cs-mil-vio-history") {
+        const allowed = ["owner", "manager", "admin", "assistant_admin", "military_officer", "sports_officer", "military_supervisor", "sports_supervisor"];
+        if (isLoading || !allowed.includes(userRole || "")) return null;
+    }
+// 🛡️ حماية صفحة "بيانات المجندين" (حصرياً للقيادات والضابط)
+if (item.id === "cs-sp-sol") {
+    const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer","sports_supervisor", "sports_trainer"];
+    if (isLoading || !allowed.includes(userRole || "")) return null;
+}
+    // =========================================================
+    // 🚀🚀 المنطقة الجديدة: منطق التسطيح الذكي (Smart Flattening) 🚀🚀
+    // =========================================================
+    
+    // 1. تحديد من هو المستخدم؟
+    const isHighAdmin = ["owner", "manager", "admin"].includes(userRole || "");
+    const isUserSports = userBranch === "تدريب رياضي" || (userRole && userRole.startsWith("sports_"));
+    const isUserMilitary = userBranch === "تدريب عسكري" || (userRole && userRole.startsWith("military_"));
+
+    // 2. تحديد المجلدات التي نريد فتحها تلقائياً
+    const isSportsFolder = ["dig-sports", "trainers-sports", "courses-sports"].includes(item.id);
+    const isMilitaryFolder = ["dig-military", "trainers-military", "courses-military"].includes(item.id);
+
+    // 3. التنفيذ: إذا لم يكن مديراً عاماً، وكان المجلد يخص فرع المستخدم، نعرض الأبناء فوراً
+    if (!isHighAdmin && item.children) {
+        if ((isUserSports && isSportsFolder) || (isUserMilitary && isMilitaryFolder)) {
+            return (
+                <div key={item.id + "-flat"} className="flex flex-col">
+                    {/* نعيد رسم الأبناء بنفس مستوى العمق الحالي (depth) ليبدو كأنهم في المستوى الرئيسي */}
+                    {item.children.map(child => renderMenuItem(child, depth))}
+                </div>
+            );
+        }
+    }
+
+    // =========================================================
+    // نهاية الشروط - رسم العنصر (UI Rendering)
+    // =========================================================
+
+    const hasChildren = item.children && item.children.length > 0
+    const isOpen = openMenus[item.id]
+    const isActive = item.href ? pathname === item.href : false
+    
+    const paddingStyle = { paddingRight: `${(depth * 0.8) + 0.75}rem` } 
+
+    const getTextColor = () => {
+        if (isActive) return "text-white"; 
+        if (depth === 0) return "text-white font-bold";
+        if (depth === 1) return "text-sky-400 font-medium";
+        if (depth === 2) return "text-slate-400 text-xs";
+        return "text-slate-500"; 
+    }
+
+    return (
+        <div key={item.id} className="flex flex-col mb-1">
+            {hasChildren ? (
+                <button
+                    onClick={() => toggleMenu(item.id)}
+                    className={cn(
+                        "flex flex-row items-center justify-between w-full p-3 text-sm transition-colors rounded-lg hover:bg-slate-800",
+                        getTextColor(),
+                        isOpen && "bg-slate-800/30"
+                    )}
+                    style={paddingStyle}
+                >
+                    <div className="flex flex-row items-center gap-3 overflow-hidden">
+                        <item.icon className={cn("w-5 h-5 flex-shrink-0", depth === 0 ? "text-white" : "opacity-70")} />
+                        <span className="whitespace-nowrap truncate">{item.name}</span>
+                    </div>
+                    {isOpen ? <ChevronDown className="w-4 h-4 flex-shrink-0 opacity-70" /> : <ChevronLeft className="w-4 h-4 flex-shrink-0 opacity-70" />}
+                </button>
+            ) : (
+                <Link href={item.href!} className="w-full block">
+                    <span
+                        className={cn(
+                            "flex flex-row items-center gap-3 p-3 rounded-lg transition-colors text-sm font-medium w-full",
+                            isActive 
+                                ? "bg-green-700 text-white shadow-md" 
+                                : `hover:bg-slate-800 ${getTextColor()}`
+                        )}
+                        style={paddingStyle}
+                    >
+                        <item.icon className="w-5 h-5 flex-shrink-0" />
+                        <span className="whitespace-nowrap truncate">{item.name}</span>
+                    </span>
+                </Link>
+            )}
+
+            {hasChildren && isOpen && (
+                <div className="mt-1 space-y-0.5 animate-in slide-in-from-top-2 duration-200 border-r border-slate-700 mr-4">
+                    {item.children!.map(child => renderMenuItem(child, depth + 1))}
+                </div>
+            )}
+        </div>
+    )
+}
+
+	const isLoginPage = pathname === "/" || pathname === "/login";
+
+	// 8. 👇 منطق التحميل (يجب أن يكون داخل <body>)
+	const renderAppContent = () => {
+			// إذا كنا في صفحة غير الدخول وما زلنا نحمل الصلاحية، نعرض شاشة تحميل.
+			if (!isLoginPage && isLoading) {
+				return (
+					<div className="flex items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-950 w-full">
+						<Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+					</div>
+				);
+			}
+			
+			// إذا كنا في صفحة الدخول، نعرض محتوى صفحة الدخول فقط.
+			if (isLoginPage) {
+				return (
+					<main className="min-h-screen w-full flex flex-col justify-center bg-slate-50 dark:bg-slate-950 p-4">
+						<div className="w-full max-w-md mx-auto">
+							{children}
+						</div>
+					</main>
+				);
+			}
+			
+			// محتوى التطبيق الرئيسي (القائمة + المحتوى)
+			return (
+				<div className="flex h-screen w-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
+						
+						{/* القائمة الجانبية (Desktop) */}
+						<aside className="hidden lg:flex w-64 flex-col bg-[#0f172a] text-white h-screen sticky top-0 shadow-xl border-l border-slate-800 flex-shrink-0 overflow-hidden">
+    {/* الهيدر ثابت */}
+    <div className="p-6 border-b border-slate-800 flex items-center justify-center bg-[#0f172a]">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            <GraduationCap className="w-6 h-6" /> معهد الشرطة
+        </h2>
+    </div>
+    
+    {/* القائمة هي التي تتحرك (Scrollable) */}
+    <nav className="flex-1 p-2 space-y-1 overflow-y-auto custom-scrollbar">
+        {navigationStructure.map(item => renderMenuItem(item))}
+    </nav>
+    
+    {/* زر الخروج ثابت في الأسفل دائماً */}
+    <div className="p-4 border-t border-slate-800 bg-[#1e293b]">
+        <Button variant="destructive" onClick={handleLogout} className="w-full flex gap-2">
+            <LogOut className="w-4 h-4" /> خروج
+        </Button>
+    </div>
+</aside>
+
+						{/* المحتوى */}
+						<div className="flex-1 flex flex-col h-full w-full overflow-hidden">
+								
+								{/* شريط الموبايل */}
+								<header className="lg:hidden sticky top-0 bg-white dark:bg-slate-900 border-b p-2 md:p-3 flex justify-between items-center shadow-sm z-[110] flex-shrink-0">
+    {isMounted && (
+        <Sheet>
+            {/* 🔑 تم تصغير حجم الزر قليلاً ليناسب الهواتف */}
+            <SheetTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-9 w-9"><Menu className="w-5 h-5" /></Button>
+            </SheetTrigger>
+														<SheetContent side="right" className="bg-[#0f172a] text-white border-l-slate-800 p-0 flex flex-col h-full w-[280px]">
+																<SheetHeader className="p-4 border-b border-slate-800"><SheetTitle className="text-white">القائمة</SheetTitle></SheetHeader>
+																<nav className="p-4 flex-1 overflow-y-auto pb-20">
+																		{navigationStructure.map(item => renderMenuItem(item))}
+																</nav>
+																<div className="p-4 border-t border-slate-800">
+																		<Link href="/">
+																				<Button variant="destructive" onClick={() => localStorage.removeItem("user")} className="w-full flex gap-2"><LogOut className="w-4 h-4" /> خروج</Button>
+																		</Link>
+																</div>
+														</SheetContent>
+												</Sheet>
+										)}
+
+										<h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+												<GraduationCap className="w-5 h-5" />
+												معهد الشرطة
+										</h2>
+
+								</header>
+
+								<main className="flex-1 h-full overflow-y-auto p-4 md:p-8 w-full max-w-7xl mx-auto scroll-smooth pb-28 lg:pb-8 custom-scrollbar">
+    {children}
+</main>
+
+								{/* الشريط السفلي للموبايل */}
+								
+{/* 📱 الشريط السفلي المحدث (الإعدادات بدلاً من النتائج) */}
+<nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t z-[120] px-4 flex justify-between items-center shadow-[0_-5px_15px_rgba(0,0,0,0.08)] h-16 pb-safe">
+    
+    {/* 1. الرئيسية */}
+    <Link href="/dashboard" className={cn(
+        "flex flex-col items-center justify-center flex-1 gap-1 transition-all",
+        pathname === "/dashboard" ? "text-blue-600 scale-110" : "text-slate-400"
+    )}>
+        <LayoutDashboard className="w-5 h-5"/>
+        <span className="text-[10px] font-black">الرئيسية</span>
+    </Link>
+     {/* 3. عنوان التطبيق (الوسط) */}
+    
+    {/* 2. الإعدادات (تم التغيير هنا ✅) */}
+    <Link href="/settings" className={cn(
+        "flex flex-col items-center justify-center flex-1 gap-1 transition-all",
+        pathname === "/settings" ? "text-blue-600 scale-110" : "text-slate-400"
+    )}>
+        <Settings className="w-5 h-5"/>
+        <span className="text-[10px] font-black">الإعدادات</span>
+    </Link>
+    
+   
+    
+    {/* 4. خروج */}
+    <button 
+        onClick={() => setIsLogoutDialogOpen(true)}
+        className="flex flex-col items-center justify-center flex-1 gap-1 text-red-500 active:scale-90 transition-all"
+    >
+        <LogOut className="w-5 h-5"/>
+        <span className="text-[10px] font-black">خروج</span>
+    </button>
+</nav>
+
+						</div>
+
+				</div>
+			);
+	};
+
+
+	return (
+		<>
+				<ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
+					
+					{/* 9. 👇 عرض المحتوى المصحح لضمان وجود <html> و <body> */}
+					<Toaster position="top-center" richColors />
+					{renderAppContent()}
+{/* 🚪 نافذة تأكيد تسجيل الخروج */}
+<Dialog open={isLogoutDialogOpen} onOpenChange={setIsLogoutDialogOpen}>
+    <DialogContent className="max-w-[350px] rounded-2xl p-6 gap-6" dir="rtl">
+        <div className="flex flex-col items-center text-center gap-4">
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center animate-pulse">
+                <LogOut className="w-8 h-8 text-red-500" />
+            </div>
+            <div className="space-y-2">
+                <DialogTitle className="text-xl font-black text-slate-900">تسجيل الخروج؟</DialogTitle>
+                <p className="text-sm text-slate-500 font-medium">هل أنت متأكد أنك تريد مغادرة النظام الآن؟</p>
+            </div>
+        </div>
+        <div className="flex gap-3 mt-2">
+            <Button 
+                variant="outline" 
+                onClick={() => setIsLogoutDialogOpen(false)}
+                className="flex-1 rounded-xl h-12 font-bold border-slate-200"
+            >
+                إلغاء
+            </Button>
+            <Button 
+                onClick={handleLogout}
+                className="flex-1 rounded-xl h-12 font-bold bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-200"
+            >
+                خروج
+            </Button>
+        </div>
+    </DialogContent>
+</Dialog>
+{/* 🎖️ نافذة بطاقة الهوية والنظام - النسخة الكاملة والمصححة */}
+<Dialog open={isAboutOpen} onOpenChange={setIsAboutOpen}>
+    <DialogContent className="max-w-[350px] rounded-3xl p-0 overflow-hidden border-none shadow-2xl" dir="rtl">
+        
+        {/* 🛡️ جزء حل مشكلة Accessibility: عناوين مخصصة لمحركات قراءة الشاشة فقط */}
+        <div className="sr-only">
+            <DialogTitle>بطاقة تعريف المستخدم</DialogTitle>
+            <DialogDescription>تعرض هذه النافذة تفاصيل الحساب الحالي والجهة التابع لها المستخدم داخل نظام معهد الشرطة.</DialogDescription>
+        </div>
+
+        {/* 🔵 القسم العلوي: الهوية البصرية للمعهد */}
+        <div className="bg-[#0f172a] p-8 text-center space-y-4">
+            <div className="w-24 h-24 bg-white rounded-2xl mx-auto p-2 shadow-2xl flex items-center justify-center">
+                <img 
+                    src="/logo.jpg" 
+                    alt="Logo" 
+                    className="w-full h-full object-contain" 
+                />
+            </div>
+            <div className="text-white">
+                <h2 className="text-xl font-black tracking-wide">معهد الشرطة</h2>
+                <p className="text-[11px] text-slate-400 font-medium opacity-80 uppercase tracking-widest">
+                    نظام إدارة التدريب العسكري والرياضي
+                </p>
+            </div>
+        </div>
+
+        {/* ⚪ القسم السفلي: بيانات الموظف والفرع */}
+        <div className="p-6 bg-white space-y-5">
+            <div className="space-y-4">
+                
+                {/* الاسم الكامل */}
+                <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                    <span className="text-slate-500 text-xs font-bold">اسم المستخدم:</span>
+                    <span className="font-bold text-slate-900 text-sm">
+                        {typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}")?.name || "غير معروف" : "جاري التحميل..."}
+                    </span>
+                </div>
+
+                {/* الرتبة / نوع الصلاحية */}
+                <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                    <span className="text-slate-500 text-xs font-bold">نوع الصلاحية:</span>
+                    <Badge className="bg-blue-50 text-blue-700 hover:bg-blue-100 border-none px-3 py-0.5 text-[10px] font-black">
+                        {userRole === "owner" ? "المالك العام" : userRole || "زائر"}
+                    </Badge>
+                </div>
+
+                {/* الفرع الإداري */}
+                <div className="flex justify-between items-center border-b border-slate-50 pb-3">
+                    <span className="text-slate-500 text-xs font-bold">الفرع التابع:</span>
+                    <span className="font-black text-slate-700 text-[11px]">
+                        {userBranch || "الإدارة العامة للمعهد"}
+                    </span>
+                </div>
+
+                {/* تاريخ اليوم اللحظي */}
+                <div className="flex justify-between items-center pt-1">
+                    <span className="text-slate-400 text-[10px] font-bold">تاريخ الدخول:</span>
+                    <span className="text-slate-400 text-[10px] font-mono font-bold tracking-tighter">
+                        {new Date().toLocaleDateString('ar-QA', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </span>
+                </div>
+            </div>
+
+            {/* زر الإغلاق بتصميم متناسق */}
+            <Button 
+                onClick={() => setIsAboutOpen(false)}
+                className="w-full rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black h-12 shadow-lg transition-all active:scale-95 mt-2"
+            >
+                إغلاق البطاقة
+            </Button>
+        </div>
+    </DialogContent>
+</Dialog>
+				</ThemeProvider>
+			</>
+	)
+}
