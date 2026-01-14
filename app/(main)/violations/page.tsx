@@ -577,7 +577,7 @@ if (isSaved && entryToDelete) {
             className="bg-[#c5b391] hover:bg-[#b4a280] text-slate-900 font-black px-8 rounded-xl"
         >
             {isSaving ? <RefreshCw className="animate-spin ml-2"/> : <Save className="ml-2"/>}
-            حفظ السجلات النهائية ({sessionQueue.length})
+            حفظ السجلات ({sessionQueue.length})
         </Button>
     ) : (
         <Button 

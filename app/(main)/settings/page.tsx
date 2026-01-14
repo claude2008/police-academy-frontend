@@ -1545,13 +1545,20 @@ const removeDayRow = (templateId: string, dayName: string) => {
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm text-right border-collapse">
                         <thead className="bg-slate-50 dark:bg-slate-900 border-b-2">
-                          <tr>
-                            <th className="p-4 font-black w-1/2 border-l">مسمى المخالفة</th>
-                            <th className="p-4 font-black border-l">الجزاء (العقوبة)</th>
-                            <th className="p-4 font-black text-center border-l">الخصم</th>
-                            <th className="p-4 w-[60px]"></th>
-                          </tr>
-                        </thead>
+  <tr>
+    {/* المخالفة: 40% */}
+    <th className="p-4 font-black w-[40%] border-l">مسمى المخالفة</th>
+    
+    {/* الجزاء: زدناه إلى 40% ليظهر جملة لجنة التحقيق كاملة */}
+    <th className="p-4 font-black w-[40%] border-l text-center">الجزاء (العقوبة)</th>
+    
+    {/* الخصم: قلصناه إلى 10% */}
+    <th className="p-4 font-black w-[10%] text-center border-l">الخصم</th>
+    
+    {/* الحذف: 10% */}
+    <th className="p-4 w-[10%]"></th>
+  </tr>
+</thead>
                         <tbody className="divide-y divide-slate-100">
                           {degree.items.map((item, i) => (
                             <tr key={item.id} className="hover:bg-amber-50/30 transition-colors">
@@ -1590,7 +1597,7 @@ const removeDayRow = (templateId: string, dayName: string) => {
                                     setDisciplinaryData(newData);
                                   }}
                                   placeholder="مدة الحجز..."
-                                  className="border-none shadow-none focus-visible:ring-0 text-red-600 bg-transparent font-bold" 
+                                  className="border-none shadow-none focus-visible:ring-0 text-red-600 bg-transparent font-bold text-[10px] md:text-xs px-1 h-8 text-right"
                                 />
                               </td>
                               <td className="p-2 border-l text-center">
@@ -1606,7 +1613,7 @@ const removeDayRow = (templateId: string, dayName: string) => {
                                     if(d) d.items[i].deduction = parseFloat(val) || 0;
                                     setDisciplinaryData(newData);
                                   }}
-                                  className="w-16 mx-auto text-center font-black border-amber-200 bg-amber-50 dark:bg-amber-900/20 h-9 rounded-lg" 
+                                  className="w-14 mx-auto text-center font-black border-amber-200 bg-amber-50 dark:bg-amber-900/20 h-9 rounded-lg text-xs"
                                 />
                               </td>
                               <td className="p-2 text-center">

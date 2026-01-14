@@ -365,7 +365,19 @@ const availableBatches = useMemo(() => {
           {selectedSoldier && (
             <div className="space-y-4 pt-2">
               <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border">
-                <div className="w-16 h-16 rounded-full border-2 border-blue-500 overflow-hidden bg-white"><img src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${selectedSoldier.military_id}.jpg`} className="w-full h-full object-cover" onError={(e:any) => e.target.src = "/default-avatar.png"} /></div>
+                <div className="w-16 h-16 rounded-full border-2 border-blue-500 overflow-hidden bg-white shadow-inner">
+  <img 
+    // التأكد من استخدام السيرفر المنشور (Render) والرقم العسكري الصحيح
+    src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${selectedSoldier.military_id}.jpg`} 
+    className="w-full h-full object-cover"
+    alt={selectedSoldier.name}
+    // في حال فشل التحميل، نضع الصورة الافتراضية فوراً
+    onError={(e) => {
+      const target = e.target as HTMLImageElement;
+      target.src = "/default-avatar.png"; 
+    }}
+  />
+</div>
                 <div className="flex flex-col gap-1">
                   <h4 className="font-bold text-slate-900">{selectedSoldier.name}</h4>
                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600"><span className="font-bold text-blue-700">{selectedSoldier.rank}</span><span className="font-mono bg-slate-200 px-1 rounded">{selectedSoldier.military_id}</span><span className="text-orange-700 font-bold border-r pr-2">السرية: {selectedSoldier.company}</span><span className="text-orange-700 font-bold">الفصيل: {selectedSoldier.platoon}</span></div>

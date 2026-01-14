@@ -418,7 +418,8 @@ const handlePhotoDeleteExec = async () => {
             </div>
 
             <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-                <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir="rtl">
+                {/* أضفنا pb-24 لرفع المحتوى فوق الأزرار الثابتة في الهاتف، و p-6 للكمبيوتر */}
+<DialogContent className="w-[95vw] md:max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 pb-24 md:p-6" dir="rtl">
     <DialogHeader>
         <DialogTitle>{editingId ? "تعديل بيانات المدرب" : "إضافة مدرب جديد"}</DialogTitle>
         <DialogDescription>أدخل البيانات المطلوبة بدقة.</DialogDescription>
@@ -470,26 +471,31 @@ const handlePhotoDeleteExec = async () => {
                         </div>
                         <div className="space-y-2"><Label>الاسم الكامل</Label><Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                         <div className="space-y-2"><Label>المسمى الوظيفي</Label><Input value={formData.job_title} onChange={e => setFormData({...formData, job_title: e.target.value})} /></div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2"><Label>الإختصاص الدقيق</Label><Input value={formData.sport_specialty} onChange={e => setFormData({...formData, sport_specialty: e.target.value})} /></div>
-                            <div className="space-y-2"><Label>تاريخ الميلاد</Label><Input type="date" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} /></div>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2"><Label>المؤهل الجامعي</Label><Input value={formData.degree} onChange={e => setFormData({...formData, degree: e.target.value})} /></div>
-                            <div className="space-y-2"><Label>تاريخ التعيين</Label><Input type="date" value={formData.appointment_date} onChange={e => setFormData({...formData, appointment_date: e.target.value})} /></div>
-                        </div>
+                        {/* تم تغيير grid-cols-1 للهاتف و grid-cols-2 للكمبيوتر */}
+<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="space-y-2"><Label className="text-xs md:text-sm">الإختصاص الدقيق</Label><Input className="h-9 md:h-10" value={formData.sport_specialty} onChange={e => setFormData({...formData, sport_specialty: e.target.value})} /></div>
+    <div className="space-y-2"><Label className="text-xs md:text-sm">تاريخ الميلاد</Label><Input type="date" className="h-9 md:h-10 text-right" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} /></div>
+</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="space-y-2"><Label className="text-xs md:text-sm">المؤهل الجامعي</Label><Input className="h-9 md:h-10" value={formData.degree} onChange={e => setFormData({...formData, degree: e.target.value})} /></div>
+    <div className="space-y-2"><Label className="text-xs md:text-sm">تاريخ التعيين</Label><Input type="date" className="h-9 md:h-10 text-right" value={formData.appointment_date} onChange={e => setFormData({...formData, appointment_date: e.target.value})} /></div>
+</div>
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2"><Label>الهاتف</Label><Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
                             <div className="space-y-2"><Label>الإيميل</Label><Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
                         </div>
                         <div className="space-y-2"><Label>الدورات الحاصل عليها</Label><Textarea value={formData.courses} onChange={e => setFormData({...formData, courses: e.target.value})} /></div>
                     </div>
-                    <DialogFooter>
-                        <Button onClick={handleSave} disabled={isSaving} className="bg-blue-600 text-white gap-2">
-                            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                            {editingId ? "حفظ التعديلات" : "إضافة المدرب"}
-                        </Button>
-                    </DialogFooter>
+                    <DialogFooter className="mt-6">
+    <Button 
+        onClick={handleSave} 
+        disabled={isSaving} 
+        className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white gap-2 h-12 shadow-lg"
+    >
+        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+        {editingId ? "حفظ التعديلات" : "إضافة المدرب"}
+    </Button>
+</DialogFooter>
                 </DialogContent>
             </Dialog>
 

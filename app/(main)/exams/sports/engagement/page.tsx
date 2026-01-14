@@ -439,7 +439,18 @@ const maxTotalScore = useMemo(() => {
             {selectedSoldier && (
               <div className="space-y-4 pt-2">
                 <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border border-orange-200">
-                  <div className="w-16 h-16 rounded-full border-2 border-orange-500 overflow-hidden bg-white"><img src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${selectedSoldier.military_id}.jpg`} className="w-full h-full object-cover" /></div>
+                  <div className="w-16 h-16 rounded-full border-2 border-orange-500 overflow-hidden bg-white">
+  <img 
+    // نستخدم الرقم العسكري لجلب الصورة من السيرفر كما فعلنا في الجدول
+    src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${selectedSoldier.military_id}.jpg`} 
+    className="w-full h-full object-cover"
+    // دالة احتياطية: إذا لم تكن الصورة موجودة على السيرفر، يتم عرض الصورة الافتراضية
+    onError={(e) => {
+      const target = e.target as HTMLImageElement;
+      target.src = "/placeholder-user.png"; 
+    }}
+  />
+</div>
                   <div className="flex flex-col flex-1">
                     <h4 className="font-bold text-slate-900">{selectedSoldier.name}</h4>
                     <div className="flex gap-2 text-[10px] mt-1"><Badge className="bg-blue-700">{selectedSoldier.rank}</Badge><Badge variant="outline">{selectedSoldier.military_id}</Badge></div>

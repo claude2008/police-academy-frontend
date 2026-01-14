@@ -360,7 +360,7 @@ const executePhotoDelete = async () => {
 
     return (
         <ProtectedRoute allowedRoles={["owner", "manager", "admin"]}>
-            <div className="space-y-6 pb-10 md:pb-24 " dir="rtl">
+            <div className="space-y-6 pb-10 md:pb-24 max-w-full overflow-x-hidden" dir="rtl">
                 <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                     <div>
                         <h1 className="text-2xl font-bold flex items-center gap-2"><ShieldAlert className="w-8 h-8 text-blue-600"/> إدارة المستخدمين</h1>
@@ -486,7 +486,8 @@ const executePhotoDelete = async () => {
 
                 {/* Add Dialog */}
                 <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
-                    <DialogContent className="max-w-lg" dir="rtl">
+                    <DialogContent className="w-[95vw] md:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 pb-24 md:p-6" dir="rtl">
+    
                         <DialogHeader><DialogTitle className="flex items-center gap-2"><UserPlus className="w-5 h-5"/> إضافة مستخدم جديد</DialogTitle></DialogHeader>
                         <div className="grid gap-4 py-4">
                             <div className="grid grid-cols-2 gap-4">
@@ -549,13 +550,28 @@ const executePhotoDelete = async () => {
                                 </Select>
                             </div>
                         </div>
-                        <DialogFooter><Button onClick={handleCreateUser} disabled={isSubmitting} className="bg-slate-900 text-white w-full">{isSubmitting ? <Loader2 className="animate-spin"/> : "إنشاء الحساب"}</Button></DialogFooter>
+                        <DialogFooter className="flex flex-col md:flex-row gap-2 mt-4">
+        <Button 
+            onClick={handleCreateUser} 
+            disabled={isSubmitting} 
+            className="bg-slate-900 text-white w-full h-12 font-bold shadow-lg order-1 md:order-2"
+        >
+            {isSubmitting ? <Loader2 className="animate-spin w-4 h-4"/> : "إنشاء الحساب"}
+        </Button>
+        <Button 
+            variant="outline" 
+            onClick={() => setIsAddOpen(false)} 
+            className="w-full md:w-auto h-12 order-2 md:order-1"
+        >
+            إلغاء
+        </Button>
+    </DialogFooter>
                     </DialogContent>
                 </Dialog>
 
                 {/* Edit Dialog */}
                 <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-                    <DialogContent className="max-w-lg" dir="rtl">
+                    <DialogContent className="w-[95vw] md:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 pb-24 md:p-6" dir="rtl">
                         <DialogHeader><DialogTitle className="flex items-center gap-2"><UserCog className="w-5 h-5"/> تعديل البيانات</DialogTitle></DialogHeader>
                         {/* 📸 إدارة الصورة في نافذة التعديل */}
 <div className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-2xl border-2 border-dashed mb-4">
@@ -628,7 +644,22 @@ const executePhotoDelete = async () => {
                                 </Select>
                             </div>
                         </div>
-                        <DialogFooter><Button onClick={handleUpdateUser} disabled={isSubmitting} className="bg-slate-900 text-white w-full">{isSubmitting ? <Loader2 className="animate-spin"/> : "حفظ التعديلات"}</Button></DialogFooter>
+                        <DialogFooter className="flex flex-col md:flex-row gap-2 mt-4">
+        <Button 
+            onClick={handleUpdateUser} 
+            disabled={isSubmitting} 
+            className="bg-blue-600 hover:bg-blue-700 text-white w-full h-12 font-bold shadow-lg order-1 md:order-2"
+        >
+            {isSubmitting ? <Loader2 className="animate-spin w-4 h-4"/> : "حفظ التعديلات"}
+        </Button>
+        <Button 
+            variant="outline" 
+            onClick={() => setIsEditOpen(false)} 
+            className="w-full md:w-auto h-12 order-2 md:order-1"
+        >
+            إلغاء التعديل
+        </Button>
+    </DialogFooter>
                     </DialogContent>
                 </Dialog>
         <AlertDialog open={isDeleteAlertOpen} onOpenChange={setIsDeleteAlertOpen}>

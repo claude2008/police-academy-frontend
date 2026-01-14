@@ -459,7 +459,7 @@ const screenVisibleColumns = useMemo(() => {
 
   return (
 <ProtectedRoute allowedRoles={["owner","assistant_admin"]}>
-    <div className="space-y-6 pb-10 md:pb-24" dir="rtl">
+    <div className="space-y-6 pb-10 md:pb-24 max-w-full overflow-x-hidden" dir="rtl">
       
       {/* القسم العلوي */}
       <div className="print:hidden space-y-6">
@@ -468,7 +468,7 @@ const screenVisibleColumns = useMemo(() => {
                <h1 className="text-3xl font-bold text-slate-900 dark:text-white">سجل النتائج {baseScore === 90 && <span className="text-sm text-orange-600 bg-orange-100 px-2 py-1 rounded-full mr-2">نظام 90 درجة</span>}</h1>
                <p className="text-slate-500 dark:text-slate-400">عرض {processedData.length} سجل</p>
             </div>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-2 md:flex md:flex-row gap-2 w-full md:w-auto">
             
             {/* 👇 زر الحفظ الجديد */}
             <Dialog open={isSaveDialogOpen} onOpenChange={setIsSaveDialogOpen}>

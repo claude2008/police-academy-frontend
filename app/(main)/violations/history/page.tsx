@@ -473,25 +473,28 @@ const confirmDeleteAll = async () => {
         <TableRow key={idx} className="border-b border-black divide-x divide-black hover:bg-slate-50 transition-colors">
             <TableCell className="text-center font-bold border-l border-black">{idx + 1}</TableCell>
             
-            <TableCell className="text-right border-l border-black">
-                <div className="font-black text-xs">{row.name}</div>
-                <div className="text-[9px] text-slate-600 font-bold">
-                    {row.military_id} | {row.rank} | س: {row.company} | ف: {row.platoon}
-                </div>
-            </TableCell>
+            {/* 🟢 عمود الاسم: قمنا بتصغير العرض ليعطي مساحة للمخالفة */}
+<TableCell className="text-right border-l border-black w-1/4 min-w-[150px]">
+    <div className="font-black text-xs truncate" title={row.name}>{row.name}</div>
+    <div className="text-[9px] text-slate-600 font-bold leading-tight">
+        {row.rank} | {row.military_id}
+        <br />
+        س: {row.company} | ف: {row.platoon}
+    </div>
+</TableCell>
 
-            {/* 🟢 تحديث عمود المخالفات ليقرأ من violationTickets */}
-            <TableCell className="text-right font-bold text-[10px] text-red-700 border-l border-black py-2">
-                <div className="flex flex-col gap-1.5">
-                    {row.violationTickets.map((v: any, i: number) => (
-                        <div key={i} className={i !== 0 ? "border-t border-black/10 pt-1" : ""}>
-                            <p className="whitespace-normal break-words leading-tight text-justify">
-                                • {v.name}
-                            </p>
-                        </div>
-                    ))}
-                </div>
-            </TableCell>
+{/* 🔴 عمود المخالفات: جعلناه يأخذ المساحة الأكبر (نصف عرض الجدول تقريباً) */}
+<TableCell className="text-right font-bold text-[10px] text-red-700 border-l border-black py-2 w-1/2 min-w-[250px]">
+    <div className="flex flex-col gap-1.5">
+        {row.violationTickets.map((v: any, i: number) => (
+            <div key={i} className={i !== 0 ? "border-t border-black/10 pt-1" : ""}>
+                <p className="whitespace-normal break-words leading-tight text-justify">
+                    • {v.name}
+                </p>
+            </div>
+        ))}
+    </div>
+</TableCell>
 
             {/* 🟢 تحديث عمود المحرر ليقرأ من violationTickets */}
             <TableCell className="text-right font-bold text-[9px] text-slate-500 border-l border-black py-2">

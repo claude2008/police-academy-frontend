@@ -372,7 +372,19 @@ const [platoon, setPlatoon] = useState("all")
           {selectedSoldier && (
             <div className="space-y-4 pt-2">
               <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border border-[#c5b391]/30 shadow-inner">
-                <div className="w-16 h-16 rounded-full border-2 border-[#c5b391] relative overflow-hidden bg-white"><img src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${selectedSoldier.military_id}.jpg`} className="w-full h-full object-cover" /></div>
+                <div className="w-16 h-16 rounded-full border-2 border-[#c5b391] relative overflow-hidden bg-white shadow-md">
+  <img 
+    // الرابط المعتمد على السيرفر والرقم العسكري
+    src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${selectedSoldier.military_id}.jpg`} 
+    className="w-full h-full object-cover"
+    alt={selectedSoldier.name}
+    // الحل السحري: إذا لم يجد السيرفر الصورة، يضع فوراً الصورة الافتراضية
+    onError={(e) => {
+      const target = e.target as HTMLImageElement;
+      target.src = "/default-avatar.png"; 
+    }}
+  />
+</div>
                 <div className="flex flex-col gap-1">
                   <h4 className="font-bold text-slate-900">{selectedSoldier.name}</h4>
                   <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">

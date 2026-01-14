@@ -137,10 +137,10 @@ export default function LoginPage() {
               />
             </div>
             <CardTitle className="text-2xl font-bold text-slate-800 dark:text-white">
-              أكاديمية الشرطة
+              معهد الشرطة
             </CardTitle>
             <CardDescription className="text-slate-500 dark:text-slate-400">
-              نظام تقييم اللياقة البدنية العسكري
+             البوابة الرقمية لإدارة وتقييم التدريب
             </CardDescription>
           </CardHeader>
           
@@ -190,6 +190,9 @@ export default function LoginPage() {
               {loading ? "جارِ التحقق..." : "تسجيل الدخول"}
             </Button>
           </CardFooter>
+          <CardDescription className="text-center text-slate-500 dark:text-slate-400">
+             إعداد وتطوير : مـحمد خـالد الصدفـي
+            </CardDescription>
         </Card>
       </div>
 

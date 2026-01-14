@@ -563,7 +563,8 @@ const confirmPhotoDelete = async () => {
                             <Plus className="w-4 h-4" /> إضافة مجند
                         </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto" dir="rtl">
+                    {/* أضفنا w-[95vw] لمنع الخروج عن الشاشة، و pb-28 لرفع الأزرار فوق شريط التنقل */}
+<DialogContent className="w-[95vw] md:max-w-3xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 pb-28 md:p-6" dir="rtl">
                         <DialogHeader><DialogTitle>إضافة مجند</DialogTitle><DialogDescription>أدخل البيانات.</DialogDescription></DialogHeader>
                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 py-4">
                              <div className="space-y-2">
@@ -982,7 +983,8 @@ const confirmPhotoDelete = async () => {
 
       {/* النوافذ المنبثقة */}
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" dir="rtl">
+        {/* أضفنا w-[95vw] للموبايل و pb-28 لرفع الأزرار */}
+<DialogContent className="w-[95vw] md:max-w-2xl max-h-[90vh] overflow-y-auto overflow-x-hidden p-4 pb-28 md:p-6" dir="rtl">
             <DialogHeader><DialogTitle>تعديل بيانات المجند</DialogTitle><DialogDescription>تعديل البيانات الأساسية.</DialogDescription></DialogHeader>
             {editingSoldier && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
@@ -999,10 +1001,24 @@ const confirmPhotoDelete = async () => {
                     <div className="space-y-2"><Label>الوزن</Label><Input type="text" value={editingSoldier.initial_weight} onChange={e => setEditingSoldier({...editingSoldier, initial_weight: e.target.value})} /></div>
                 </div>
             )}
-            <DialogFooter>
-                <Button variant="outline" onClick={() => setIsEditOpen(false)}>إلغاء</Button>
-                <Button onClick={handleSaveChanges} disabled={isSaving} className="bg-blue-600 text-white gap-2">{isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} حفظ التغييرات</Button>
-            </DialogFooter>
+            <DialogFooter className="flex flex-col md:flex-row gap-2 mt-6">
+    <Button 
+        onClick={handleSaveChanges} 
+        disabled={isSaving} 
+        className="w-full md:flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold h-12 shadow-lg order-1 md:order-2 gap-2"
+    >
+        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} 
+        حفظ التغييرات النهائية
+    </Button>
+    
+    <Button 
+        variant="outline" 
+        onClick={() => setIsEditOpen(false)} 
+        className="w-full md:w-auto font-bold h-12 order-2 md:order-1"
+    >
+        إلغاء التعديل
+    </Button>
+</DialogFooter>
         </DialogContent>
       </Dialog>
 
