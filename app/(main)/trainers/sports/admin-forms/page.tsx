@@ -137,7 +137,7 @@ const addCommitteeHeadRow = () => {
     });
 };
     return (
-        <ProtectedRoute allowedRoles={["owner", "manager", "admin","assistant_admin"]}>
+        <ProtectedRoute allowedRoles={["owner", "manager", "admin","assistant_admin","sports_officer"]}>
             <div className="p-4 md:p-8 space-y-6 bg-slate-50 min-h-screen" dir="rtl">
                 
                 <div className="flex justify-between items-center print:hidden border-b pb-4">
