@@ -514,17 +514,18 @@ if (feature === 'others') {
                <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-100 overflow-hidden relative">
                    <div className="absolute top-0 right-0 w-32 h-32 bg-slate-50 rounded-full -mr-10 -mt-10 blur-2xl z-0" />
                    <div className="relative z-10">
-                       <DialogHeader className="mb-8 text-center space-y-2">
-                           <div className="mx-auto w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-2">
-                               <Settings className="w-6 h-6 text-slate-600 animate-spin-slow" />
-                           </div>
-                           <DialogTitle className="text-2xl font-black text-slate-800">
-                               {selectionState.step === 'branch_select' ? 'تحديد المسار' : 'اختر الإجراء'}
-                           </DialogTitle>
-                           <p className="text-sm text-slate-500 font-medium">
-                               {selectionState.step === 'branch_select' ? 'يرجى اختيار الفرع للمتابعة:' : 'ماذا تريد أن تفعل الآن؟'}
-                           </p>
-                       </DialogHeader>
+                       <DialogHeader className="mb-8 text-left items-start space-y-2">
+    <div className="mx-auto w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-2">
+        <Settings className="w-6 h-6 text-slate-600 animate-spin-slow" />
+    </div>
+    <DialogTitle className="text-2xl font-black text-slate-800">
+        {selectionState.step === 'branch_select' ? 'تحديد المسار' : 'اختر الإجراء'}
+    </DialogTitle>
+    <p className="text-sm text-slate-500 font-medium">
+        {selectionState.step === 'branch_select' ? 'يرجى اختيار الفرع للمتابعة:' : 'ماذا تريد أن تفعل الآن؟'}
+    </p>
+</DialogHeader>
+
 
                        <div className="grid grid-cols-1 gap-4">
                            

@@ -133,17 +133,18 @@ export default function WeightsPage() {
           const soldiersJson = await soldiersRes.json()
           
           // تجهيز قائمة الجنود
-          const mappedSoldiers = (soldiersJson.data || []).map((s: any) => ({
-              id: s.id,
-              militaryId: s.military_id,
-              name: s.name,
-              course: s.course,
-              batch: s.batch,
-              company: s.company,
-              platoon: s.platoon,
-              height: s.height,
-              initialWeight: s.initial_weight
-          }));
+         const mappedSoldiers = (soldiersJson.data || []).map((s: any) => ({
+    id: s.id,
+    militaryId: s.military_id,
+    name: s.name,
+    image_url: s.image_url, // 🟢 أضف هذا السطر هنا ليتم تخزين رابط الصورة
+    course: s.course,
+    batch: s.batch,
+    company: s.company,
+    platoon: s.platoon,
+    height: s.height,
+    initialWeight: s.initial_weight
+}));
 
           // ب) جلب كل الأوزان (مع إرسال التوكن للأمان)
           const weightsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weights/`, {
@@ -608,16 +609,20 @@ export default function WeightsPage() {
                                 <TableRow key={soldier.id} className="hover:bg-slate-50">
                                     <TableCell className="text-center border border-slate-300 font-mono text-xs static md:sticky md:right-0 z-10 md:bg-white border-l-0">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                                     <TableCell className="text-center border border-slate-300 hidden md:table-cell">
-  <div className="w-8 h-8 bg-slate-200 rounded-full mx-auto flex items-center justify-center overflow-hidden relative">
-    <img 
-      // 👇 التعديل هنا: استخدام رابط الباك إند + militaryId
-      src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${soldier.militaryId}.jpg`} 
-      onError={(e) => (e.target as HTMLImageElement).style.display='none'} 
-      className="w-full h-full object-cover" 
-    />
-    {/* أيقونة المستخدم تظهر خلف الصورة كاحتياط */}
-    <User className="w-4 h-4 text-slate-400 absolute z-[-1]" />
-  </div>
+    <div className="w-9 h-9 bg-slate-100 rounded-full mx-auto flex items-center justify-center overflow-hidden border-2 border-slate-200 relative group shadow-sm">
+        <img 
+            // 🟢 استخدام الرابط السحابي المباشر مع التايم ستامب لتجنب الكاش
+            src={soldier.image_url ? `${soldier.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
+            alt={soldier.name}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+            onError={(e) => { 
+                // في حال فشل التحميل، نعرض الصورة الافتراضية
+                (e.target as HTMLImageElement).src = "/placeholder-user.png";
+            }} 
+        />
+        {/* أيقونة احتياطية تظهر في الخلفية فقط */}
+        <User className="w-4 h-4 text-slate-300 absolute z-[-1]" />
+    </div>
 </TableCell>
                                     <TableCell className="text-right border border-slate-300 font-bold text-xs hidden md:table-cell">{soldier.militaryId}</TableCell>
                                     <TableCell className="text-right border border-slate-300 font-medium text-xs sticky right-0 md:right-[40px] z-20 bg-slate-50 dark:bg-slate-950 shadow-[-2px_0px_5px_rgba(0,0,0,0.15)] max-w-[160px] md:max-w-none truncate">{soldier.name}</TableCell>

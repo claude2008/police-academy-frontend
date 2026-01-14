@@ -202,7 +202,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 	const pathname = usePathname()
 	const [isMounted, setIsMounted] = useState(false)
 	const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({})
-	
+	// 🟢 هذا السطر سيأخذ أول كلمتين فقط (مثلاً: محمد فخري)
+const userData = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : null;
+const displayName = userData?.name ? userData.name.split(' ').slice(0, 2).join(' ') : "";
 	// 1. 👇 الحالة المصححة: تقبل null كقيمة أولية
 	const [userRole, setUserRole] = useState<string | null>(null);
     const [userBranch, setUserBranch] = useState<string | null>(null);
@@ -461,7 +463,8 @@ if (item.id === "cs-sp-sol") {
     const hasChildren = item.children && item.children.length > 0
     const isOpen = openMenus[item.id]
     const isActive = item.href ? pathname === item.href : false
-    
+    // استخراج الاسم الأول فقط للترحيب بشكل مختصر وجميل
+
     const paddingStyle = { paddingRight: `${(depth * 0.8) + 0.75}rem` } 
 
     const getTextColor = () => {
@@ -571,25 +574,46 @@ if (item.id === "cs-sp-sol") {
 								
 								{/* شريط الموبايل */}
 								<header className="lg:hidden sticky top-0 bg-white dark:bg-slate-900 border-b p-2 md:p-3 flex justify-between items-center shadow-sm z-[110] flex-shrink-0">
-    {isMounted && (
-        <Sheet>
+    <div className="flex items-center gap-3">
+        {isMounted && (
+            <Sheet>
             {/* 🔑 تم تصغير حجم الزر قليلاً ليناسب الهواتف */}
             <SheetTrigger asChild>
                 <Button variant="ghost" size="icon" className="h-9 w-9"><Menu className="w-5 h-5" /></Button>
             </SheetTrigger>
 														<SheetContent side="right" className="bg-[#0f172a] text-white border-l-slate-800 p-0 flex flex-col h-full w-[280px]">
-																<SheetHeader className="p-4 border-b border-slate-800"><SheetTitle className="text-white">القائمة</SheetTitle></SheetHeader>
-																<nav className="p-4 flex-1 overflow-y-auto pb-20">
-																		{navigationStructure.map(item => renderMenuItem(item))}
-																</nav>
-																<div className="p-4 border-t border-slate-800">
-																		<Link href="/">
-																				<Button variant="destructive" onClick={() => localStorage.removeItem("user")} className="w-full flex gap-2"><LogOut className="w-4 h-4" /> خروج</Button>
-																		</Link>
-																</div>
-														</SheetContent>
+    <SheetHeader className="p-4 border-b border-slate-800 shrink-0">
+        <SheetTitle className="text-white">القائمة</SheetTitle>
+    </SheetHeader>
+    
+    {/* 🟢 زدنا الـ pb إلى 40 لرفع آخر عنصر في القائمة للأعلى */}
+    <nav className="p-4 flex-1 overflow-y-auto pb-32 custom-scrollbar">
+        {navigationStructure.map(item => renderMenuItem(item))}
+    </nav>
+    
+    {/* 🟢 رفعنا حاوية زر الخروج بـ mb-20 لضمان ابتعادها عن أزرار الموبايل الثابتة */}
+    <div className="p-4 border-t border-slate-800 bg-[#1e293b] mb-20 shrink-0">
+    <Button 
+        variant="destructive" 
+        // 🟢 التغيير هنا: نفتح النافذة بدلاً من تسجيل الخروج مباشرة
+        onClick={() => setIsLogoutDialogOpen(true)} 
+        className="w-full flex gap-2 h-8 font-bold shadow-lg"
+    >
+        <LogOut className="w-4 h-4" /> خروج  
+    </Button>
+</div>
+</SheetContent>
 												</Sheet>
 										)}
+                                        {!isLoading && displayName && (
+    <div className="flex flex-col -space-y-1 animate-in fade-in slide-in-from-right-2 duration-500">
+        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">مرحباً بك</span>
+        <span className="text-xs font-black text-slate-700 dark:text-white truncate max-w-[120px]">
+            {displayName}
+        </span>
+    </div>
+)}
+    </div>
 
 										<h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
 												<GraduationCap className="w-5 h-5" />
@@ -604,34 +628,31 @@ if (item.id === "cs-sp-sol") {
 
 								{/* الشريط السفلي للموبايل */}
 								
-{/* 📱 الشريط السفلي المحدث (الإعدادات بدلاً من النتائج) */}
-<nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t z-[120] px-4 flex justify-between items-center shadow-[0_-5px_15px_rgba(0,0,0,0.08)] h-16 pb-safe">
+{/* 📱 الشريط السفلي المحدث مع Z-Index عالٍ جداً لمنع التداخل */}
+<nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t px-4 flex justify-between items-center shadow-[0_-5px_15px_rgba(0,0,0,0.15)] h-16 pb-safe z-[999] pointer-events-auto">
     
     {/* 1. الرئيسية */}
     <Link href="/dashboard" className={cn(
-        "flex flex-col items-center justify-center flex-1 gap-1 transition-all",
-        pathname === "/dashboard" ? "text-blue-600 scale-110" : "text-slate-400"
+        "flex flex-col items-center justify-center flex-1 gap-1 transition-all h-full",
+        pathname === "/dashboard" ? "text-blue-600 scale-105" : "text-slate-400"
     )}>
         <LayoutDashboard className="w-5 h-5"/>
         <span className="text-[10px] font-black">الرئيسية</span>
     </Link>
-     {/* 3. عنوان التطبيق (الوسط) */}
-    
-    {/* 2. الإعدادات (تم التغيير هنا ✅) */}
+
+    {/* 2. الإعدادات */}
     <Link href="/settings" className={cn(
-        "flex flex-col items-center justify-center flex-1 gap-1 transition-all",
-        pathname === "/settings" ? "text-blue-600 scale-110" : "text-slate-400"
+        "flex flex-col items-center justify-center flex-1 gap-1 transition-all h-full",
+        pathname === "/settings" ? "text-blue-600 scale-105" : "text-slate-400"
     )}>
         <Settings className="w-5 h-5"/>
         <span className="text-[10px] font-black">الإعدادات</span>
     </Link>
     
-   
-    
-    {/* 4. خروج */}
+    {/* 3. خروج (الزر الثابت) */}
     <button 
         onClick={() => setIsLogoutDialogOpen(true)}
-        className="flex flex-col items-center justify-center flex-1 gap-1 text-red-500 active:scale-90 transition-all"
+        className="flex flex-col items-center justify-center flex-1 gap-1 text-red-500 active:scale-90 transition-all h-full"
     >
         <LogOut className="w-5 h-5"/>
         <span className="text-[10px] font-black">خروج</span>

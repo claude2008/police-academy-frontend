@@ -687,12 +687,14 @@ const confirmPhotoDelete = async () => {
 
                             {/* زر التفعيل (Switch) - مع منع الانتشار */}
                             <div onClick={(e) => e.stopPropagation()}>
-                                <Switch 
-                                    checked={course.is_active}
-                                    onCheckedChange={(checked) => handleToggleCourse(course.id, checked)}
-                                    className="data-[state=checked]:bg-[#c5b391] scale-90"
-                                />
-                            </div>
+    {userRole === "owner" && (
+        <Switch 
+            checked={course.is_active}
+            onCheckedChange={(checked) => handleToggleCourse(course.id, checked)}
+            className="data-[state=checked]:bg-[#c5b391] scale-90"
+        />
+    )}
+</div>
                         </div>
 
                         {/* الفوتر السفلي للبطاقة */}
