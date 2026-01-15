@@ -186,20 +186,18 @@ const maxTotalScore = useMemo(() => {
 };
 
  const handleFinalSave = async () => {
-    if (course === "all" || batch === "all") return toast.error("يرجى تحديد الدورة والدفعة");
-    if (filteredStudents.length === 0) return toast.error("الجدول فارغ");
+    if (students.length === 0) return toast.error("الجدول فارغ");
 
     setLoading(true);
     try {
-        const user = JSON.parse(localStorage.getItem("user") || "{}");
         const formattedDate = new Date().toISOString().split('T')[0];
 
-        // 1. بصمة المحاور (للمرجعية فقط)
+        // 1. بصمة المحاور - إصلاح متغير 'a' (السطر 201-202 في رسائل الخطأ)
         const axesFingerprint = examConfigs
-            .map(cfg => {
+            .map((cfg: any) => {
                 const activeAxesNames = cfg.axes
-                    ?.filter((a: any) => a.is_active !== false)
-                    .map((a: any) => a.title || a.name)
+                    ?.filter((a: any) => a.is_active !== false) // أضفنا : any هنا
+                    .map((a: any) => a.title || a.name)         // أضفنا : any هنا
                     .sort().join("-");
                 return `${cfg.name}:${activeAxesNames}`;
             })
@@ -209,29 +207,23 @@ const maxTotalScore = useMemo(() => {
             config_id: parseInt(activeConfig.id), 
             title: `اختبار اشتباك (${activeConfig.name}) - ${formattedDate}`,
             exam_date: formattedDate,
-            course: course,
-            batch: batch,
-            company: filteredStudents[0]?.company || "عام",
-            platoon: filteredStudents[0]?.platoon || "عام",
+            course: "mixed_sync", 
+            batch: "mixed_sync",
+            company: students[0]?.company || "عام",
+            platoon: students[0]?.platoon || "عام",
             
-            
-            // 🟢 التعديل الجوهري هنا: بناء Snapshot مخصص لكل طالب
-            students_data: filteredStudents.map(s => {
-                
-                // أ. استنساخ الهيكل من الإعدادات الحالية (Deep Copy)
-                // نأخذ الإعدادات الخاصة بالتاب النشط فقط (activeConfig) لأن الطالب يقيم فيه
+            // 🟢 إصلاح المتغيرات داخل students_data (السطر 226-229 في رسائل الخطأ)
+            students_data: students.map((s: any) => {
                 const studentSnapshot = {
                     id: activeConfig.id,
                     name: activeConfig.name,
-                    axes: activeConfig.axes?.filter((a: any) => a.is_active !== false).map((axis: any) => ({
+                    axes: activeConfig.axes?.filter((a: any) => a.is_active !== false).map((axis: any) => ({ // أضفنا : any هنا
                         title: axis.title || axis.name,
-                        name: axis.name, // للاحتياط
-                        criteria: axis.criteria?.map((c: any) => ({
+                        name: axis.name,
+                        criteria: axis.criteria?.map((c: any) => ({ // أضفنا : any هنا
                             id: c.id,
                             name: c.name,
                             max: c.max,
-                            // 🟢🟢🟢 حقن الدرجة هنا!
-                            // نبحث في قاموس درجات الطالب عن درجة هذا المعيار
                             score: s.scores[c.id] !== undefined ? Number(s.scores[c.id]) : 0
                         }))
                     }))
@@ -241,13 +233,14 @@ const maxTotalScore = useMemo(() => {
                     military_id: String(s.military_id),
                     name: s.name,
                     rank: s.rank,
+                    course: s.course,
+                    batch: s.batch,
                     company: s.company,
                     platoon: s.platoon,
-                    scores: s.scores, // نحتفظ بها كمرجع سريع
+                    scores: s.scores, 
                     total: Number(s.total) || 0,
                     notes: s.notes || "",
                     axes_fingerprint: axesFingerprint,
-                    // 🟢 نرسل السناب شوت المعبأ بالدرجات
                     exam_snapshot: studentSnapshot 
                 };
             })
@@ -263,11 +256,12 @@ const maxTotalScore = useMemo(() => {
         });
 
         if (res.ok) {
-            toast.success("تم الحفظ بنجاح في قاعدة البيانات");
+            toast.success("تم ترحيل البيانات وحفظها بنجاح");
             setStudents([]);
             localStorage.removeItem(`engagement_${activeTab}`);
         } else {
-            toast.error("فشل الحفظ: تأكد من اكتمال كافة البيانات");
+            const errorData = await res.json().catch(() => ({}));
+            toast.error(errorData.detail || "فشل الحفظ: تأكد من صلاحية الاتصال");
         }
     } catch (e) {
         toast.error("خطأ في الاتصال بالشبكة");
@@ -292,33 +286,7 @@ const maxTotalScore = useMemo(() => {
         </div>
 
         {/* Filters */}
-        <div className="no-print mb-4">
-          <Card className="border-r-4 border-r-orange-500 shadow-sm bg-white h-10 flex items-center w-full md:w-2/3 overflow-hidden">
-            <CardContent className="p-0 px-3 w-full flex items-center justify-between gap-4 h-full">
-              <div className="flex items-center gap-2 flex-1">
-                <Label className="text-[11px] text-slate-500 font-bold mb-0">الدورة:</Label>
-                <Select value={course} onValueChange={(v) => {setCourse(v); setBatch("all")}}>
-                  <SelectTrigger className="h-7 text-xs border-none shadow-none focus:ring-0 bg-transparent p-0"><SelectValue /></SelectTrigger>
-                  <SelectContent dir="rtl">
-                    <SelectItem value="all">كل الدورات</SelectItem>
-                    {coursesList.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="w-px h-4 bg-slate-200" />
-              <div className="flex items-center gap-2 flex-1">
-                <Label className="text-[11px] text-slate-500 font-bold mb-0">الدفعة:</Label>
-                <Select value={batch} onValueChange={setBatch}>
-                  <SelectTrigger className="h-7 text-xs border-none shadow-none focus:ring-0 bg-transparent p-0"><SelectValue /></SelectTrigger>
-                  <SelectContent dir="rtl">
-                    <SelectItem value="all">كل الدفعات</SelectItem>
-                    {availableBatches.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+       
 
         {/* Search */}
         <Card className="bg-slate-50 border border-slate-200 shadow-sm p-3 flex flex-col md:flex-row items-center gap-3">
@@ -403,10 +371,21 @@ const maxTotalScore = useMemo(() => {
 </TableHeader>
 
                 <TableBody className="bg-white dark:bg-slate-900 font-bold text-slate-700">
-                  {filteredStudents.map((s, i) => (
+                  {students.map((s, i) => (
                     <TableRow key={s.military_id} className="hover:bg-orange-50 transition-colors border-b">
                       <TableCell className="text-center text-xs text-slate-400 border-l">{i+1}</TableCell>
-                      <TableCell className="border-l"><div className="w-10 h-10 rounded-full border bg-slate-100 overflow-hidden mx-auto"><img src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${s.military_id}.jpg`} className="w-full h-full object-cover" onError={(e:any) => e.target.src = "/default-avatar.png"} /></div></TableCell>
+                      <TableCell className="border-l">
+  <div className="w-10 h-10 rounded-full border bg-slate-100 overflow-hidden mx-auto">
+    <img 
+      // 🟢 التعديل: استخدام image_url المباشر مع بصمة الوقت لكسر الكاش
+      src={s.image_url ? `${s.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
+      className="w-full h-full object-cover" 
+      onError={(e:any) => {
+        e.target.src = "/placeholder-user.png";
+      }} 
+    />
+  </div>
+</TableCell>
                       <TableCell className="text-right border-l"><div className="flex flex-col"><span className="text-[10px] text-blue-600">{s.rank}</span><span className="text-sm">{s.name}</span></div></TableCell>
                       <TableCell className="text-center font-mono text-blue-800 border-l">{s.military_id}</TableCell>
                       <TableCell className="text-center text-[10px] text-slate-500 border-l">{s.company} / {s.platoon}</TableCell>
@@ -441,21 +420,30 @@ const maxTotalScore = useMemo(() => {
                 <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border border-orange-200">
                   <div className="w-16 h-16 rounded-full border-2 border-orange-500 overflow-hidden bg-white">
   <img 
-    // نستخدم الرقم العسكري لجلب الصورة من السيرفر كما فعلنا في الجدول
-    src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${selectedSoldier.military_id}.jpg`} 
+    // 🟢 التعديل: استخدام image_url من الجندي المختار
+    src={selectedSoldier.image_url ? `${selectedSoldier.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
     className="w-full h-full object-cover"
-    // دالة احتياطية: إذا لم تكن الصورة موجودة على السيرفر، يتم عرض الصورة الافتراضية
-    onError={(e) => {
-      const target = e.target as HTMLImageElement;
-      target.src = "/placeholder-user.png"; 
+    onError={(e:any) => {
+      e.target.src = "/placeholder-user.png";
     }}
   />
 </div>
                   <div className="flex flex-col flex-1">
-                    <h4 className="font-bold text-slate-900">{selectedSoldier.name}</h4>
-                    <div className="flex gap-2 text-[10px] mt-1"><Badge className="bg-blue-700">{selectedSoldier.rank}</Badge><Badge variant="outline">{selectedSoldier.military_id}</Badge></div>
-                    <div className="text-[10px] text-orange-700 font-bold mt-1">السرية: {selectedSoldier.company} | الفصيل: {selectedSoldier.platoon}</div>
-                  </div>
+    <h4 className="font-bold text-slate-900">{selectedSoldier.name}</h4>
+    <div className="flex gap-2 text-[10px] mt-1">
+        <Badge className="bg-blue-700">{selectedSoldier.rank}</Badge>
+        <Badge variant="outline">{selectedSoldier.military_id}</Badge>
+    </div>
+    
+    {/* 🟢 الإضافة الجديدة: إظهار الدورة والدفعة هنا للتأكيد اللحظي */}
+    <div className="text-[11px] text-blue-800 font-black mt-2 bg-blue-50 p-1.5 rounded border border-blue-100">
+        📌 {selectedSoldier.course} {selectedSoldier.batch ? `- الدفعة ${selectedSoldier.batch}` : ""}
+    </div>
+
+    <div className="text-[10px] text-orange-700 font-bold mt-1">
+        السرية: {selectedSoldier.company} | الفصيل: {selectedSoldier.platoon}
+    </div>
+</div>
                 </div>
 
                 <div className="space-y-4">

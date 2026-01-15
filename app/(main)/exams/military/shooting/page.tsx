@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import ProtectedRoute from "@/components/ProtectedRoute"
+import { Badge } from "@/components/ui/badge"
 const normalizeNumbers = (val: string) => {
   const arabicNums = "٠١٢٣٤٥٦٧٨٩"; const englishNums = "0123456789";
   return val.replace(/[٠-٩]/g, (d) => englishNums[arabicNums.indexOf(d)])
@@ -32,6 +33,7 @@ type ShootingStudent = {
   scores: Record<string, number>;
   total: number;
   notes: string;
+  image_url?: string; // 🟢 أضف هذا السطر للسماح باستخدام رابط الصورة
 }
 
 export default function ShootingExamsPage() {
@@ -188,13 +190,9 @@ const [platoon, setPlatoon] = useState("all")
 };
 
   const handleFinalSave = async () => {
-    // 1. الحماية الأولية
-    if (course === "all" || batch === "all") {
-        return toast.error("يرجى تحديد الدورة والدفعة قبل الحفظ");
-    }
-
-    if (filteredStudents.length === 0) {
-        return toast.error("الجدول فارغ أو لا توجد بيانات مطابقة للفرز");
+    // 1. الحماية الأولية (تم تعديلها للسماح بالحفظ المباشر دون تقيد بالفلتر العلوي)
+    if (students.length === 0) {
+        return toast.error("الجدول فارغ أو لا توجد بيانات للرصد");
     }
 
     setLoading(true);
@@ -203,33 +201,39 @@ const [platoon, setPlatoon] = useState("all")
         const formattedDate = new Date().toISOString().split('T')[0];
 
         // 🧠 المنطق الذكي لتحديد السرية والفصيل للسجل
-        const firstStudent = filteredStudents[0];
-        const isUnifiedCompany = filteredStudents.every(s => s.company === firstStudent.company);
-        const isUnifiedPlatoon = filteredStudents.every(s => s.platoon === firstStudent.platoon);
+        // نعتمد على بيانات الطلاب في الجدول بدلاً من القوائم المنسدلة
+        const firstStudent = students[0];
+        const isUnifiedCompany = students.every(s => s.company === firstStudent.company);
+        const isUnifiedPlatoon = students.every(s => s.platoon === firstStudent.platoon);
 
-        // ✅ تعريف الـ payload أولاً
+        // ✅ تعريف الـ payload أولاً (محدث لدعم الفرز الآلي في الباك إند)
         const payload = {
-    config_id: activeConfig.id,
-    title: `${activeConfig.exam_type} - ${formattedDate}`,
-    exam_date: formattedDate,
-    course: course,
-    batch: batch,
-    company: isUnifiedCompany ? firstStudent.company : "متعدد",
-    platoon: isUnifiedPlatoon ? firstStudent.platoon : "متعدد",
-    
-    // تم حذف بيانات المنشئ لأن السيرفر سيتعرف عليها من التوكن تلقائياً 🛡️
+            config_id: activeConfig.id,
+            title: `${activeConfig.exam_type} - ${formattedDate}`,
+            exam_date: formattedDate,
+            // 🟢 نرسل وسم المزامنة المختلطة لكي يقوم الباك إند بالفرز بناءً على دورة كل طالب
+            course: "mixed_sync",
+            batch: "mixed_sync",
+            // إذا كانت البيانات مختلطة نكتب "متعدد"، وإذا كانت موحدة نكتب اسم السرية/الفصيل
+            company: isUnifiedCompany ? firstStudent.company : "متعدد",
+            platoon: isUnifiedPlatoon ? firstStudent.platoon : "متعدد",
+            
+            // تم حذف بيانات المنشئ لأن السيرفر سيتعرف عليها من التوكن تلقائياً 🛡️
 
-    students_data: filteredStudents.map(s => ({
-        military_id: s.military_id,
-        name: s.name,
-        rank: s.rank,
-        company: s.company,
-        platoon: s.platoon,
-        scores: s.scores,
-        total: s.total,
-        notes: s.notes
-    }))
-};;
+            // 🟢 إرسال مصفوفة الطلاب مع بيانات الدورة والدفعة الخاصة بكل فرد لضمان الفرز الصحيح
+            students_data: students.map((s: any) => ({
+                military_id: s.military_id,
+                name: s.name,
+                rank: s.rank,
+                course: s.course, // حقن الدورة من ملف الطالب
+                batch: s.batch,   // حقن الدفعة من ملف الطالب
+                company: s.company,
+                platoon: s.platoon,
+                scores: s.scores,
+                total: s.total,
+                notes: s.notes
+            }))
+        };
 
         // 📡 الآن نقوم بالإرسال باستخدام الـ payload المعرف أعلاه
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records`, {
@@ -242,7 +246,7 @@ const [platoon, setPlatoon] = useState("all")
         });
 
         if (res.ok) {
-            toast.success("تم الحفظ بنجاح");
+            toast.success("تم ترحيل بيانات الرماية وفرزها بنجاح");
             setStudents([]); // مسح الجدول بعد النجاح
             localStorage.removeItem(`shooting_${activeTab}`); // مسح التخزين المؤقت
         } else {
@@ -272,34 +276,7 @@ const [platoon, setPlatoon] = useState("all")
         </Button>
       </div>
 
-      {/* 🔄 قسم الفرز المرتبط الذكي */}
-      <div className="no-print mb-4">
-        <Card className="border-r-4 border-r-[#c5b391] shadow-sm bg-white h-10 flex items-center w-full md:w-2/3 overflow-hidden">
-          <CardContent className="p-0 px-3 w-full flex items-center justify-between gap-4 h-full">
-            <div className="flex items-center gap-2 flex-1">
-              <Label className="text-[11px] text-slate-500 font-bold mb-0">الدورة:</Label>
-              <Select value={course} onValueChange={handleCourseChange}>
-                <SelectTrigger className="h-7 text-xs border-none shadow-none focus:ring-0 bg-transparent p-0"><SelectValue /></SelectTrigger>
-                <SelectContent dir="rtl">
-                  <SelectItem value="all">كل الدورات</SelectItem>
-                  {coursesList.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="w-px h-4 bg-slate-200" />
-            <div className="flex items-center gap-2 flex-1">
-              <Label className="text-[11px] text-slate-500 font-bold mb-0">الدفعة:</Label>
-              <Select value={batch} onValueChange={setBatch}>
-                <SelectTrigger className="h-7 text-xs border-none shadow-none focus:ring-0 bg-transparent p-0"><SelectValue /></SelectTrigger>
-                <SelectContent dir="rtl">
-                  <SelectItem value="all">كل الدفعات</SelectItem>
-                  {availableBatches.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      
 
       {/* البحث */}
       <Card className="bg-slate-50 border border-slate-200 shadow-sm p-3 flex flex-col md:flex-row items-center gap-3">
@@ -346,10 +323,25 @@ const [platoon, setPlatoon] = useState("all")
               </TableHeader>
               <TableBody className="bg-white dark:bg-slate-900">
                 {/* 🔍 استخدام المصفوفة المفلترة لحظياً */}
-                {filteredStudents.map((s, i) => (
+                {students.map((s, i) => (
                   <TableRow key={s.military_id} className="hover:bg-slate-50 transition-colors">
                     <TableCell className="text-center text-xs text-slate-400">{i+1}</TableCell>
-                    <TableCell><div className="w-10 h-10 rounded-full border bg-slate-100 overflow-hidden mx-auto"><img src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${s.military_id}.jpg`} className="w-full h-full object-cover" onError={(e:any) => e.target.src = "/default-avatar.png"} /></div></TableCell>
+                    <TableCell>
+  <div className="w-10 h-10 rounded-full border bg-slate-100 overflow-hidden mx-auto">
+    <img 
+  src={s.image_url ? `${s.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
+  className="w-full h-full object-cover" 
+  onError={(e) => {
+    const target = e.target as HTMLImageElement;
+    // 🛑 الشرط الأهم: إذا كان الرابط الحالي هو الصورة البديلة وفشلت، توقف عن المحاولة
+    if (target.src.includes("placeholder-user.png")) return; 
+    
+    // اذهب للصورة الموجودة في الـ public
+    target.src = "/placeholder-user.png"; 
+  }} 
+/>
+  </div>
+</TableCell>
                     <TableCell className="text-right"><div className="flex flex-col"><span className="text-[10px] text-blue-600 font-medium">{s.rank}</span><span className="font-bold text-sm text-slate-800">{s.name}</span></div></TableCell>
                     <TableCell className="text-center font-mono font-bold text-blue-800">{s.military_id}</TableCell>
                     <TableCell className="text-center text-xs text-slate-500">{s.company} / {s.platoon}</TableCell>
@@ -371,31 +363,37 @@ const [platoon, setPlatoon] = useState("all")
           <DialogHeader><DialogTitle className="flex gap-2 text-[#c5b391] border-b pb-2"><FileText />  درجات الاختبار</DialogTitle></DialogHeader>
           {selectedSoldier && (
             <div className="space-y-4 pt-2">
-              <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border border-[#c5b391]/30 shadow-inner">
-                <div className="w-16 h-16 rounded-full border-2 border-[#c5b391] relative overflow-hidden bg-white shadow-md">
-  <img 
-    // الرابط المعتمد على السيرفر والرقم العسكري
-    src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${selectedSoldier.military_id}.jpg`} 
-    className="w-full h-full object-cover"
-    alt={selectedSoldier.name}
-    // الحل السحري: إذا لم يجد السيرفر الصورة، يضع فوراً الصورة الافتراضية
-    onError={(e) => {
-      const target = e.target as HTMLImageElement;
-      target.src = "/default-avatar.png"; 
-    }}
-  />
+             <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-lg border border-[#c5b391]/30 shadow-inner">
+  <div className="w-16 h-16 rounded-full border-2 border-[#c5b391] relative overflow-hidden bg-white shadow-md">
+    <img 
+  src={selectedSoldier.image_url ? `${selectedSoldier.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
+  className="w-full h-full object-cover"
+  onError={(e) => {
+    const target = e.target as HTMLImageElement;
+    if (target.src.includes("placeholder-user.png")) return; 
+    target.src = "/placeholder-user.png"; 
+  }}
+/>
+  </div>
+  <div className="flex flex-col gap-1">
+    <h4 className="font-bold text-slate-900">{selectedSoldier.name}</h4>
+    <div className="flex gap-2 text-[10px] mt-1">
+        <Badge className="bg-blue-700">{selectedSoldier.rank}</Badge>
+        <Badge variant="outline">{selectedSoldier.military_id}</Badge>
+    </div>
+    
+    {/* 🟢 الإضافة الجديدة: إظهار الدورة والدفعة للتأكيد اللحظي قبل الرصد */}
+    <div className="text-[11px] text-[#8a7a5b] font-black mt-2 bg-amber-50 p-1.5 rounded border border-amber-100">
+        📌 {selectedSoldier.course} {selectedSoldier.batch ? `- الدفعة ${selectedSoldier.batch}` : ""}
+    </div>
+
+    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600 mt-1">
+      {/* 🚀 السرية والفصيل داخل النافذة للتأكيد */}
+      <span className="text-orange-700 font-bold border-r pr-2">السرية: {selectedSoldier.company}</span>
+      <span className="text-orange-700 font-bold">الفصيل: {selectedSoldier.platoon}</span>
+    </div>
+  </div>
 </div>
-                <div className="flex flex-col gap-1">
-                  <h4 className="font-bold text-slate-900">{selectedSoldier.name}</h4>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-600">
-                    <span className="font-bold text-blue-700">{selectedSoldier.rank}</span>
-                    <span className="font-mono bg-slate-200 px-1 rounded">{selectedSoldier.military_id}</span>
-                    {/* 🚀 السرية والفصيل داخل النافذة للتأكيد */}
-                    <span className="text-orange-700 font-bold border-r pr-2">السرية: {selectedSoldier.company}</span>
-                    <span className="text-orange-700 font-bold">الفصيل: {selectedSoldier.platoon}</span>
-                  </div>
-                </div>
-              </div>
               <div className="space-y-2 border-t pt-4">
                 {activeConfig?.criteria.map((c: any) => (
                   <div key={c.name} className="flex items-center justify-between p-2 hover:bg-slate-50 border-b">
