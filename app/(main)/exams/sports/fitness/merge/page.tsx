@@ -438,11 +438,18 @@ const handleMerge = async () => {
     setIsProcessing(true)
     const activePlatoons = Array.from(new Set(tableData.map(item => `${item.company}||${item.platoon}`)));
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/processing/full-official-list`, {
-        method: "POST",
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-        body: JSON.stringify({ active_platoons: activePlatoons, tested_entries: tableData, target_date: selectedDate })
-      });
+     const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/processing/full-official-list`, {
+  method: "POST",
+  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+  body: JSON.stringify({ 
+      active_platoons: activePlatoons, 
+      tested_entries: tableData, 
+      target_date: selectedDate,
+      // 🟢 إرسال الدورة والدفعة المختارة في الفرز العلوي
+      course: dialogCourse,
+      batch: dialogBatch
+  })
+});
       if (res.ok) {
         setTableData(await res.json())
         setPageMode('official')
