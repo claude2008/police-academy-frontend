@@ -92,6 +92,7 @@ export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [currentUser, setCurrentUser] = useState<any>(null)
   const sigPad = useRef<any>({})
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 const [testToDelete, setTestToDelete] = useState<{branchId: string, testId: string} | null>(null);
@@ -541,28 +542,53 @@ const fetchDisciplinaryRegulations = async () => {
         }
     } catch (e) { console.error("Error fetching regulations"); }
 };
-  useEffect(() => {
-    const user = JSON.parse(localStorage.getItem("user") || "{}")
-    setUserRole(user.role || null)
-    setMounted(true)
-    
-    // جلب البيانات الأساسية من الباك إند
-    fetchSettings()
+ useEffect(() => {
+    setMounted(true);
+
+    // 1. جلب إعدادات النظام العامة
+    fetchSettings();
     fetchMilitaryConfigs();
     fetchEngagementConfigs();
     fetchTrainingTemplates();
-    fetchDisciplinaryRegulations(); // 👈 أضف هذا السطر هنا فقط
-    
+    fetchDisciplinaryRegulations();
+
+    // 2. معالجة بيانات المستخدم وتحديثها
     try {
         const userStr = localStorage.getItem("user");
-        if (userStr) {
-            const user = JSON.parse(userStr);
-            const milId = user.military_id;
-            setUserMilId(milId);
-            checkSavedSignature(milId);
+        const token = localStorage.getItem("token");
+
+        if (userStr && token) {
+            const localUser = JSON.parse(userStr);
+            
+            // أ. عرض البيانات المخزنة فوراً (للسرعة)
+            setCurrentUser(localUser);
+            setUserRole(localUser.role || null);
+            setUserMilId(localUser.military_id);
+            checkSavedSignature(localUser.military_id);
+
+            // ب. 🟢 (الجديد) الاتصال بالسيرفر لجلب أحدث الصلاحيات في الخلفية
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${localUser.id}`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            })
+            .then(res => {
+                if (res.ok) return res.json();
+                throw new Error("فشل تحديث البيانات");
+            })
+            .then(freshUser => {
+                console.log("✅ تم تحديث الصلاحيات من السيرفر:", freshUser.extra_permissions);
+                
+                // تحديث الحالة في الصفحة فوراً
+                setCurrentUser(freshUser);
+                
+                // تحديث الذاكرة المحلية للمرات القادمة
+                localStorage.setItem("user", JSON.stringify(freshUser));
+            })
+            .catch(err => console.error("⚠️ لم يتم تحديث بيانات المستخدم تلقائياً:", err));
         }
-    } catch (e) { }
-}, [])
+    } catch (e) { 
+        console.error(e);
+    }
+}, []);
 useEffect(() => {
     const fetchFilters = async () => {
         try {
@@ -1183,7 +1209,9 @@ const removeDayRow = (templateId: string, dayName: string) => {
   }));
 };
   if (!mounted) return null
+console.log("🛠️ صلاحيات المستخدم الحالية:", currentUser?.extra_permissions);
 
+if (!mounted) return null
   return (
     <ProtectedRoute allowedRoles={["owner", "manager", "admin", "assistant_admin", "sports_officer", "sports_supervisor", "sports_trainer","military_officer", "military_supervisor", "military_trainer"]}>
       <div className="max-w-6xl mx-auto pb-10 md:pb-24" dir="rtl"> {/* زيادة العرض لـ max-w-6xl */}
@@ -1196,31 +1224,45 @@ const removeDayRow = (templateId: string, dayName: string) => {
           </div>
 
           <TabsList className="grid w-full h-auto grid-cols-4 md:grid-cols-8 gap-2 bg-slate-200/50 p-1 rounded-xl">
-    {["owner", "manager", "admin", "military_officer"].includes(userRole || "") && (
-    <TabsTrigger value="mil-standards" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white transition-all">
-        معايير العسكري
-    </TabsTrigger>
-)}
-{["owner", "manager", "admin", "assistant_admin","sports_officer"].includes(userRole || "") && (
-    <TabsTrigger value="standards" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-green-600 data-[state=active]:text-white transition-all">
-        معايير اللياقة
-    </TabsTrigger>
-)}
-{["owner", "manager", "admin","sports_officer"].includes(userRole || "") && (
-    <TabsTrigger value="engagement" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-orange-600 data-[state=active]:text-white transition-all">
-        معايير الاشتباك
-    </TabsTrigger>
-)}
+    
+    {/* 1. معايير العسكري */}
+    {(["owner", "manager", "admin", "military_officer"].includes(userRole || "") || 
+      currentUser?.extra_permissions?.includes("military_standards")) && (
+        <TabsTrigger value="mil-standards" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            معايير العسكري
+        </TabsTrigger>
+    )}
 
-    {["owner", "manager", "admin"].includes(userRole || "") && (
-    <TabsTrigger value="disciplinary" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-amber-700 data-[state=active]:text-white transition-all">
-        لائحة المخالفات
-    </TabsTrigger>
-)}
-{["owner", "manager", "admin"].includes(userRole || "") && (
-    <TabsTrigger value="training-schedule" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-amber-500 data-[state=active]:text-white transition-all">
-        البرنامج التدريبي
-    </TabsTrigger>
+    {/* 2. معايير اللياقة */}
+    {(["owner", "manager", "admin", "assistant_admin", "sports_officer"].includes(userRole || "") || 
+      currentUser?.extra_permissions?.includes("fitness_standards")) && (
+        <TabsTrigger value="standards" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-green-600 data-[state=active]:text-white">
+            معايير اللياقة
+        </TabsTrigger>
+    )}
+
+    {/* 3. معايير الاشتباك */}
+    {(["owner", "manager", "admin", "sports_officer"].includes(userRole || "") || 
+      currentUser?.extra_permissions?.includes("combat_standards")) && (
+        <TabsTrigger value="engagement" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
+            معايير الاشتباك
+        </TabsTrigger>
+    )}
+
+    {/* 4. لائحة المخالفات */}
+    {(["owner", "manager", "admin"].includes(userRole || "") || 
+      currentUser?.extra_permissions?.includes("disciplinary_regulations")) && (
+        <TabsTrigger value="disciplinary" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-amber-700 data-[state=active]:text-white">
+            لائحة المخالفات
+        </TabsTrigger>
+    )}
+
+    {/* 5. البرنامج التدريبي */}
+    {(["owner", "manager", "admin"].includes(userRole || "") || 
+      currentUser?.extra_permissions?.includes("training_program")) && (
+        <TabsTrigger value="training-schedule" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-amber-500 data-[state=active]:text-white">
+            البرنامج التدريبي
+        </TabsTrigger>
     )}
     <TabsTrigger value="appearance" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-cyan-700 data-[state=active]:text-white transition-all">
         المظهر
@@ -1238,6 +1280,7 @@ const removeDayRow = (templateId: string, dayName: string) => {
 
         {/* 🔵 تاب معايير العسكري */}
         <TabsContent value="mil-standards">
+          {(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("military_standards")) ? (
           <Card className="border-t-4 border-t-blue-600 shadow-md">
             <CardHeader className="text-right pb-2">
               <CardTitle className="text-blue-700">إدارة اختبارات التدريب العسكري</CardTitle>
@@ -1284,10 +1327,20 @@ const removeDayRow = (templateId: string, dayName: string) => {
               </Button>
             </CardFooter>
           </Card>
+          ) : (
+
+        // ❌ إذا لا: اظهر له هذه الرسالة بدلاً من الجدول
+        <div className="flex flex-col items-center justify-center p-20 bg-slate-50 rounded-2xl border-2 border-dashed">
+             <Lock className="w-12 h-12 text-slate-300 mb-4" />
+             <p className="font-bold text-slate-500">عذراً، لا تملك صلاحية الوصول لهذا القسم.</p>
+        </div>
+
+    )}
         </TabsContent>
 
         {/* 🟢 تاب معايير اللياقة */}
         <TabsContent value="standards">
+{(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("fitness_standards")) ? (
           <Card className="border-t-4 border-t-green-600 shadow-md">
             <CardHeader className="text-right">
               <CardTitle>قواعد التقييم الرياضي</CardTitle>
@@ -1326,10 +1379,20 @@ const removeDayRow = (templateId: string, dayName: string) => {
               </Button>
             </CardFooter>
           </Card>
+          ) : (
+
+        // ❌ إذا لا: اظهر له هذه الرسالة بدلاً من الجدول
+        <div className="flex flex-col items-center justify-center p-20 bg-slate-50 rounded-2xl border-2 border-dashed">
+             <Lock className="w-12 h-12 text-slate-300 mb-4" />
+             <p className="font-bold text-slate-500">عذراً، لا تملك صلاحية الوصول لهذا القسم.</p>
+        </div>
+
+    )}
         </TabsContent>
 
        {/* 🟠 تاب معايير الاشتباك - نسخة مطورة */}
 <TabsContent value="engagement">
+  {(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("combat_standards")) ? (
   <Card className="border-t-4 border-t-orange-600 shadow-md">
     <CardHeader className="text-right pb-2">
       <CardTitle className="text-orange-700">إدارة معايير الاشتباك</CardTitle>
@@ -1480,9 +1543,19 @@ const removeDayRow = (templateId: string, dayName: string) => {
   </Button>
 </CardFooter>
   </Card>
+  ) : (
+
+        // ❌ إذا لا: اظهر له هذه الرسالة بدلاً من الجدول
+        <div className="flex flex-col items-center justify-center p-20 bg-slate-50 rounded-2xl border-2 border-dashed">
+             <Lock className="w-12 h-12 text-slate-300 mb-4" />
+             <p className="font-bold text-slate-500">عذراً، لا تملك صلاحية الوصول لهذا القسم.</p>
+        </div>
+
+    )}
 </TabsContent>
 
 <TabsContent value="disciplinary">
+{(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("disciplinary_regulations")) ? (
   <Card className="border-t-4 border-t-amber-700 shadow-md">
     <CardHeader className="text-right">
       <CardTitle className="text-amber-800 flex items-center gap-2">
@@ -1653,6 +1726,7 @@ const removeDayRow = (templateId: string, dayName: string) => {
                 ))}
               </div>
             ))}
+            
         </TabsContent>
 
         {/* 2. محتوى الدورات التخصصية (كما كان) */}
@@ -1786,6 +1860,15 @@ const removeDayRow = (templateId: string, dayName: string) => {
       </Button>
     </CardFooter>
   </Card>
+ ) : (
+
+        // ❌ إذا لا: اظهر له هذه الرسالة بدلاً من الجدول
+        <div className="flex flex-col items-center justify-center p-20 bg-slate-50 rounded-2xl border-2 border-dashed">
+             <Lock className="w-12 h-12 text-slate-300 mb-4" />
+             <p className="font-bold text-slate-500">عذراً، لا تملك صلاحية الوصول لهذا القسم.</p>
+        </div>
+
+    )}
 </TabsContent>
         {/* 🎨 تاب المظهر */}
         <TabsContent value="appearance">
@@ -1891,6 +1974,7 @@ const removeDayRow = (templateId: string, dayName: string) => {
           </Card>
         </TabsContent>
       <TabsContent value="training-schedule">
+{(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("training_program")) ? (
             <Card className="border-t-4 border-t-amber-500 shadow-md">
               {/* ... (Header كما هو) ... */}
               <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -2124,6 +2208,15 @@ const removeDayRow = (templateId: string, dayName: string) => {
                 </Button>
               </CardFooter>
             </Card>
+             ) : (
+
+        // ❌ إذا لا: اظهر له هذه الرسالة بدلاً من الجدول
+        <div className="flex flex-col items-center justify-center p-20 bg-slate-50 rounded-2xl border-2 border-dashed">
+             <Lock className="w-12 h-12 text-slate-300 mb-4" />
+             <p className="font-bold text-slate-500">عذراً، لا تملك صلاحية الوصول لهذا القسم.</p>
+        </div>
+
+    )}
           </TabsContent>
       </Tabs>
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

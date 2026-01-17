@@ -62,7 +62,7 @@ export default function MergeAndProcessingPage() {
   const [dialogCourse, setDialogCourse] = useState("")
   const [dialogBatch, setDialogBatch] = useState("")
   const [selectedDraft, setSelectedDraft] = useState<DraftItem | null>(null)
-  
+  const [highlightedUnlinked, setHighlightedUnlinked] = useState<string[]>([])
   // --- Delete States (للنوافذ المنبثقة) ---
   const [draftToDelete, setDraftToDelete] = useState<number | null>(null)
   const [entryToDelete, setEntryToDelete] = useState<number | null>(null)
@@ -83,6 +83,9 @@ const [cardsPerPage, setCardsPerPage] = useState(10);
   const [saveMethod, setSaveMethod] = useState<'trainer' | 'officer' | 'average'>('average')
   const [canEditScores, setCanEditScores] = useState(false)
   const [canEditEverything, setCanEditEverything] = useState(false);
+  const [showWarningsDialog, setShowWarningsDialog] = useState(false)
+const [pendingMergeData, setPendingMergeData] = useState<any[]>([])
+const [mergeWarnings, setMergeWarnings] = useState({ missing_scores: [], unlinked_results: [] })
 // ترقيم سجل الإدخالات اليومي
 const [dailyPage, setDailyPage] = useState(1);
 // ترقيم المسودات
@@ -209,7 +212,13 @@ const [draftsPage, setDraftsPage] = useState(1);
 
   const startEdit = (row: any) => { setEditingRowId(row.id); setEditFormData({ ...row }) }
   const cancelEdit = () => { setEditingRowId(null); setEditFormData({}) }
-  
+  const handleNoteChange = (index: number, newNote: string) => {
+    setTableData(prev => {
+        const newData = [...prev];
+        newData[index] = { ...newData[index], notes: newNote };
+        return newData;
+    });
+};
   const saveEdit = async () => {
       try {
           const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/processing/entry/${editingRowId}`, {
@@ -306,16 +315,16 @@ const [draftsPage, setDraftsPage] = useState(1);
   };
 
 const handleMerge = async () => {
+    setHighlightedUnlinked([]);
+    
     if (!dialogCourse) {
         toast.error("عفواً، يجب اختيار اسم الدورة أولاً");
         return;
     }
 
-    // 🟢 تنظيف قيمة الدفعة: إذا كانت "مسافة" أو "null" نحولها لنص فارغ تماماً
     const cleanBatch = dialogBatch?.trim() === "" ? "" : dialogBatch;
-
     setIsProcessing(true);
-    const toastId = toast.loading("جاري المطابقة...");
+    const toastId = toast.loading("جاري المطابقة ومعالجة البيانات...");
 
     try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/processing/merge-preview`, {
@@ -327,55 +336,66 @@ const handleMerge = async () => {
             body: JSON.stringify({ 
                 target_date: selectedDate, 
                 course: dialogCourse, 
-                batch: cleanBatch, // 👈 نرسل القيمة المنظفة
+                batch: cleanBatch,
                 mode: "tested_only", 
                 company: "all", 
                 platoon: "all" 
             })
         });
 
-        // 🚨 الحالة 1: وجود تعارض (تكرار شباحات)
-        if (res.status === 409) {
-            const result = await res.json();
-            if (isCommitteeMode) {
-                prepareCommitteeData(result.conflicts); 
-                toast.dismiss(toastId);
-            } else {
-                toast.error("فشل الدمج: يوجد تكرار في أرقام الشباحات. يرجى التصحيح.", { duration: 5000 });
-                toast.dismiss(toastId);
-                setPageMode('raw'); 
-                return;
-            }
-        } 
-        // ✅ الحالة 2: نجاح العملية
-        else if (res.ok) {
-            const data = await res.json();
-            if (data.length === 0) {
-                toast.warning("لا توجد نتائج مطابقة لهذه الدورة (تأكد من رقم الدفعة)", { id: toastId });
-            } else {
-                if (isCommitteeMode) {
-                    prepareCommitteeDataFromNormal(data);
-                } else {
-                    setTableData(data);
-                    setPageMode('merged');
-                }
-                toast.success(`تم جلب ${data.length} سجل بنجاح`, { id: toastId });
-            }
-        } 
-        // ⚠️ الحالة 3: الأخطاء المنطقية القادمة من السيرفر (مثل غياب الدفعة)
-        else {
-            const errorData = await res.json();
-            // هنا يظهر تنبيه "يجب تحديد الدفعة" القادم من الباك إند
-            toast.error(errorData.detail || "حدث خطأ أثناء الدمج", { id: toastId });
-        }
+        const result = await res.json();
+        const isConflict = res.status === 409;
 
+        if (res.ok || isConflict) {
+            const warnings = result.warnings || { missing_scores: [], unlinked_results: [] };
+            const missingScores = warnings.missing_scores || [];
+            const unlinkedResults = warnings.unlinked_results || [];
+            const mainData = isConflict ? (result.conflicts || []) : (result.data || result);
+
+            // تمييز النتائج التائهة بالأصفر في الجدول الخام
+            const unlinkedKeys = unlinkedResults.map((r: any) => 
+                `${r.shabaha}_${String(r.color).toLowerCase()}`
+            );
+            setHighlightedUnlinked(unlinkedKeys);
+
+            // 🟢 1. فحص التحذيرات أولاً (حارس البوابة)
+            if (missingScores.length > 0 || unlinkedResults.length > 0) {
+                setPendingMergeData(mainData);
+                setMergeWarnings({ missing_scores: missingScores, unlinked_results: unlinkedResults });
+                setShowWarningsDialog(true);
+                toast.dismiss(toastId);
+                return; 
+            } 
+
+            // ⚪ 2. إذا كانت البيانات نظيفة، نطبق منطق اللجان أو الدمج العادي
+            if (isConflict) {
+                if (isCommitteeMode) {
+                    prepareCommitteeData(result.conflicts);
+                } else {
+                    toast.error("فشل الدمج: يوجد تكرار في أرقام الشباحات. يرجى التصحيح في الجدول.");
+                    setPageMode('raw');
+                }
+            } else {
+                if (mainData.length === 0) {
+                    toast.warning("لا توجد نتائج مطابقة لهذه الدورة");
+                } else {
+                    if (isCommitteeMode) prepareCommitteeDataFromNormal(mainData);
+                    else { setTableData(mainData); setPageMode('merged'); }
+                    toast.success(`تم جلب ${mainData.length} سجل بنجاح`);
+                }
+            }
+            toast.dismiss(toastId);
+        } else {
+            toast.error(result.detail || "حدث خطأ في السيرفر");
+            toast.dismiss(toastId);
+        }
     } catch (e) { 
-        toast.error("خطأ في الاتصال بالسيرفر", { id: toastId }); 
+        toast.error("خطأ في الاتصال بالسيرفر");
+        toast.dismiss(toastId);
     } finally { 
-        // إغلاق حالة التحميل مهما كانت النتيجة
         setIsProcessing(false); 
     }
-}
+};
 
   const prepareCommitteeData = (conflicts: any[]) => {
       const allEntries: any[] = [];
@@ -407,23 +427,43 @@ const handleMerge = async () => {
       const sourceData = isCommitteeMode ? rawDataCache : (pageMode === 'raw' ? tableData : rawDataCache);
       const soldierMap: Record<string, any> = {};
 
-      sourceData.forEach(row => {
+     sourceData.forEach(row => {
           const key = (row.military_id ? String(row.military_id) : String(row.shabaha_number)).trim();
+          
           if (!soldierMap[key]) {
-              soldierMap[key] = { ...row, trainer_push: null, trainer_sit: null, trainer_notes: "", officer_push: null, officer_sit: null, officer_notes: "" };
+              soldierMap[key] = { 
+                  ...row, 
+                  notes: "", // 🟢 نبدأ بمسودة فارغة تماماً لمنع تسرب ملاحظات المدربين للصندوق
+                  trainer_push: null, 
+                  trainer_sit: null, 
+                  trainer_notes: "", 
+                  officer_push: null, 
+                  officer_sit: null, 
+                  officer_notes: "" 
+              };
           }
+
           const valPush = row.push !== undefined ? row.push : row.push_count;
           const valSit = row.sit !== undefined ? row.sit : row.sit_count;
           const role = enterersMap[row.entered_by];
 
+          // 1. إذا كان السجل يخص مدرب -> نضع ملاحظته في مخزن المدرب فقط
           if (role === 'trainer') {
-              soldierMap[key].trainer_push = valPush; soldierMap[key].trainer_sit = valSit;
-              if (row.notes) soldierMap[key].trainer_notes = row.notes;
-          } else if (role === 'officer') {
-              soldierMap[key].officer_push = valPush; soldierMap[key].officer_sit = valSit;
-              if (row.notes) soldierMap[key].officer_notes = row.notes;
-          } else {
-              soldierMap[key].trainer_push = valPush; soldierMap[key].trainer_sit = valSit;
+              soldierMap[key].trainer_push = valPush; 
+              soldierMap[key].trainer_sit = valSit;
+              soldierMap[key].trainer_notes = row.notes || "";
+          } 
+          // 2. إذا كان السجل يخص ضابط -> نضع ملاحظته في مخزن الضابط فقط
+          else if (role === 'officer') {
+              soldierMap[key].officer_push = valPush; 
+              soldierMap[key].officer_sit = valSit;
+              soldierMap[key].officer_notes = row.notes || "";
+          } 
+          
+          // 3. 🟢 الجزء الأهم: ملاحظة الشباحة (الإدارية)
+          // إذا وجدنا ملاحظة في سجل ليس له "مدخل بيانات" (أو مدخله هو النظام)، فهذه هي ملاحظة الشباحة
+          if (row.notes && (!row.entered_by || row.entered_by === "" || row.entered_by === "نظام")) {
+              soldierMap[key].notes = row.notes;
           }
       });
 
@@ -510,12 +550,21 @@ const handleMerge = async () => {
     let dataToExport = [];
     
     if (isCommitteeMode && (pageMode === 'merged' || pageMode === 'official')) {
-      dataToExport = tableData.map((row, idx) => ({
-        "م": idx + 1, "الرقم العسكري": row.military_id, "الإسم": row.name, "السرية": row.company, "الفصيل": row.platoon,
-        "الضغط (مدرب)": formatScore(row.trainer_push), "البطن (مدرب)": formatScore(row.trainer_sit),
-        "الضغط (ضابط)": formatScore(row.officer_push), "البطن (ضابط)": formatScore(row.officer_sit),
-        "الجري": row.run_time || "", "الملاحظات": row.notes || ""
-      }));
+     dataToExport = tableData.map((row, idx) => ({
+      "م": idx + 1, 
+      "الرقم العسكري": row.military_id, 
+      "الإسم": row.name, 
+      "السرية": row.company, 
+      "الفصيل": row.platoon,
+      "الضغط (مدرب)": formatScore(row.trainer_push), 
+      "البطن (مدرب)": formatScore(row.trainer_sit),
+      "ملاحظات المدرب": row.trainer_notes || "", // 🔵 عمود جديد
+      "الضغط (ضابط)": formatScore(row.officer_push), 
+      "البطن (ضابط)": formatScore(row.officer_sit),
+      "ملاحظات الضابط": row.officer_notes || "", // 🔵 عمود جديد
+      "الجري": row.run_time || "", 
+      "الملاحظات النهائية": row.notes || "" // 🔵 ملاحظة الشباحة أو التعديل اليدوي
+    }));
     } else if (pageMode === 'official' || pageMode === 'merged') {
       dataToExport = tableData.map((row, idx) => ({
         "م": idx + 1, "الرقم العسكري": row.military_id, "الإسم": row.name, "السرية": row.company, "الفصيل": row.platoon,
@@ -766,7 +815,8 @@ const paginatedDrafts = useMemo(() => {
             <div className="overflow-x-auto">
                 <Table className="w-full border-collapse border border-slate-300 text-sm">
                     <TableHeader>
-                        {isCommitteeMode && (pageMode === 'merged' || pageMode === 'official') ? (
+                        {/* 🟢 التعديل: لا تعرض شكل اللجان إذا كنا داخل مسودة محفوظة */}
+{(isCommitteeMode && !selectedDraft) && (pageMode === 'merged' || pageMode === 'official') ? (
                             <>
                                 <TableRow className="bg-[#c5b391]">
                                     <TableHead rowSpan={2} className="border border-black text-center text-black font-bold w-10">#</TableHead>
@@ -819,15 +869,26 @@ const paginatedDrafts = useMemo(() => {
                         )}
                     </TableHeader>
                     <TableBody>
-                        {tableData.map((row, idx) => {
-                            const isDuplicate = duplicateIds.has(row.id);
-                            const isEditing = editingRowId === row.id;
+    {tableData.map((row, idx) => {
+        const isDuplicate = duplicateIds.has(row.id);
+        const isEditing = editingRowId === row.id;
+        
+        // 🔵 جديد: التحقق هل هذا الصف من "النتائج التائهة"؟
+        const rowKey = `${row.shabaha_number}_${String(row.shabaha_color).toLowerCase()}`;
+        const isUnlinked = highlightedUnlinked.includes(rowKey);
 
-                            return (
-                                <TableRow key={idx} className={`border-b border-black hover:bg-slate-50 ${isDuplicate && pageMode === 'raw' ? "bg-red-100 print:bg-white" : ""}`}>
+        return (
+            <TableRow 
+                key={idx} 
+                className={`border-b border-black hover:bg-slate-50 
+                    ${isDuplicate && pageMode === 'raw' ? "bg-red-100 print:bg-white" : ""}
+                    ${isUnlinked && pageMode === 'raw' ? "bg-yellow-100 border-yellow-400" : ""} 
+                `}
+            >
                                     <TableCell className="text-center border border-black font-mono">{idx + 1}</TableCell>
                                     
-                                    {isCommitteeMode && (pageMode === 'merged' || pageMode === 'official') ? (
+                                    {/* 🟢 التعديل: لا تعرض بيانات اللجان إذا كنا داخل مسودة محفوظة */}
+{(isCommitteeMode && !selectedDraft) && (pageMode === 'merged' || pageMode === 'official') ? (
                                         <>
                                             <TableCell className="text-center border border-black font-bold">{row.rank || "-"}</TableCell>
                                             <TableCell className="text-center border border-black font-bold">{row.military_id}</TableCell>
@@ -839,10 +900,25 @@ const paginatedDrafts = useMemo(() => {
                                             <TableCell className="text-center border border-black bg-green-50 font-bold">{row.officer_push ?? "-"}</TableCell>
                                             <TableCell className="text-center border border-black bg-green-50 font-bold">{row.officer_sit ?? "-"}</TableCell>
                                             <TableCell className="text-center border border-black bg-purple-50 font-bold">{row.run_time || "--:--"}</TableCell>
-                                            <TableCell className="border border-black p-1 text-[10px]">
-                                                {row.trainer_notes && <div className="text-blue-700">م: {row.trainer_notes}</div>}
-                                                {row.officer_notes && <div className="text-green-700">ض: {row.officer_notes}</div>}
-                                            </TableCell>
+                                            <TableCell className="p-0 border border-black min-w-[200px]">
+    <div className="flex flex-col gap-0.5">
+        {/* عرض الملاحظات الفنية كمرجع سريع (اختياري) */}
+        {(row.trainer_notes || row.officer_notes) && (
+            <div className="flex flex-wrap gap-1 px-2 pt-1 border-b border-slate-100 bg-slate-50/50">
+                {row.trainer_notes && <span className="text-[9px] text-blue-600 font-bold">م: {row.trainer_notes}</span>}
+                {row.officer_notes && <span className="text-[9px] text-green-600 font-bold">ض: {row.officer_notes}</span>}
+            </div>
+        )}
+        
+        {/* صندوق الملاحظة النهائي القابل للتعديل */}
+        <Input 
+            value={row.notes || ""} 
+            onChange={(e) => handleNoteChange(idx, e.target.value)}
+            placeholder="الملاحظة النهائية..."
+            className="h-9 w-full border-none bg-transparent focus:bg-yellow-50 text-[10px] px-2 text-right shadow-none rounded-none"
+        />
+    </div>
+</TableCell>
                                         </>
                                     ) : (
                                         pageMode === 'raw' ? (
@@ -921,7 +997,14 @@ const paginatedDrafts = useMemo(() => {
                                                 <TableCell className="text-center border border-black font-bold">{row.push_count || "-"}</TableCell>
                                                 <TableCell className="text-center border border-black font-bold">{row.sit_count || "-"}</TableCell>
                                                 <TableCell className="text-center border border-black font-bold">{row.run_time || "--:--"}</TableCell>
-                                                <TableCell className="text-right border border-black px-2 text-xs">{row.notes}</TableCell>
+                                                <TableCell className="p-0 border border-black min-w-[150px]">
+    <Input 
+        value={row.notes || ""} 
+        onChange={(e) => handleNoteChange(idx, e.target.value)}
+        placeholder="أضف ملاحظة..."
+        className="h-8 w-full border-none bg-transparent focus:bg-yellow-50 text-[10px] px-2 text-right shadow-none rounded-none placeholder:text-slate-300"
+    />
+</TableCell>
                                             </>
                                         )
                                     )}
@@ -1016,6 +1099,93 @@ const paginatedDrafts = useMemo(() => {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+            {/* 🟢 نافذة التنبيهات الذكية (تظهر عند وجود نقص أو نتائج تائهة) */}
+<AlertDialog open={showWarningsDialog} onOpenChange={setShowWarningsDialog}>
+    <AlertDialogContent dir="rtl" className="max-w-2xl bg-white rounded-2xl border-2 shadow-2xl">
+        <AlertDialogHeader className="items-start text-right">
+    <div className="flex items-center gap-2 text-amber-600 mb-2">
+        <ShieldAlert className="w-6 h-6" />
+        <AlertDialogTitle className="text-xl font-black">مراجعة دقة البيانات قبل الدمج</AlertDialogTitle>
+    </div>
+    {/* تأكد من وجود هذا السطر وبداخله نص */}
+    <AlertDialogDescription className="text-slate-600 font-bold">
+        اكتشف النظام بعض الملاحظات الهامة التي يجب مراجعتها قبل اعتماد الكشف الرسمي:
+    </AlertDialogDescription>
+</AlertDialogHeader>
+
+        <div className="space-y-4 max-h-[40vh] overflow-y-auto my-4 p-2 bg-slate-50 rounded-lg border">
+            {/* السيناريو 1: طلاب بلا درجات */}
+            {mergeWarnings.missing_scores.length > 0 && (
+                <div className="space-y-2">
+                    <h4 className="text-sm font-black text-red-700 flex items-center gap-1">⚠️طلاب لديهم شباحات مسجلة ولم تظهر نتائجهم في الرصد:</h4>
+                    <div className="grid grid-cols-1 gap-1">
+                        {mergeWarnings.missing_scores.map((s:any, i:number) => (
+                            <div key={i} className="text-[11px] bg-red-50 p-2 rounded border border-red-100 flex justify-between">
+                                <span>{s.name} ({s.military_id})</span>
+                                <Badge variant="outline" className="bg-white">شباحة: {s.shabaha} {COLOR_MAP[s.color] || s.color}</Badge>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* السيناريو 2: درجات بلا طلاب */}
+            {mergeWarnings.unlinked_results.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-slate-200">
+                    <h4 className="text-sm font-black text-blue-700 flex items-center gap-1">🔍 نتائج مرصودة لشباحات غير مسجلة لطلاب (تائهة):</h4>
+                    <div className="grid grid-cols-2 gap-2">
+                        {mergeWarnings.unlinked_results.map((r:any, i:number) => (
+                            <div key={i} className="text-[10px] bg-blue-50 p-2 rounded border border-blue-100 flex flex-col">
+                                <span className="font-bold">شباحة: {r.shabaha} {COLOR_MAP[r.color] || r.color}</span>
+                                <span className="opacity-70">الدرجة: ضغط {r.push} - بطن {r.sit}</span>
+                                <span className="text-blue-800 font-black">المدخل: {r.entered_by}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
+
+        <AlertDialogFooter className="flex-row-reverse gap-2 sm:justify-center border-t pt-4">
+          <AlertDialogAction 
+    onClick={() => {
+        // 1. هل البيانات التي ننتظر دمجها هي بيانات "تعارض" (تكرار)؟
+        const isConflictData = pendingMergeData.length > 0 && pendingMergeData[0].entries;
+
+        if (isConflictData) {
+            // 🚨 حالة وجود تكرار
+            if (isCommitteeMode) {
+                // ✅ إذا المشرف مفعّل نظام اللجان -> نفتح نافذة الضابط/المدرب
+                prepareCommitteeData(pendingMergeData);
+            } else {
+                // ❌ إذا المشرف غير مفعّل نظام اللجان -> نرفض الدمج ونعطيه رسالة خطأ كما كان سابقاً
+                toast.error("فشل الدمج: يوجد تكرار في أرقام الشباحات. يرجى التصحيح في الجدول.");
+                setPageMode('raw');
+            }
+        } else {
+            // ✅ حالة الدمج الطبيعي (لا يوجد تكرار)
+            if (isCommitteeMode) {
+                prepareCommitteeDataFromNormal(pendingMergeData);
+            } else {
+                setTableData(pendingMergeData);
+                setPageMode('merged');
+            }
+        }
+        setShowWarningsDialog(false);
+    }}
+    className="bg-green-600 hover:bg-green-700 text-white font-bold flex-1"
+>
+    استكمال العملية (تجاهل)
+</AlertDialogAction>
+            <AlertDialogCancel 
+                onClick={() => setShowWarningsDialog(false)}
+                className="font-bold flex-1 border-slate-200"
+            >
+                تراجع لتصحيح البيانات
+            </AlertDialogCancel>
+        </AlertDialogFooter>
+    </AlertDialogContent>
+</AlertDialog>
         </div>
         </ProtectedRoute>
       );
@@ -1250,6 +1420,7 @@ const paginatedDrafts = useMemo(() => {
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      
     </div>
     </ProtectedRoute>
   )

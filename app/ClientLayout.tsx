@@ -329,7 +329,7 @@ const handleLogout = async () => {
 
    if (item.id === "tr-sp-forms") {
         // التعديل: أضفنا sports_supervisor
-        const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "sports_supervisor"];
+        const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer"];
         if (isLoading || !allowed.includes(userRole || "")) return null;
     }
 

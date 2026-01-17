@@ -77,7 +77,8 @@ export default function ShabahaEntryPage() {
   const [currentNoteId, setCurrentNoteId] = useState<number | null>(null)
   const [tempNote, setTempNote] = useState("")
 const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-const [resetTarget, setResetTarget] = useState<'shabaha' | 'chip' | null>(null);
+// استبدل السطر القديم بهذا
+const [resetTarget, setResetTarget] = useState<'shabaha' | 'chip' | 'notes' | null>(null);
   // --- 1. جلب خيارات الفلاتر ---
   useEffect(() => {
       fetchFilterOptions()
@@ -135,7 +136,7 @@ const [resetTarget, setResetTarget] = useState<'shabaha' | 'chip' | null>(null);
   }
 
 // هذه الدالة ستُستدعى عند ضغط الزر الأحمر
-const openConfirmDialog = (target: 'shabaha' | 'chip') => {
+const openConfirmDialog = (target: 'shabaha' | 'chip' | 'notes') => {
     setResetTarget(target);
     setIsConfirmOpen(true);
 };
@@ -167,6 +168,7 @@ const executeBulkReset = async () => {
         if (res.ok) {
             toast.success("تم تصفير البيانات بنجاح ✅");
             await fetchAssignments(); 
+            await fetchSoldiers();
         } else {
             toast.error("فشل في عملية المسح");
         }
@@ -456,27 +458,38 @@ const handlePrintPDF = async () => {
         {soldiers.length > 0 && (
     <div className="flex gap-2 flex-wrap">
         {/* 🛡️ أزرار المسح الجماعي - تظهر فقط للإدارة بناءً على الرتبة (userRole) */}
-        {["owner", "manager", "admin", "assistant_admin"].includes(userRole) && (
-            <>
-                <Button 
-                    variant="destructive" 
-                    size="sm"
-                    onClick={() => openConfirmDialog('shabaha')}
-                    className="gap-2 h-10 border-2 border-red-200 bg-red-600 hover:bg-red-700 text-white"
-                >
-                    <RefreshCw className="w-4 h-4"/> مسح الشباحات
-                </Button>
-                
-                <Button 
-                    variant="destructive" 
-                    size="sm"
-                    onClick={() => openConfirmDialog('chip')}
-                    className="gap-2 h-10 border-2 border-red-200 bg-red-600 hover:bg-red-700 text-white"
-                >
-                    <Trash2 className="w-4 h-4"/> مسح الشرائح
-                </Button>
-            </>
-        )}
+       {/* 🛡️ أزرار المسح الجماعي المحدثة */}
+{["owner", "manager", "admin", "assistant_admin"].includes(userRole) && (
+    <div className="flex gap-2 flex-wrap">
+        <Button 
+            variant="destructive" 
+            size="sm"
+            onClick={() => openConfirmDialog('shabaha')}
+            className="gap-2 h-10 border-2 border-red-200 bg-red-600 hover:bg-red-700 text-white"
+        >
+            <RefreshCw className="w-4 h-4"/> مسح الشباحات
+        </Button>
+        
+        <Button 
+            variant="destructive" 
+            size="sm"
+            onClick={() => openConfirmDialog('chip')}
+            className="gap-2 h-10 border-2 border-red-200 bg-red-600 hover:bg-red-700 text-white"
+        >
+            <Trash2 className="w-4 h-4"/> مسح الشرائح
+        </Button>
+
+        {/* 🟢 الزر الجديد: مسح الملاحظات */}
+        <Button 
+            variant="destructive" 
+            size="sm"
+            onClick={() => openConfirmDialog('notes')}
+            className="gap-2 h-10 border-2 border-orange-200 bg-orange-600 hover:bg-orange-700 text-white"
+        >
+            <FileText className="w-4 h-4"/> مسح الملاحظات
+        </Button>
+    </div>
+)}
         
         <Button variant="outline" onClick={handlePrintPDF} className="gap-2"><Printer className="w-4 h-4"/> طباعة</Button>
         <Button variant="outline" onClick={handleExportExcel} className="gap-2 border-green-600 text-green-700 hover:bg-green-50"><Download className="w-4 h-4"/> Excel</Button>
@@ -822,12 +835,12 @@ const handlePrintPDF = async () => {
                 تأكيد عملية المسح الجماعي
             </AlertDialogTitle>
             <AlertDialogDescription className="text-base py-4 text-slate-600 leading-relaxed">
-                {resetTarget === 'shabaha' 
-                    ? "أنت على وشك مسح جميع أرقام وألوان الشباحات لهذا الفرز. هل أنت متأكد من الاستمرار؟" 
-                    : "أنت على وشك مسح جميع أرقام الشرائح الإلكترونية لهذا الفرز. هل أنت متأكد من الاستمرار؟"}
-                <br />
-                <span className="font-bold text-red-500 mt-2 block">⚠️ ملاحظة: لا يمكن التراجع عن هذه العملية بعد التنفيذ.</span>
-            </AlertDialogDescription>
+    {resetTarget === 'shabaha' && "أنت على وشك مسح جميع أرقام وألوان الشباحات لهذا الفرز."}
+    {resetTarget === 'chip' && "أنت على وشك مسح جميع أرقام الشرائح الإلكترونية لهذا الفرز."}
+    {resetTarget === 'notes' && "أنت على وشك مسح جميع الملاحظات المسجلة لهذا الفرز."}
+    <br />
+    <span className="font-bold text-red-500 mt-2 block">⚠️ ملاحظة: لا يمكن التراجع عن هذه العملية بعد التنفيذ.</span>
+</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter className="gap-2 sm:gap-0">
             <AlertDialogCancel className="bg-slate-100">تراجع</AlertDialogCancel>

@@ -989,15 +989,15 @@ const handleFetchTrainerScores = async () => {
                                                         <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["تقدير الجري"] || s.run_grade || "-"}</TableCell>
 
                                                         <TableCell className="border-l border-black">{s["الضغط"] || s.pushups || "-"}</TableCell>
-                                                        <TableCell className="border-l border-black text-[10px]">{s["درجة الضغط"] || s.push_score || "-"}</TableCell>
+                                                        <TableCell className="border-l border-black text-[10px]">{s["درجة الضغط"] ?? s.push_score ?? "-"}</TableCell>
                                                         <TableCell className="border-l border-black text-[10px]">{s["تقدير الضغط"] || s.push_grade || "-"}</TableCell>
 
                                                         <TableCell className="border-l border-black bg-slate-50/50">{s["البطن"] || s.situps || "-"}</TableCell>
-                                                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["درجة البطن"] || s.sit_score || "-"}</TableCell>
+                                                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["درجة البطن"] ?? s.sit_score ?? "-"}</TableCell>
                                                         <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["تقدير البطن"] || s.sit_grade || "-"}</TableCell>
 
                                                         <TableCell className="border-l border-black font-black text-lg">
-                                                            {s["الدرجة النهائية"] || s.average || "-"}
+                                                            {s["الدرجة النهائية"] ?? s.average ?? "-"}
                                                         </TableCell>
                                                     </>
                                                 ) : (

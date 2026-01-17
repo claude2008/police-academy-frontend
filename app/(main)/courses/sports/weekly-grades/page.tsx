@@ -40,7 +40,7 @@ const VIOLATION_RULES: Record<string, { b: number, e: number, c: number }> = {
     'إجازة إدارية': { b: 1.5, e: 2, c: 2 }
 };
 
-const DRAFT_KEY = "weekly_grades_draft";
+
 
 export default function WeeklyGradesPage() {
     // --- State ---
@@ -116,28 +116,10 @@ export default function WeeklyGradesPage() {
         } catch (e) { /* ignore */ }
 
         // استعادة المسودة
-        const saved = localStorage.getItem(DRAFT_KEY)
-        if (saved) {
-            try {
-                const draft = JSON.parse(saved)
-                if (draft) {
-                    setWeekTitle(draft.weekTitle || "")
-                    setStartDate(draft.startDate || "")
-                    setEndDate(draft.endDate || "")
-                    setSoldiers(draft.soldiers || [])
-                    if (draft.selectedPeriod) setSelectedPeriod(draft.selectedPeriod);
-                    toast.info("تم استعادة مسودة سابقة غير محفوظة")
-                }
-            } catch (e) {}
-        }
+        
+        
     }, [isClient])
 
-    useEffect(() => {
-        if (isClient && soldiers.length > 0) {
-            const draft = { weekTitle, startDate, endDate, soldiers, selectedPeriod }
-            localStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-        }
-    }, [soldiers, weekTitle, startDate, endDate, selectedPeriod, isClient])
 
     useEffect(() => { setCurrentPage(1); }, [soldiers.length, itemsPerPage])
 
@@ -156,13 +138,14 @@ export default function WeeklyGradesPage() {
 
     // --- Logic ---
     const fetchData = async () => {
+
         if (!startDate || !endDate || !weekTitle) {
             return toast.error("الرجاء إدخال العنوان والتاريخ");
         }
         if (filterCourse === "طلبة الدبلوم" && !selectedPeriod) {
             return toast.error("الرجاء اختيار الفترة الدراسية لطلبة الدبلوم");
         }
-
+       if (isPathIncomplete) return;
         setLoading(true);
         setExistingReportId(null); 
 
@@ -307,8 +290,57 @@ export default function WeeklyGradesPage() {
             setNoteModalOpen(false);
         }
     }
+// 🟢 التحقق مما إذا كان المسار مكتملاً حسب المتاح في الدورة
+const isPathIncomplete = useMemo(() => {
+    // 1. الدورة أساسية دائماً
+    if (!filterCourse || filterCourse === "all") return true;
+
+    // 2. إذا كان هناك دفعات في النظام لهذه الدورة، يجب اختيار واحدة (ليست all)
+    if (filterOptions.batches?.length > 0 && (filterBatch === "all" || !filterBatch)) return true;
+
+    // 3. إذا كان هناك سرايا، يجب اختيار واحدة
+    if (filterOptions.companies?.length > 0 && (filterCompany === "all" || !filterCompany)) return true;
+
+    // 4. إذا كان هناك فصائل، يجب اختيار واحد
+    if (filterOptions.platoons?.length > 0 && (filterPlatoon === "all" || !filterPlatoon)) return true;
+
+    // 5. حالة خاصة للدبلوم
+    if (filterCourse === "طلبة الدبلوم" && (!selectedPeriod || selectedPeriod === "all")) return true;
+
+    return false;
+}, [filterCourse, filterBatch, filterCompany, filterPlatoon, selectedPeriod, filterOptions]);
+// 🔵 التحديث التلقائي: مراقبة أي تغيير في المسار أو المواعيد
+// 🔵 التحديث التلقائي المصحح
+useEffect(() => {
+    // 1. تنظيف الجدول والتقرير الحالي فوراً عند أي تغيير لضمان الأمان
+    setSoldiers([]);
+    setExistingReportId(null);
+
+    // 2. التحقق من اكتمال المسار والبيانات الأساسية قبل الجلب
+    const canFetch = !isPathIncomplete && 
+                     weekTitle.trim() !== "" && 
+                     startDate !== "" && 
+                     endDate !== "";
+
+    if (canFetch) {
+        fetchData();
+    }
+}, [
+    filterCourse, 
+    filterBatch, 
+    filterCompany, 
+    filterPlatoon, 
+    subject, 
+    selectedPeriod, // ✅ تم التعديل هنا من filterPeriod إلى selectedPeriod
+    weekTitle, 
+    startDate, 
+    endDate
+]);
 
     const handleSave = async () => {
+        if (isPathIncomplete) {
+        return toast.error("خطأ: يجب تحديد المسار الكامل (الدورة، السرية، والفصيل) قبل الحفظ لضمان ظهور النتائج في السجل.");
+    }
     if (!weekTitle || soldiers.length === 0) return toast.error("البيانات ناقصة");
     if (filterCourse === "طلبة الدبلوم" && !selectedPeriod) return toast.error("الرجاء اختيار الفترة الدراسية");
 
@@ -342,7 +374,7 @@ const reportRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports
             toast.success(responseData.message || "تمت العملية بنجاح ✅");
             setSoldiers([]); setWeekTitle(""); setStartDate(""); setEndDate(""); 
             setSelectedPeriod(""); setExistingReportId(null); 
-            localStorage.removeItem(DRAFT_KEY);
+            
         } else {
             const err = await reportRes.json();
             toast.error(err.detail || "فشل الحفظ");
@@ -507,7 +539,13 @@ const reportRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports
                                     <div className="w-32 md:w-40"><label className="text-xs font-bold text-slate-500 mb-1 block">المادة</label><Select value={subject} onValueChange={setSubject}><SelectTrigger className="h-10 bg-slate-50"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="لياقة بدنية">لياقة بدنية</SelectItem><SelectItem value="اشتباك">اشتباك</SelectItem></SelectContent></Select></div>
                                     <div className="w-full md:w-48"><label className="text-xs font-bold text-slate-500 mb-1 block">عنوان الأسبوع</label><Input value={weekTitle} onChange={e => setWeekTitle(e.target.value)} placeholder="مثال: الأسبوع الأول" className="h-10" /></div>
                                     <div className="flex items-center gap-2 flex-grow md:flex-grow-0"><div><label className="text-xs font-bold text-slate-500 mb-1 block">من</label><Input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="h-10 w-32 md:w-36" /></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">إلى</label><Input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="h-10 w-32 md:w-36" /></div></div>
-                                    <div className="flex gap-2 mr-auto w-full md:w-auto mt-2 md:mt-0"><Button onClick={fetchData} disabled={loading} className="bg-slate-900 text-white h-10 flex-1 md:flex-none">{loading ? <Loader2 className="animate-spin"/> : "جلب البيانات"}</Button><Button onClick={handleSave} disabled={isSaving} className="bg-green-600 hover:bg-green-700 text-white h-10 flex-1 md:flex-none">{isSaving ? <Loader2 className="animate-spin"/> : <div className="flex items-center gap-2"><Save className="w-4 h-4"/> حفظ</div>}</Button></div>
+                                    <div className="flex gap-2 mr-auto w-full md:w-auto mt-2 md:mt-0"><Button 
+    onClick={handleSave} 
+    disabled={isSaving || isPathIncomplete} // 🔵 تعطيل الزر إذا كان المسار ناقصاً
+    className={`${isPathIncomplete ? 'bg-slate-300' : 'bg-green-600 hover:bg-green-700'} text-white h-10 flex-1 md:flex-none transition-all`}
+>
+    {isSaving ? <Loader2 className="animate-spin"/> : <div className="flex items-center gap-2"><Save className="w-4 h-4"/> حفظ</div>}
+</Button></div>
                                 </div>
                             </CardContent>
                         </Card>
@@ -548,9 +586,18 @@ const reportRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports
                                                             <Checkbox checked={selectedSoldiers.has(soldier.id)} onCheckedChange={(checked: any) => { const newSet = new Set(selectedSoldiers); if(checked) newSet.add(soldier.id); else newSet.delete(soldier.id); setSelectedSoldiers(newSet); }} />
                                                         </TableCell>
                                                         <TableCell className="p-1 border text-center sticky right-[40px] bg-white group-hover:bg-slate-50 z-10 hidden md:table-cell">
-                                                            <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-200 mx-auto">
-                                                                <img src={`${process.env.NEXT_PUBLIC_API_URL}/static/images/${soldier.military_id}.jpg`} className="w-full h-full object-cover" onError={(e:any) => e.target.style.display='none'} />
-                                                            </div>
+                                                            <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-100 border border-slate-200 mx-auto shadow-sm">
+    <img 
+    // 🟢 نستخدم الرابط المخزن في قاعدة البيانات (image_url) بدلاً من الرابط المحلي القديم
+    src={soldier.image_url ? `${soldier.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
+    alt={soldier.name}
+    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+    onError={(e) => { 
+        // إذا فشل الرابط السحابي، تظهر الصورة الافتراضية فوراً
+        (e.target as HTMLImageElement).src = "/placeholder-user.png";
+    }} 
+/>
+</div>
                                                         </TableCell>
                                                         <TableCell className="p-1 border text-right font-medium text-xs sticky right-[40px] md:right-[90px] bg-white group-hover:bg-slate-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate max-w-[120px] md:max-w-none">{soldier.name}</TableCell>
                                                         <TableCell className="p-1 border text-center font-bold text-blue-700 bg-blue-50/50 text-xs md:text-sm">{soldier.scores.b}</TableCell>
@@ -699,12 +746,56 @@ const reportRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports
 
             {/* Modals */}
             <div className="print:hidden">
-                {selectedSoldiers.size > 0 && (
-                    <div className="fixed bottom-8 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-auto bg-slate-900/95 backdrop-blur shadow-2xl text-white p-3 rounded-xl z-[100] flex flex-col md:flex-row items-center justify-center gap-3 border border-slate-700 animate-in slide-in-from-bottom-4 duration-300">
-                        <div className="flex items-center justify-between w-full md:w-auto gap-4"><span className="font-bold text-sm bg-slate-700 px-3 py-1.5 rounded-lg flex items-center gap-2 whitespace-nowrap"><CheckSquare className="w-4 h-4 text-green-400"/>{selectedSoldiers.size} طالب</span><Button size="sm" variant="ghost" onClick={() => setSelectedSoldiers(new Set())} className="text-slate-400 hover:text-white md:hidden h-8 px-2">إلغاء</Button></div>
-                        <div className="flex gap-2 w-full md:w-auto"><Button size="sm" variant="secondary" onClick={() => { setBulkType("effort"); setIsBulkEditOpen(true); }} className="text-xs h-9 flex-1 font-bold shadow-sm">تعديل الجهد</Button><Button size="sm" variant="secondary" onClick={() => { setBulkType("comprehension"); setIsBulkEditOpen(true); }} className="text-xs h-9 flex-1 font-bold shadow-sm">تعديل الاستيعاب</Button><Button size="sm" variant="destructive" onClick={() => setSelectedSoldiers(new Set())} className="text-xs h-9 px-3 hidden md:flex"><Trash2 className="w-4 h-4"/></Button></div>
-                    </div>
-                )}
+               {selectedSoldiers.size > 0 && (
+    <div className="fixed bottom-36 md:bottom-24 lg:bottom-10 left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 md:w-auto bg-slate-900/95 backdrop-blur-lg shadow-[0_-10px_40px_-5px_rgba(0,0,0,0.5)] text-white p-4 rounded-2xl z-[999] flex flex-col md:flex-row items-center justify-center gap-4 border border-slate-700 animate-in fade-in slide-in-from-bottom-10 duration-300">
+        
+        {/* قسم معلومات الاختيار */}
+        <div className="flex items-center justify-between w-full md:w-auto gap-6 border-b border-slate-700 pb-2 md:pb-0 md:border-none">
+            <span className="font-black text-sm bg-blue-600/30 text-blue-300 px-4 py-2 rounded-xl flex items-center gap-2 whitespace-nowrap border border-blue-500/40">
+                <CheckSquare className="w-5 h-5 text-green-400"/>
+                {selectedSoldiers.size} طالب مختار
+            </span>
+            <Button 
+                size="sm" 
+                variant="ghost" 
+                onClick={() => setSelectedSoldiers(new Set())} 
+                className="text-slate-400 hover:text-red-400 hover:bg-red-400/10 md:hidden h-9 px-3"
+            >
+                إلغاء الكل
+            </Button>
+        </div>
+
+        {/* أزرار التعديل - تم تكبيرها لتناسب اللمس في التابلت والهاتف */}
+        <div className="flex gap-3 w-full md:w-auto">
+            <Button 
+                size="lg" 
+                variant="secondary" 
+                onClick={() => { setBulkType("effort"); setIsBulkEditOpen(true); }} 
+                className="text-sm h-12 md:h-11 flex-1 md:flex-none md:px-6 font-bold shadow-lg bg-white text-slate-900 hover:bg-slate-200 transition-all active:scale-95"
+            >
+                تعديل الجهد
+            </Button>
+            <Button 
+                size="lg" 
+                variant="secondary" 
+                onClick={() => { setBulkType("comprehension"); setIsBulkEditOpen(true); }} 
+                className="text-sm h-12 md:h-11 flex-1 md:flex-none md:px-6 font-bold shadow-lg bg-white text-slate-900 hover:bg-slate-200 transition-all active:scale-95"
+            >
+                تعديل الاستيعاب
+            </Button>
+            
+            {/* زر الحذف يظهر في الكمبيوتر والتابلت الكبير */}
+            <Button 
+                size="icon" 
+                variant="destructive" 
+                onClick={() => setSelectedSoldiers(new Set())} 
+                className="h-12 w-12 md:h-11 md:w-11 hidden sm:flex shrink-0 shadow-lg"
+            >
+                <Trash2 className="w-5 h-5"/>
+            </Button>
+        </div>
+    </div>
+)}
                 <Dialog open={isBulkEditOpen} onOpenChange={setIsBulkEditOpen}><DialogContent><DialogHeader><DialogTitle>تعديل جماعي ({selectedSoldiers.size} طالب)</DialogTitle></DialogHeader><div className="py-4"><label className="block text-sm font-bold mb-2">أدخل درجة {bulkType === 'effort' ? 'الجهد المبذول' : 'الاستيعاب والاستفادة'} الجديدة:</label><Input inputMode="decimal" value={bulkValue} onChange={(e) => setBulkValue(normalizeNumber(e.target.value))} placeholder="مثال: 9.5" autoFocus /><p className="text-xs text-slate-500 mt-2 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> لن يتم تجاوز "السقف المحسوب" لكل طالب.</p></div><DialogFooter><Button variant="outline" onClick={() => setIsBulkEditOpen(false)}>إلغاء</Button><Button onClick={executeBulkEdit}>تطبيق التعديل</Button></DialogFooter></DialogContent></Dialog>
                 <Dialog open={noteModalOpen} onOpenChange={setNoteModalOpen}><DialogContent><DialogHeader><DialogTitle>تعديل الملاحظات</DialogTitle><DialogDescription>اكتب ملاحظة لهذا الطالب.</DialogDescription></DialogHeader><div className="py-2"><textarea className="w-full p-3 border rounded-md min-h-[100px] text-right" value={currentNoteText} onChange={(e) => setCurrentNoteText(e.target.value)} placeholder="اكتب هنا..." /></div><DialogFooter><Button variant="outline" onClick={() => setNoteModalOpen(false)}>إلغاء</Button><Button onClick={saveNote}>حفظ الملاحظة</Button></DialogFooter></DialogContent></Dialog>
             </div>

@@ -44,7 +44,29 @@ const normalizeArabic = (text: string) => {
   if (!text) return "";
   return text.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/\s+/g, " ").trim();
 };
+const compressImage = (base64Str: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 800; // حجم كافٍ جداً للمعاينة والرصد
+      let width = img.width;
+      let height = img.height;
 
+      if (width > MAX_WIDTH) {
+        height *= MAX_WIDTH / width;
+        width = MAX_WIDTH;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      // تقليل الجودة لـ 60% يحول الصورة من 5MB إلى حوالي 100KB فقط!
+      resolve(canvas.toDataURL('image/jpeg', 0.6)); 
+    };
+  });
+};
 export default function ViolationsRegistrationPage() {
   const [mounted, setMounted] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -94,8 +116,14 @@ const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, soldierId: st
   useEffect(() => { setMounted(true); fetchRegulations(); }, []);
   useEffect(() => { if (selectedSoldier) fetchTodaySessions(); }, [selectedSoldier]);
 useEffect(() => {
-    // كلما تغيرت القائمة (إضافة أو حذف)، احفظ النسخة الجديدة في المتصفح
-    localStorage.setItem("pending_violations", JSON.stringify(sessionQueue));
+    // 🟢 التعديل: لا نحفظ المرفقات (attachments) في الـ localStorage لأن حجمها ضخم
+    const safeQueue = sessionQueue.map(({ attachments, ...rest }) => rest);
+    
+    try {
+        localStorage.setItem("pending_violations", JSON.stringify(safeQueue));
+    } catch (e) {
+        console.error("LocalStorage is full, but we saved the text data.");
+    }
 }, [sessionQueue]);
   const fetchRegulations = async () => {
     try {
@@ -214,16 +242,24 @@ const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
   if (files) {
     Array.from(files).forEach(file => {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        // التحقق إذا كان الملف PDF
-        if (file.type === "application/pdf") {
-          // نضيف علامة تميزه كـ PDF للفرونت إند (اختياري)
-          setTempImages(prev => [...prev, result]);
-        } else {
-          setTempImages(prev => [...prev, result]);
+      
+      // 🟢 التعديل: جعلنا الدالة async لكي تنتظر انتهاء الضغط
+      reader.onloadend = async () => {
+        let result = reader.result as string;
+
+        // 🟢 إذا كان الملف صورة، نقوم بتصغير حجمه فوراً (يحول الصورة من 4MB إلى 100KB)
+        if (file.type.startsWith("image/")) {
+          try {
+            result = await compressImage(result);
+          } catch (err) {
+            console.error("خطأ أثناء ضغط الصورة", err);
+          }
         }
+        
+        // إضافة النتيجة (سواء صورة مضغوطة أو ملف PDF) إلى القائمة المؤقتة
+        setTempImages(prev => [...prev, result]);
       };
+
       reader.readAsDataURL(file);
     });
     toast.success("تم إضافة المرفق بنجاح");

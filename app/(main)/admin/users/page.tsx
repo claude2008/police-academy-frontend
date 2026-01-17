@@ -62,17 +62,27 @@ const initialFormData = {
 }
 
 const ITEMS_PER_PAGE_OPTIONS = [10, 20, 30, 50, 100];
-
+const SETTINGS_TABS_KEYS = [
+    { id: "fitness_standards", label: "معايير اللياقة البدنية" },
+    { id: "combat_standards", label: "معايير الاشتباك" },
+    { id: "training_program", label: "البرنامج التدريبي" },
+    { id: "disciplinary_regulations", label: "لائحة الجزاءات" },
+    { id: "military_standards", label: "معايير  التدريب العسكري" },
+];
 export default function UsersManagementPage() {
     const router = useRouter()
+    const [mounted, setMounted] = useState(false)
     const [users, setUsers] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [search, setSearch] = useState("")
-    const [userRole, setUserRole] = useState("")
-    const [branchFilter, setBranchFilter] = useState("all") // 🔑 إضافة فلتر الفروع
+    const [userRole, setUserRole] = useState<string | null>(null) // 👈 تغيير هنا
+const [isLoadingAuth, setIsLoadingAuth] = useState(true)      // 🟢 إضافة هذا السطر
+const [branchFilter, setBranchFilter] = useState("all")
     const [userToDelete, setUserToDelete] = useState<any | null>(null);
     const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
-
+    const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
+const [selectedUserForPerms, setSelectedUserForPerms] = useState<any>(null);
+const [tempPermissions, setTempPermissions] = useState<string[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(ITEMS_PER_PAGE_OPTIONS[0]);
     
@@ -82,24 +92,37 @@ export default function UsersManagementPage() {
     const [formData, setFormData] = useState(initialFormData)
    const [isPhotoDeleteOpen, setIsPhotoDeleteOpen] = useState(false);
 const [photoTargetId, setPhotoTargetId] = useState<number | null>(null);
-    useEffect(() => {
-        let role = ""
+  useEffect(() => {
+    setMounted(true);
+    
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
         try {
-            const userStr = localStorage.getItem("user");
-            if (userStr) {
-                const user = JSON.parse(userStr);
-                role = user.role || "";
-                setUserRole(role);
-            }
-        } catch (e) { console.error(e); }
+            const user = JSON.parse(userStr);
+            const role = user.role || "";
+            
+            // 1. تثبيت الرتبة أولاً
+            setUserRole(role);
 
-        if (!["owner", "manager", "admin"].includes(role)) {
-            toast.error("ليس لديك صلاحية الوصول لهذه الصفحة.")
-            router.push("/dashboard");
-        } else {
-            fetchUsers();
+            // 2. التحقق من الصلاحية الإدارية
+            if (!["owner", "manager", "admin"].includes(role)) {
+                toast.error("ليس لديك صلاحية الوصول لهذه الصفحة.");
+                router.push("/dashboard");
+                return;
+            }
+
+            // 3. 🟢 الآن فقط، وبعد التأكد من الرتبة، نجلب البيانات
+            setIsLoadingAuth(false);
+            fetchUsers(); 
+        } catch (e) { 
+            console.error(e);
+            setIsLoadingAuth(false);
         }
-    }, [router]);
+    } else {
+        // لا يوجد مستخدم أصلاً
+        router.push("/login");
+    }
+}, [router]);
 // أضف هذا الـ useEffect داخل المكونUsersManagementPage
 useEffect(() => {
     // إذا كانت الصلاحية مدير أو مسؤول رئيس قسم -> الإدارة العامة
@@ -227,44 +250,51 @@ const handleUserPhotoUpload = async (userId: number, e: React.ChangeEvent<HTMLIn
     const reader = new FileReader();
     reader.onloadend = async () => {
         const base64String = reader.result as string;
+        
+        // 1. نبدأ التوست ونخزن المعرف في t
         const t = toast.loading("جاري رفع الصورة للسحابة...");
 
         // 🟢 الكود المحدث والمؤمن
-const token = localStorage.getItem("token");
+        const token = localStorage.getItem("token");
 
-// 🛡️ خطوة أمنية: لا ترسل الطلب أصلاً إذا لم يكن هناك توكن
-if (!token) {
-    toast.error("انتهت جلسة العمل، يرجى تسجيل الدخول مرة أخرى");
-    return;
-}
+        // 🛡️ خطوة أمنية: لا ترسل الطلب أصلاً إذا لم يكن هناك توكن
+        if (!token) {
+            // ✅ تم إضافة { id: t } لاستبدال التحميل بالخطأ
+            toast.error("انتهت جلسة العمل، يرجى تسجيل الدخول مرة أخرى", { id: t });
+            return;
+        }
 
-try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/photo`, {
-        method: "PUT",
-        headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}` // ✅ التوكن هنا هو الحارس
-        },
-        body: JSON.stringify({ image_base64: base64String })
-    });
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/photo`, {
+                method: "PUT",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}` // ✅ التوكن هنا هو الحارس
+                },
+                body: JSON.stringify({ image_base64: base64String })
+            });
 
-    if (res.status === 403) {
-        toast.error("ليس لديك صلاحية لتعديل صور المستخدمين");
-        return;
-    }
+            if (res.status === 403) {
+                // ✅ تم إضافة { id: t }
+                toast.error("ليس لديك صلاحية لتعديل صور المستخدمين", { id: t });
+                return;
+            }
 
-    if (res.ok) {
-        const data = await res.json();
-        toast.success("تم تحديث الصورة بنجاح");
-        fetchUsers();
-        // هنا يمكنك تحديث الحالة (State) في الصفحة
-    } else {
-        const errorData = await res.json();
-        toast.error(errorData.detail || "فشل رفع الصورة");
-    }
-} catch (error) {
-    toast.error("حدث خطأ في الاتصال بالسيرفر");
-}
+            if (res.ok) {
+                const data = await res.json();
+                // ✅ تم إضافة { id: t } لإغلاق التحميل بنجاح
+                toast.success("تم تحديث الصورة بنجاح ✅", { id: t });
+                fetchUsers();
+                // هنا يمكنك تحديث الحالة (State) في الصفحة
+            } else {
+                const errorData = await res.json();
+                // ✅ تم إضافة { id: t }
+                toast.error(errorData.detail || "فشل رفع الصورة", { id: t });
+            }
+        } catch (error) {
+            // ✅ تم إضافة { id: t } في حالة انقطاع الاتصال
+            toast.error("حدث خطأ في الاتصال بالسيرفر", { id: t });
+        }
     };
     reader.readAsDataURL(file);
 };
@@ -300,7 +330,54 @@ const executePhotoDelete = async () => {
     }
 };
     
+// دالة لفتح نافذة الصلاحيات وشحن البيانات الحالية
+    const openPermissionsModal = (user: any) => {
+        setSelectedUserForPerms(user);
+        // نأخذ الصلاحيات المخزنة في قاعدة البيانات أو مصفوفة فارغة إذا لم توجد
+        setTempPermissions(user.extra_permissions || []); 
+        setIsPermissionsOpen(true);
+    };
 
+    // دالة الحفظ النهائي للصلاحيات في السيرفر
+    const handleSavePermissions = async () => {
+        if (!selectedUserForPerms) return;
+        setIsSubmitting(true);
+        const t = toast.loading("جاري تحديث الصلاحيات...");
+        try {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${selectedUserForPerms.id}`, {
+                method: "PUT",
+                headers: { 
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${localStorage.getItem("token")}`
+                },
+                body: JSON.stringify({ extra_permissions: tempPermissions })
+            });
+
+           if (res.ok) {
+    const updatedUserFromServer = await res.json(); // السيرفر يعيد المستخدم الجديد بالصلاحيات
+    
+    // 🟢 إذا كان المستخدم الذي قمت بتعديله هو "أنت" (نفسك)
+    // قم بتحديث بياناتك في المتصفح فوراً لكي تظهر التابات دون إعادة تسجيل دخول
+    const currentUserStr = localStorage.getItem("user");
+    if (currentUserStr) {
+        const currentUser = JSON.parse(currentUserStr);
+        if (currentUser.id === selectedUserForPerms.id) {
+            localStorage.setItem("user", JSON.stringify(updatedUserFromServer));
+        }
+    }
+
+    toast.success("تم تحديث صلاحيات الوصول بنجاح ✅", { id: t });
+    fetchUsers();
+    setIsPermissionsOpen(false);
+}else {
+                toast.error("فشل تحديث الصلاحيات", { id: t });
+            }
+        } catch (e) {
+            toast.error("خطأ في الاتصال بالسيرفر", { id: t });
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
     const openEditModal = (user: any) => {
         setFormData({
             id: user.id,
@@ -318,22 +395,23 @@ const executePhotoDelete = async () => {
     }
 
    // 🔍 منطق الفلترة والبحث المدمج (المعدل لإخفاء المالك عن الجميع إلا المالك نفسه)
-    const filteredUsers = useMemo(() => {
-        setCurrentPage(1);
-        return users.filter(u => {
-            const matchesSearch = u.name.toLowerCase().includes(search.toLowerCase()) || 
-                                u.military_id.includes(search) || 
-                                u.email?.toLowerCase().includes(search.toLowerCase());
-            
-            const matchesBranch = branchFilter === "all" || u.branch === branchFilter;
+   const filteredUsers = useMemo(() => {
+    // 🟢 إذا لم يتم تحديد الرتبة بعد، لا تصفِّ شيئاً (انتظر)
+    if (!userRole) return []; 
 
-            // 🛡️ هذا هو السطر المسؤول عن الإخفاء:
-            // إذا كان المستخدم الحالي (أنت) لست "owner"، فسيتم استبعاد أي شخص في الجدول رتبته "owner"
-            const isAuthorizedToSee = userRole === "owner" || u.role !== "owner";
+    return users.filter(u => {
+        const matchesSearch = u.name.toLowerCase().includes(search.toLowerCase()) || 
+                            u.military_id.includes(search) || 
+                            u.email?.toLowerCase().includes(search.toLowerCase());
+        
+        const matchesBranch = branchFilter === "all" || u.branch === branchFilter;
 
-            return matchesSearch && matchesBranch && isAuthorizedToSee;
-        });
-    }, [users, search, branchFilter, userRole]); // تأكد من إضافة userRole هنا
+        // 🛡️ منطق الإخفاء الذكي:
+        const isAuthorizedToSee = userRole === "owner" || u.role !== "owner";
+
+        return matchesSearch && matchesBranch && isAuthorizedToSee;
+    });
+}, [users, search, branchFilter, userRole]);
 
     // 🛡️ فلترة الأدوار (إخفاء المالك عن غير المالك)
    const availableRoles = useMemo(() => {
@@ -353,8 +431,15 @@ const executePhotoDelete = async () => {
         setItemsPerPage(parseInt(value, 10));
         setCurrentPage(1);
     }
-
-    if (loading && ["owner", "manager", "admin"].includes(userRole)) {
+if (isLoadingAuth) {
+    return (
+        <div className="flex flex-col items-center justify-center min-h-screen">
+            <Loader2 className="animate-spin w-10 h-10 text-blue-600" />
+            <p className="text-slate-500 mt-4 font-bold">جاري التحقق من الهوية...</p>
+        </div>
+    );
+}
+    if (loading && ["owner", "manager", "admin"].includes(userRole || "")) {
         return <div className="flex flex-col items-center justify-center min-h-[50vh]"><Loader2 className="animate-spin w-8 h-8 text-blue-600"/><p className="text-slate-500 mt-3">جاري التحميل...</p></div>
     }
 
@@ -447,6 +532,14 @@ const executePhotoDelete = async () => {
                                             <TableCell className="text-center">
                                                 <div className="flex items-center justify-center gap-2">
                                                     <Button variant="ghost" size="icon" onClick={() => openEditModal(user)}><Edit className="w-4 h-4 text-blue-600"/></Button>
+                                                    <Button 
+        variant="ghost" 
+        size="icon" 
+        className="text-amber-600 hover:bg-amber-50"
+        onClick={() => openPermissionsModal(user)}
+    >
+        <Key className="w-4 h-4" />
+    </Button>
                                                     <Button 
     variant="ghost" 
     size="icon" 
@@ -719,6 +812,63 @@ const executePhotoDelete = async () => {
         </div>
     </AlertDialogContent>
 </AlertDialog>
+{/* 🔑 نافذة تخصيص صلاحيات الوصول للتابات */}
+    <Dialog open={isPermissionsOpen} onOpenChange={setIsPermissionsOpen}>
+        <DialogContent className="max-w-md rounded-2xl" dir="rtl">
+            <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                    <Key className="w-5 h-5 text-amber-600" />
+                    صلاحيات الوصول الإضافية
+                </DialogTitle>
+                <DialogDescription>
+                    تخصيص تابات معينة في الإعدادات للمستخدم: <b>{selectedUserForPerms?.name}</b>
+                </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-3 py-4">
+                {SETTINGS_TABS_KEYS.map((tab) => (
+                    <div 
+                        key={tab.id} 
+                        onClick={() => {
+                            if (tempPermissions.includes(tab.id)) {
+                                setTempPermissions(tempPermissions.filter(id => id !== tab.id));
+                            } else {
+                                setTempPermissions([...tempPermissions, tab.id]);
+                            }
+                        }}
+                        className={cn(
+                            "flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all",
+                            tempPermissions.includes(tab.id) 
+                                ? "border-amber-500 bg-amber-50" 
+                                : "border-slate-100 hover:border-slate-200"
+                        )}
+                    >
+                        <span className="font-bold text-sm text-slate-700">{tab.label}</span>
+                        {tempPermissions.includes(tab.id) && (
+                            <Badge className="bg-amber-600 text-white border-none">مسموح</Badge>
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            <DialogFooter className="gap-2">
+                <Button 
+                    variant="outline" 
+                    onClick={() => setIsPermissionsOpen(false)}
+                    className="flex-1 h-11 rounded-xl"
+                >
+                    إلغاء
+                </Button>
+                <Button 
+                    onClick={handleSavePermissions}
+                    disabled={isSubmitting}
+                    className="flex-1 h-11 rounded-xl bg-slate-900 text-white"
+                >
+                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : "حفظ الصلاحيات"}
+                </Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
          </div>
         </ProtectedRoute>
     )

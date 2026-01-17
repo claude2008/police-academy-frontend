@@ -493,18 +493,32 @@ const handleSaveFinalGrades = async () => {
                                     </TableHeader>
                                     <TableBody>
     {/* 1. الأسابيع العادية تظل هنا */}
-    {weeksList.map((week) => (
-        <TableRow key={week.id} className="hover:bg-slate-50">
-            <TableCell className="text-center font-mono font-bold bg-slate-50">{week.week_number}</TableCell>
-            <TableCell className="font-bold text-blue-700">{week.title}</TableCell>
-            <TableCell className="text-center">---</TableCell>
-            <TableCell className="text-center">{week.trainer_name}</TableCell>
-            <TableCell className="text-center text-xs text-slate-500">{formatDateSafe(week.last_update)}</TableCell>
-            <TableCell className="text-center">
-                <Button size="sm" variant="outline" onClick={() => handleViewReportGrades(week.id)}>عرض الدرجات</Button>
-            </TableCell>
-        </TableRow>
-    ))}
+    {/* 1. الأسابيع العادية */}
+{weeksList.map((week) => (
+    <TableRow key={week.id} className="hover:bg-slate-50">
+        <TableCell className="text-center font-mono font-bold bg-slate-50">{week.week_number}</TableCell>
+        <TableCell className="font-bold text-blue-700">{week.title}</TableCell>
+        
+        {/* 🟢 الآن سيعرض الفترة الحقيقية القادمة من السيرفر */}
+        <TableCell className="text-center text-slate-600 font-medium">
+            {week.period || "عام"} 
+        </TableCell>
+        
+        {/* 🟢 الآن سيعرض اسم الشخص الذي حفظ (سواء مدرب أو مساعد) */}
+        <TableCell className="text-center font-bold text-slate-700">
+            {week.trainer_name}
+        </TableCell>
+        
+        <TableCell className="text-center text-xs text-slate-500">
+            {formatDateSafe(week.last_update)}
+        </TableCell>
+        <TableCell className="text-center">
+            <Button size="sm" variant="outline" onClick={() => handleViewReportGrades(week.id)}>
+                عرض الدرجات
+            </Button>
+        </TableCell>
+    </TableRow>
+))}
 
     {/* 2. 🟢 السطر الإضافي: ضعه هنا (خارج حلقة map) ليكون سطراً مستقلاً في الأسفل */}
     {selectedPlatoon?.is_final_saved && (
