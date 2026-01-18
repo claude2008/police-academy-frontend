@@ -23,8 +23,10 @@ import {
 import { 
   Moon, Sun, Save, Settings2, Sliders, Palette, Lock, 
   PenTool, Eraser, Upload, Trash2, Loader2, ShieldCheck, 
-  Plus, Target, Footprints, X, AlertTriangle, CalendarDays, Clock, Copy, Scale // 👈 أضف CalendarDays, Clock, Copy
+  Plus, Target, Footprints, X, AlertTriangle, CalendarDays, 
+  Clock, Copy, Scale, Edit // 👈 أضفنا Edit هنا في النهاية
 } from "lucide-react"
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,7 +107,10 @@ const [filterOptions, setFilterOptions] = useState<{ courses: string[], batches:
   const [trainingTemplates, setTrainingTemplates] = useState<TrainingTemplate[]>([]);
   const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
   const [isEditingTemplate, setIsEditingTemplate] = useState(false); // وضع التعديل
-
+  // 🟢 متغيرات التاب الجديد (الديناميكي)
+  const [allExamConfigs, setAllExamConfigs] = useState<any[]>([]); // قائمة بكل الاختبارات (قديم وجديد)
+  const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null); // الاختبار المختار حالياً للتعديل
+  const [newTestName, setNewTestName] = useState(""); // لإنشاء اختبار جديد
   // أيام الأسبوع الثابتة للجدول
   const weekDays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
   // حالات التوقيع
@@ -542,7 +547,7 @@ const fetchDisciplinaryRegulations = async () => {
         }
     } catch (e) { console.error("Error fetching regulations"); }
 };
- useEffect(() => {
+useEffect(() => {
     setMounted(true);
 
     // 1. جلب إعدادات النظام العامة
@@ -551,6 +556,7 @@ const fetchDisciplinaryRegulations = async () => {
     fetchEngagementConfigs();
     fetchTrainingTemplates();
     fetchDisciplinaryRegulations();
+    fetchAllConfigs(); // 👈 أضفنا هذه الدالة هنا لجلب الاختبارات الشاملة (الجديدة)
 
     // 2. معالجة بيانات المستخدم وتحديثها
     try {
@@ -566,7 +572,7 @@ const fetchDisciplinaryRegulations = async () => {
             setUserMilId(localUser.military_id);
             checkSavedSignature(localUser.military_id);
 
-            // ب. 🟢 (الجديد) الاتصال بالسيرفر لجلب أحدث الصلاحيات في الخلفية
+            // ب. الاتصال بالسيرفر لجلب أحدث الصلاحيات في الخلفية
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${localUser.id}`, {
                 headers: { "Authorization": `Bearer ${token}` }
             })
@@ -575,11 +581,8 @@ const fetchDisciplinaryRegulations = async () => {
                 throw new Error("فشل تحديث البيانات");
             })
             .then(freshUser => {
-                
-                
                 // تحديث الحالة في الصفحة فوراً
                 setCurrentUser(freshUser);
-                
                 // تحديث الذاكرة المحلية للمرات القادمة
                 localStorage.setItem("user", JSON.stringify(freshUser));
             })
@@ -635,7 +638,17 @@ const fetchTrainingTemplates = async () => {
       }
     } catch (e) { console.error("Error fetching configs"); }
   };
-
+const fetchAllConfigs = async () => {
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/configs`, {
+        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAllExamConfigs(data);
+      }
+    } catch (e) { console.error("Error fetching all configs"); }
+  };
   const saveMilitaryConfigs = async () => {
     setLoading(true);
     try {
@@ -904,7 +917,24 @@ const deleteStation = (tabId: string, axisId: string, critId: string, sIdx: numb
       toast.error("خطأ في الاتصال بالسيرفر")
     } finally { setLoading(false) }
 }
-
+const saveDynamicConfig = async (config: any) => {
+    setLoading(true);
+    try {
+       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/configs`, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${localStorage.getItem("token")}` 
+          },
+          body: JSON.stringify(config),
+       });
+       if(res.ok) {
+           toast.success("تم الحفظ بنجاح");
+           fetchAllConfigs(); // تحديث القائمة
+       }
+    } catch(e) { toast.error("فشل الحفظ"); }
+    finally { setLoading(false); }
+  };
   const saveSignature = async () => {
     // 1. التحقق من أن اللوحة ليست فارغة
     if (sigPad.current.isEmpty()) return toast.warning("ارسم التوقيع أولاً");
@@ -1232,6 +1262,10 @@ if (!mounted) return null
             معايير العسكري
         </TabsTrigger>
     )}
+
+<TabsTrigger value="dynamic-tests" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-indigo-600 data-[state=active]:text-white">
+    🚀 الاختبارات الشاملة (جديد)
+</TabsTrigger>
 
     {/* 2. معايير اللياقة */}
     {(["owner", "manager", "admin", "assistant_admin", "sports_officer"].includes(userRole || "") || 
@@ -1846,6 +1880,8 @@ if (!mounted) return null
               </div>
             ))}
         </TabsContent>
+        {/* 🟢 التاب الجديد الديناميكي */}
+
       </Tabs>
     </CardContent>
 
@@ -1869,6 +1905,176 @@ if (!mounted) return null
         </div>
 
     )}
+</TabsContent>
+{/* 🚀 التاب الجديد الديناميكي - الاختبارات الشاملة */}
+       {/* 🚀 التاب الجديد الديناميكي المحدث - مع ميزة الحذف وحل خطأ الـ Input */}
+<TabsContent value="dynamic-tests">
+  <Card className="border-t-4 border-t-indigo-600 shadow-xl">
+    <CardHeader className="text-right">
+      <CardTitle className="text-indigo-700 flex items-center gap-2">
+        <Sliders className="w-6 h-6" /> إدارة جميع الاختبارات الميدانية
+      </CardTitle>
+      <CardDescription>أضف أي نوع اختبار جديد وحدد معايير التقييم الخاصة به بسهولة.</CardDescription>
+    </CardHeader>
+    <CardContent>
+      <div className="flex flex-col md:flex-row gap-6 min-h-[500px]">
+        
+        {/* القائمة الجانبية للاختبارات */}
+        <div className="w-full md:w-1/3 border rounded-xl bg-slate-50 flex flex-col overflow-hidden">
+          <div className="p-3 border-b bg-white">
+             <div className="flex gap-2">
+               <Input 
+                 placeholder="اسم اختبار جديد..." 
+                 className="h-10 text-xs shadow-sm" 
+                 value={newTestName || ""} // 👈 حماية من الـ undefined
+                 onChange={(e)=>setNewTestName(e.target.value)} 
+               />
+               <Button size="sm" className="bg-indigo-600 h-10 w-12" onClick={() => {
+                  if(!newTestName) return toast.error("اكتب اسماً للاختبار");
+                  const newTest = { id: `temp-${Date.now()}`, subject: 'specialized', exam_type: newTestName, criteria: [], is_active: true };
+                  setAllExamConfigs([...allExamConfigs, newTest]);
+                  setSelectedConfigId(newTest.id);
+                  setNewTestName("");
+               }}>
+                 <Plus className="w-5 h-5 text-white" />
+               </Button>
+             </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            {allExamConfigs.map(conf => (
+              <div 
+                key={conf.id} 
+                onClick={() => setSelectedConfigId(conf.id)}
+                className={cn(
+                    "p-3 rounded-lg cursor-pointer transition-all border flex flex-col gap-1 relative group",
+                    selectedConfigId === conf.id 
+                    ? "bg-indigo-600 border-indigo-700 text-white shadow-md" 
+                    : "bg-white hover:bg-slate-100 border-slate-200 text-slate-700"
+                )}
+              >
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-sm truncate max-w-[80%]">{conf.exam_type}</span>
+                  
+                  {/* 🗑️ أيقونة حذف الاختبار من القائمة الجانبية */}
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation(); // منع فتح الاختبار عند الضغط على حذف
+                      if(confirm(`هل أنت متأكد من حذف اختبار (${conf.exam_type}) نهائياً؟`)) {
+                          // هنا نربطها بدالة الحذف confirmPermanentDelete التي عرفناها سابقاً
+                          setTestToDelete({ branchId: conf.subject, testId: conf.id.toString() });
+                          setIsDeleteDialogOpen(true);
+                      }
+                    }}
+                    className={cn(
+                      "p-1 rounded-md hover:bg-red-500 hover:text-white transition-colors",
+                      selectedConfigId === conf.id ? "text-indigo-200" : "text-slate-300"
+                    )}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex justify-between items-center">
+                   <span className={cn("text-[9px]", selectedConfigId === conf.id ? "text-indigo-100" : "text-slate-400")}>
+                      {conf.subject === 'shooting' ? 'رماية' : conf.subject === 'infantry' ? 'مشاة' : 'مهارات تخصصية'}
+                   </span>
+                   <Badge variant={selectedConfigId === conf.id ? "outline" : "secondary"} className="text-[8px] h-4">
+                      {conf.criteria?.length || 0} معيار
+                   </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* منطقة محرر المعايير */}
+        <div className="flex-1 border rounded-xl bg-white p-4 md:p-6 overflow-y-auto relative border-dashed">
+          {selectedConfigId ? (
+            (() => {
+              const activeConf = allExamConfigs.find(c => c.id === selectedConfigId);
+              if (!activeConf) return null;
+              return (
+                <div className="space-y-6 animate-in fade-in slide-in-from-left-4">
+                  <div className="flex justify-between items-center border-b pb-4">
+                    <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                       <Edit className="w-4 h-4 text-indigo-500"/> معايير: {activeConf.exam_type}
+                    </h2>
+                    <Button onClick={() => saveDynamicConfig(activeConf)} className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 font-bold h-9">
+                      <Save className="w-4 h-4" /> حفظ التعديلات
+                    </Button>
+                  </div>
+
+                  <div className="space-y-3">
+                     <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-slate-400 px-2">
+                        <div className="col-span-1 text-center">#</div>
+                        <div className="col-span-7">اسم المعيار</div>
+                        <div className="col-span-3 text-center">الدرجة</div>
+                        <div className="col-span-1"></div>
+                     </div>
+                     
+                     {activeConf.criteria?.map((crit: any, idx: number) => (
+                       <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                          <div className="col-span-1 text-center font-bold text-slate-400 text-xs">{idx + 1}</div>
+                          <div className="col-span-7">
+                             <Input 
+                               value={crit.name || ""} // 👈 حماية من الـ undefined
+                               onChange={(e) => {
+                                 const newConfigs = [...allExamConfigs];
+                                 const target = newConfigs.find(c => c.id === selectedConfigId);
+                                 target.criteria[idx].name = e.target.value;
+                                 setAllExamConfigs(newConfigs);
+                               }}
+                               className="h-9 bg-white text-xs font-bold" 
+                             />
+                          </div>
+                          <div className="col-span-3">
+                             <Input 
+                               type="number" 
+                               value={crit.max ?? 0} // 👈 حماية من الـ undefined
+                               onChange={(e) => {
+                                 const newConfigs = [...allExamConfigs];
+                                 const target = newConfigs.find(c => c.id === selectedConfigId);
+                                 target.criteria[idx].max = Number(e.target.value);
+                                 setAllExamConfigs(newConfigs);
+                               }}
+                               className="h-9 bg-white text-center font-black text-indigo-600" 
+                             />
+                          </div>
+                          <div className="col-span-1 text-center">
+                             <button onClick={() => {
+                                 const newConfigs = [...allExamConfigs];
+                                 const target = newConfigs.find(c => c.id === selectedConfigId);
+                                 target.criteria = target.criteria.filter((_:any, i:number) => i !== idx);
+                                 setAllExamConfigs(newConfigs);
+                             }} className="text-red-300 hover:text-red-600 transition-colors">
+                               <X className="w-4 h-4"/>
+                             </button>
+                          </div>
+                       </div>
+                     ))}
+                     
+                     <Button variant="outline" className="w-full border-dashed text-indigo-600 border-indigo-200 h-10 mt-4 bg-indigo-50/30" onClick={() => {
+                        const newConfigs = [...allExamConfigs];
+                        const target = newConfigs.find(c => c.id === selectedConfigId);
+                        if(!target.criteria) target.criteria = [];
+                        target.criteria.push({ id: `new-${Date.now()}`, name: "", max: 10 });
+                        setAllExamConfigs(newConfigs);
+                     }}>
+                        <Plus className="w-4 h-4 ml-2"/> إضافة معيار جديد
+                     </Button>
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full text-slate-300 py-20">
+               <ShieldCheck className="w-16 h-16 mb-4 opacity-10"/>
+               <p className="font-bold text-sm">اختر اختباراً من القائمة الجانبية للبدء</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </CardContent>
+  </Card>
 </TabsContent>
         {/* 🎨 تاب المظهر */}
         <TabsContent value="appearance">

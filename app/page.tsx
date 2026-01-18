@@ -52,6 +52,7 @@ export default function LoginPage() {
         
         if (data.access_token) {
             localStorage.setItem("token", data.access_token)
+            document.cookie = `token=${data.access_token}; path=/; max-age=604800; samesite=lax`;
         }
 
         if (data.user) {
