@@ -51,9 +51,14 @@ export default function LoginPage() {
         const data = await res.json()
         
         if (data.access_token) {
-            localStorage.setItem("token", data.access_token)
-            document.cookie = `token=${data.access_token}; path=/; max-age=604800; samesite=lax`;
-        }
+    localStorage.setItem("token", data.access_token);
+    // تأكد أن التوكن يكتب في الكوكيز أولاً
+    document.cookie = `token=${data.access_token}; path=/; max-age=604800; samesite=lax`;
+    
+    // ثم نقوم بالانتقال
+    window.dispatchEvent(new Event("auth-change"));
+    router.push("/dashboard");
+}
 
         if (data.user) {
             if (data.user.must_change_password) {
