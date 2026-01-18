@@ -44,6 +44,9 @@ const normalizeArabic = (text: string) => {
   if (!text) return "";
   return text.replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/\s+/g, " ").trim();
 };
+const convertArabicNumbers = (text: string) => {
+  return text.replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
+};
 const compressImage = (base64Str: string): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -145,21 +148,42 @@ useEffect(() => {
   };
 
   const handleSearchSoldier = async () => {
-    const query = searchTerm.trim();
-    if (!query) return;
+    // 1. التطهير القسري (Forced Normalization) 
+    // نقرأ القيمة ونحولها فوراً مهما كان مصدرها (هاتف، تاب، حاسوب)
+    const rawInput = searchTerm.trim();
+    
+    // تحويل الأرقام العربية إلى إنجليزية يدوياً داخل الدالة لضمان الصفاء
+    const cleanQuery = rawInput.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
+
+    if (!cleanQuery) return;
+
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/search?query=${query}`, {
+      // 2. استخدام encodeURIComponent لضمان عدم ضياع أي رمز أثناء الانتقال من الهاتف للسيرفر
+      const url = `${process.env.NEXT_PUBLIC_API_URL}/soldiers/search?query=${encodeURIComponent(cleanQuery)}`;
+      
+      const res = await fetch(url, {
         headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
       });
+
       if (res.ok) {
         const data = await res.json();
-        if (data.length > 0) {
+        if (data && data.length > 0) {
+          // ✅ النجاح
           setSelectedSoldier(data[0]);
-          setViolationSearch(""); setSelectedPeriod("");
-        } else toast.error("لم يتم العثور على الرقم");
+          setViolationSearch(""); 
+          setSelectedPeriod("");
+          toast.success("تم العثور على المجند");
+        } else {
+          // ❌ الفشل (الرقم غير موجود فعلاً)
+          toast.error(`الرقم (${cleanQuery}) غير مسجل أو الدورة مؤرشفة`);
+        }
       }
-    } finally { setLoading(false); }
+    } catch (e) {
+      toast.error("فشل الاتصال بالسيرفر");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const groupedQueue = useMemo(() => {
@@ -474,12 +498,16 @@ if (isSaved && entryToDelete) {
 
     {/* 2. مربع الإدخال - h-16 لزيادة الارتفاع، نص كبير text-xl */}
     <Input 
-      placeholder="الرقم العسكري أو الاسم..." 
-      className="pr-12 pl-32 h-14 rounded-[20px] bg-white/90 border-none shadow-inner font-black text-xl focus-visible:ring-2 focus-visible:ring-slate-900 transition-all placeholder:text-slate-400/70" 
-      value={searchTerm} 
-      onChange={(e) => setSearchTerm(e.target.value)} 
-      onKeyDown={(e) => e.key === 'Enter' && handleSearchSoldier()} 
-    />
+  type="text"
+  inputMode="decimal" // 📱 يظهر لوحة الأرقام فوراً في الهاتف
+  placeholder="الرقم العسكري أو الاسم..."
+  className="pr-12 pl-32 h-14 rounded-[20px] bg-white/90 border-none shadow-inner font-black text-xl focus-visible:ring-2 focus-visible:ring-slate-900 transition-all placeholder:text-slate-400/70" 
+ value={searchTerm} 
+  onChange={(e) => setSearchTerm(convertArabicNumbers(e.target.value))} 
+  onKeyDown={(e) => e.key === 'Enter' && handleSearchSoldier()}
+  // أضف هذا السطر لضمان عدم قيام الهاتف بتصحيح الأرقام تلقائياً
+  autoComplete="off"
+/>
 
     {/* 3. زر البحث - تم استخدام top-2 و bottom-2 لضمان الارتفاع المتناسق داخلياً */}
     <Button 

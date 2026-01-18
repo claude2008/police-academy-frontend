@@ -71,58 +71,95 @@ const SETTINGS_TABS_KEYS = [
 ];
 export default function UsersManagementPage() {
     const router = useRouter()
+    
+    // --- 1. تعريف المتغيرات (States) ---
     const [mounted, setMounted] = useState(false)
     const [users, setUsers] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [search, setSearch] = useState("")
-    const [userRole, setUserRole] = useState<string | null>(null) // 👈 تغيير هنا
-const [isLoadingAuth, setIsLoadingAuth] = useState(true)      // 🟢 إضافة هذا السطر
-const [branchFilter, setBranchFilter] = useState("all")
+    
+    // 🟢 تعديلات الأمان (الحراس)
+    const [userRole, setUserRole] = useState<string | null>(null)
+    const [isLoadingAuth, setIsLoadingAuth] = useState(true)
+    const [isAuthorized, setIsAuthorized] = useState(false) // 🆕 البوابة الحديدية (المتغير الجديد)
+
+    const [branchFilter, setBranchFilter] = useState("all")
     const [userToDelete, setUserToDelete] = useState<any | null>(null);
     const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
+    
+    // متغيرات الصلاحيات
     const [isPermissionsOpen, setIsPermissionsOpen] = useState(false);
-const [selectedUserForPerms, setSelectedUserForPerms] = useState<any>(null);
-const [tempPermissions, setTempPermissions] = useState<string[]>([]);
+    const [selectedUserForPerms, setSelectedUserForPerms] = useState<any>(null);
+    const [tempPermissions, setTempPermissions] = useState<string[]>([]);
+    
+    // متغيرات التصفح (Pagination)
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(ITEMS_PER_PAGE_OPTIONS[0]);
     
+    // متغيرات النوافذ (Modals)
     const [isAddOpen, setIsAddOpen] = useState(false)
     const [isEditOpen, setIsEditOpen] = useState(false)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [formData, setFormData] = useState(initialFormData)
-   const [isPhotoDeleteOpen, setIsPhotoDeleteOpen] = useState(false);
-const [photoTargetId, setPhotoTargetId] = useState<number | null>(null);
-  useEffect(() => {
-    setMounted(true);
     
-    const userStr = localStorage.getItem("user");
-    if (userStr) {
-        try {
-            const user = JSON.parse(userStr);
-            const role = user.role || "";
-            
-            // 1. تثبيت الرتبة أولاً
-            setUserRole(role);
+    // متغيرات الصور
+    const [isPhotoDeleteOpen, setIsPhotoDeleteOpen] = useState(false);
+    const [photoTargetId, setPhotoTargetId] = useState<number | null>(null);
 
-            // 2. التحقق من الصلاحية الإدارية
-            if (!["owner", "manager", "admin"].includes(role)) {
-                toast.error("ليس لديك صلاحية الوصول لهذه الصفحة.");
-                router.push("/dashboard");
+    // --- 2. دالة التحقق الذكي (The Smart Check) ---
+    useEffect(() => {
+        setMounted(true);
+        let isCancelled = false;
+
+        const checkAuth = async () => {
+            // 1. تأخير إجباري (100ms) للسماح للذاكرة بالاستقرار بعد الانتقال من الإعدادات
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            if (isCancelled) return;
+
+            const userStr = localStorage.getItem("user");
+            
+            // إذا لم يجد بيانات، يوجه للدخول بهدوء دون رسالة خطأ
+            if (!userStr) {
+                router.push("/login");
                 return;
             }
 
-            // 3. 🟢 الآن فقط، وبعد التأكد من الرتبة، نجلب البيانات
-            setIsLoadingAuth(false);
-            fetchUsers(); 
-        } catch (e) { 
-            console.error(e);
-            setIsLoadingAuth(false);
-        }
-    } else {
-        // لا يوجد مستخدم أصلاً
-        router.push("/login");
-    }
-}, [router]);
+            try {
+                const user = JSON.parse(userStr);
+                const role = user.role; 
+
+                // إذا كانت الرتبة غير موجودة بعد (خطأ في البيانات)، ننتظر ولا نعطي خطأ
+                if (!role) {
+                    router.push("/dashboard");
+                    return;
+                }
+
+                setUserRole(role);
+
+                // 2. فحص الصلاحية الآن بعد التأكد من وجود البيانات
+                if (["owner", "manager", "admin"].includes(role)) {
+                    setIsAuthorized(true); // ✅ فتح البوابة
+                    await fetchUsers();    // جلب البيانات
+                } else {
+                    // ❌ هنا فقط نظهر رسالة الخطأ لأننا متأكدون أن لديه رتبة لكنها غير مسموحة
+                    toast.error("ليس لديك صلاحية الوصول لهذه الصفحة.");
+                    router.push("/dashboard");
+                    return;
+                }
+
+            } catch (e) {
+                console.error("Auth check failed", e);
+                router.push("/dashboard");
+            } finally {
+                if (!isCancelled) setIsLoadingAuth(false); // إيقاف التحميل
+            }
+        };
+
+        checkAuth();
+
+        return () => { isCancelled = true; };
+    }, []);
 // أضف هذا الـ useEffect داخل المكونUsersManagementPage
 useEffect(() => {
     // إذا كانت الصلاحية مدير أو مسؤول رئيس قسم -> الإدارة العامة
@@ -432,17 +469,31 @@ const executePhotoDelete = async () => {
         setCurrentPage(1);
     }
 if (isLoadingAuth) {
-    return (
-        <div className="flex flex-col items-center justify-center min-h-screen">
-            <Loader2 className="animate-spin w-10 h-10 text-blue-600" />
-            <p className="text-slate-500 mt-4 font-bold">جاري التحقق من الهوية...</p>
-        </div>
-    );
-}
-    if (loading && ["owner", "manager", "admin"].includes(userRole || "")) {
-        return <div className="flex flex-col items-center justify-center min-h-[50vh]"><Loader2 className="animate-spin w-8 h-8 text-blue-600"/><p className="text-slate-500 mt-3">جاري التحميل...</p></div>
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen">
+                <Loader2 className="animate-spin w-10 h-10 text-blue-600" />
+                <p className="text-slate-500 mt-4 font-bold">جاري التحقق من الصلاحيات...</p>
+            </div>
+        );
     }
 
+    // 2. البوابة الحديدية (تمنع أي وميض للخطأ)
+    // إذا انتهى التحميل ولم نفتح البوابة (isAuthorized = false)، لا تعرض شيئاً حتى يتم التوجيه
+    if (!isAuthorized) {
+        return null;
+    }
+
+    // 3. شاشة انتظار البيانات (بعد أن تأكدنا أنك مسؤول، ننتظر وصول قائمة المستخدمين)
+    if (loading) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[50vh]">
+                <Loader2 className="animate-spin w-8 h-8 text-blue-600"/>
+                <p className="text-slate-500 mt-3">جاري تحميل البيانات...</p>
+            </div>
+        );
+    }
+
+    // 4. المحتوى المحمي (يظهر فقط إذا عبرت كل الحواجز السابقة)
     return (
         <ProtectedRoute allowedRoles={["owner", "manager", "admin"]}>
             <div className="space-y-6 pb-10 md:pb-24 max-w-full overflow-x-hidden" dir="rtl">

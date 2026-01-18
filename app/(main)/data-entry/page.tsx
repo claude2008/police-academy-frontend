@@ -270,7 +270,7 @@ const handleManualCalculate = async () => {
 
   return (
     <ProtectedRoute allowedRoles={["owner","assistant_admin"]}>
-    <div className="space-y-6" dir="rtl">
+    <div className="space-y-6 pb-10 md:pb-24 " dir="rtl">
       <h1 className="text-3xl font-bold text-slate-800 dark:text-white">إدخال البيانات</h1>
       
       <Tabs defaultValue="excel" className="w-full" dir="rtl">

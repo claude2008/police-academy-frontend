@@ -802,10 +802,10 @@ const handleFetchTrainerScores = async () => {
                         </div>
                     )}
 
-                    <div className="flex flex-col md:flex-row items-center gap-2 w-full md:justify-end no-print">
+                   <div className="flex flex-col md:grid md:grid-cols-6 gap-3 bg-slate-100 p-3 rounded-xl border no-print shadow-sm w-full max-w-full box-border overflow-hidden">
     
-    {/* 🟢 حاوية الأزرار: شبكة (Grid) من عمودين للهاتف وسطر واحد للكمبيوتر */}
-    <div className="grid grid-cols-2 md:flex md:flex-wrap items-center gap-2 w-full md:w-auto">
+    {/* 🟢 حاوية الأزرار: شبكة (Grid) متكيفة تماماً للهاتف وسطر واحد للكمبيوتر */}
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap items-center gap-2 w-full md:w-auto">
         
         {/* زر جلب درجة المدرب - يظهر فقط عند تفعيل العمود */}
         {viewMode === "official" && showTrainerColumn && (
@@ -834,35 +834,35 @@ const handleFetchTrainerScores = async () => {
 
         {/* زر الطباعة */}
         <Button 
-    onClick={() => {
-        // 1. حفظ العنوان الأصلي للصفحة
-        const originalTitle = document.title;
-        
-        // 2. تجهيز البيانات لاسم الملف
-        const examType = selectedGroup.type === "fitness" ? "اختبار_لياقة_بدنية" : "اختبار_اشتباك";
-        const courseName = selectedGroup.course.replace(/\s+/g, '_'); // استبدال المسافات بشرطة سفلية
-        const batchName = selectedGroup.batch.replace(/\s+/g, '_');
-        const examDate = selectedGroup.exam_date;
+            onClick={() => {
+                // 1. حفظ العنوان الأصلي للصفحة
+                const originalTitle = document.title;
+                
+                // 2. تجهيز البيانات لاسم الملف
+                const examType = selectedGroup.type === "fitness" ? "اختبار_لياقة_بدنية" : "اختبار_اشتباك";
+                const courseName = selectedGroup.course.replace(/\s+/g, '_'); // استبدال المسافات بشرطة سفلية
+                const batchName = selectedGroup.batch.replace(/\s+/g, '_');
+                const examDate = selectedGroup.exam_date;
 
-        // 3. صياغة اسم الملف الكامل بالعربي
-        // التنسيق: نوع الاختبار-دورة-دفعة-تاريخ
-        const fileName = `${examType}_${courseName}_دفعة_${batchName}_تاريخ_${examDate}`;
+                // 3. صياغة اسم الملف الكامل بالعربي
+                // التنسيق: نوع الاختبار-دورة-دفعة-تاريخ
+                const fileName = `${examType}_${courseName}_دفعة_${batchName}_تاريخ_${examDate}`;
 
-        // 4. تغيير عنوان المتصفح مؤقتاً (هذا ما يقرأه الـ PDF كاسم للملف)
-        document.title = fileName;
+                // 4. تغيير عنوان المتصفح مؤقتاً (هذا ما يقرأه الـ PDF كاسم للملف)
+                document.title = fileName;
 
-        // 5. تنفيذ أمر الطباعة
-        window.print();
+                // 5. تنفيذ أمر الطباعة
+                window.print();
 
-        // 6. إعادة العنوان الأصلي بعد إغلاق نافذة الطباعة
-        setTimeout(() => {
-            document.title = originalTitle;
-        }, 500);
-    }} 
-    className="bg-slate-900 h-10 px-3 text-[10px] md:text-xs gap-1 font-bold shadow-md text-white flex-1 md:flex-none"
->
-    <Printer className="w-4 h-4" /> طباعة
-</Button>
+                // 6. إعادة العنوان الأصلي بعد إغلاق نافذة الطباعة
+                setTimeout(() => {
+                    document.title = originalTitle;
+                }, 500);
+            }} 
+            className="bg-slate-900 h-10 px-3 text-[10px] md:text-xs gap-1 font-bold shadow-md text-white w-full md:w-auto"
+        >
+            <Printer className="w-4 h-4" /> طباعة
+        </Button>
 
         {/* زر الإكسل */}
         <Button 
@@ -1177,10 +1177,25 @@ const handleFetchTrainerScores = async () => {
                 <Input placeholder="بحث بالعنوان..." className="h-9 pr-9 bg-white" value={searchQuery} onChange={(e)=>{setSearchQuery(e.target.value); setMainPage(1);}} />
             </div>
             
-            <div className="relative">
-                <Calendar className="absolute right-3 top-2.5 w-4 h-4 text-slate-400 z-10" />
-                <Input type="date" className="h-9 pr-9 bg-white font-bold" value={dateSearch} onChange={(e)=>{setDateSearch(e.target.value); setMainPage(1);}} />
-            </div>
+            {/* 🟢 مربع البحث عن التاريخ - حل جذري لمشكلة الآيفون والتموج */}
+<div className="relative w-full overflow-hidden">
+    <Calendar className="absolute right-3 top-2.5 w-4 h-4 text-slate-400 z-10 pointer-events-none" />
+    <Input 
+        type="date" 
+        className="h-9 pr-9 bg-white font-bold w-full text-[14px] md:text-sm shadow-sm" 
+        style={{ 
+            minWidth: '0',
+            maxWidth: '100%',
+            display: 'block',
+            // 🍎 خصائص سحرية لإجبار الآيفون على احترام العرض
+            WebkitAppearance: 'none',
+            MozAppearance: 'none',
+            appearance: 'none'
+        }}
+        value={dateSearch} 
+        onChange={(e)=>{setDateSearch(e.target.value); setMainPage(1);}} 
+    />
+</div>
 
             {/* فلتر الدورة */}
             <Select value={filterCourse} onValueChange={(v)=>{setFilterCourse(v); setMainPage(1);}}>

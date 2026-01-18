@@ -10,6 +10,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent } from "@/components/ui/card"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog"
 import { Save, Printer, Trash2, Loader2, Calendar, Download, Edit, AlertCircle, Search, ChevronLeft, ChevronRight, CheckSquare } from "lucide-react"
 import { toast } from "sonner"
@@ -58,7 +68,7 @@ export default function WeeklyGradesPage() {
     const [subject, setSubject] = useState("لياقة بدنية")
     const [startDate, setStartDate] = useState("")
     const [endDate, setEndDate] = useState("")
-    
+    const [isConfirmSaveOpen, setIsConfirmSaveOpen] = useState(false);
     // Filters
     const [filterCourse, setFilterCourse] = useState("all")
     const [filterBatch, setFilterBatch] = useState("all")
@@ -337,54 +347,72 @@ useEffect(() => {
     endDate
 ]);
 
-    const handleSave = async () => {
+   // 1. دالة الفحص الأولي وفتح نافذة التأكيد 
+    const handleSave = () => {
         if (isPathIncomplete) {
-        return toast.error("خطأ: يجب تحديد المسار الكامل (الدورة، السرية، والفصيل) قبل الحفظ لضمان ظهور النتائج في السجل.");
-    }
-    if (!weekTitle || soldiers.length === 0) return toast.error("البيانات ناقصة");
-    if (filterCourse === "طلبة الدبلوم" && !selectedPeriod) return toast.error("الرجاء اختيار الفترة الدراسية");
-
-    setIsSaving(true);
-    try {
-        const reportData = {
-            title: weekTitle, start_date: startDate, end_date: endDate, subject,
-            course: filterCourse, batch: filterBatch, company: filterCompany, platoon: filterPlatoon,
-            period: filterCourse === "طلبة الدبلوم" ? selectedPeriod : null,
-            // 💡 ملاحظة أمنية: يفضل أن يستخرج السيرفر trainer_id من التوكن تلقائياً
-            trainer_id: 22 
-        };
-        
-        // 🚀 لا نضع Headers هنا، المفتش سيقوم بالواجب
-        // البحث عن هذا الجزء وتعديله:
-const reportRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports/save`, {
-    method: "POST", 
-    headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}` // 🛡️ أضف هذا السطر
-    },
-    body: JSON.stringify({ 
-        report_id: existingReportId, 
-        report: reportData, 
-        grades: soldiers 
-    })
-});
-
-        if (reportRes.ok) {
-            const responseData = await reportRes.json();
-            toast.success(responseData.message || "تمت العملية بنجاح ✅");
-            setSoldiers([]); setWeekTitle(""); setStartDate(""); setEndDate(""); 
-            setSelectedPeriod(""); setExistingReportId(null); 
-            
-        } else {
-            const err = await reportRes.json();
-            toast.error(err.detail || "فشل الحفظ");
+            return toast.error("خطأ: يجب تحديد المسار الكامل (الدورة، السرية، والفصيل) قبل الحفظ لضمان ظهور النتائج في السجل.");
         }
-    } catch (e) {
-        toast.error("خطأ في الاتصال بالسيرفر");
-    } finally {
-        setIsSaving(false);
-    }
-}
+        if (!weekTitle || soldiers.length === 0) return toast.error("البيانات ناقصة");
+        if (filterCourse === "طلبة الدبلوم" && !selectedPeriod) return toast.error("الرجاء اختيار الفترة الدراسية");
+
+        // إذا كانت البيانات سليمة، نفتح نافذة التأكيد الجميلة
+        setIsConfirmSaveOpen(true);
+    };
+
+    // 2. دالة التنفيذ الفعلي (ترسل البيانات للسيرفر)
+    const executeSave = async () => {
+        setIsConfirmSaveOpen(false); // إغلاق النافذة فوراً
+        setIsSaving(true);
+        
+        try {
+            const reportData = {
+                title: weekTitle, 
+                start_date: startDate, 
+                end_date: endDate, 
+                subject,
+                course: filterCourse, 
+                batch: filterBatch, 
+                company: filterCompany, 
+                platoon: filterPlatoon,
+                period: filterCourse === "طلبة الدبلوم" ? selectedPeriod : null,
+                trainer_id: 22 
+            };
+            
+            const reportRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports/save`, {
+                method: "POST", 
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                },
+                body: JSON.stringify({ 
+                    report_id: existingReportId, 
+                    report: reportData, 
+                    grades: soldiers 
+                })
+            });
+
+            if (reportRes.ok) {
+                const responseData = await reportRes.json();
+                toast.success(responseData.message || "تمت العملية بنجاح ✅");
+                
+                // تنظيف البيانات بعد النجاح
+                setSoldiers([]); 
+                setWeekTitle(""); 
+                setStartDate(""); 
+                setEndDate(""); 
+                setSelectedPeriod(""); 
+                setExistingReportId(null); 
+                
+            } else {
+                const err = await reportRes.json();
+                toast.error(err.detail || "فشل الحفظ");
+            }
+        } catch (e) {
+            toast.error("خطأ في الاتصال بالسيرفر");
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
    const handleExportExcel = () => {
     if (soldiers.length === 0) return toast.warning("لا توجد بيانات للتصدير");
@@ -800,6 +828,41 @@ const reportRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports
                 <Dialog open={noteModalOpen} onOpenChange={setNoteModalOpen}><DialogContent><DialogHeader><DialogTitle>تعديل الملاحظات</DialogTitle><DialogDescription>اكتب ملاحظة لهذا الطالب.</DialogDescription></DialogHeader><div className="py-2"><textarea className="w-full p-3 border rounded-md min-h-[100px] text-right" value={currentNoteText} onChange={(e) => setCurrentNoteText(e.target.value)} placeholder="اكتب هنا..." /></div><DialogFooter><Button variant="outline" onClick={() => setNoteModalOpen(false)}>إلغاء</Button><Button onClick={saveNote}>حفظ الملاحظة</Button></DialogFooter></DialogContent></Dialog>
             </div>
         </div>
+       <AlertDialog open={isConfirmSaveOpen} onOpenChange={setIsConfirmSaveOpen}>
+    <AlertDialogContent dir="rtl" className="max-w-[400px] rounded-[1.5rem] border-none shadow-2xl">
+        <AlertDialogHeader className="text-right">
+            <div className="bg-blue-50 w-12 h-12 rounded-full flex items-center justify-center mb-4">
+                <Save className="w-6 h-6 text-blue-600" />
+            </div>
+            <AlertDialogTitle className="text-xl font-black text-slate-800">تأكيد حفظ التقرير الأسبوعي</AlertDialogTitle>
+            
+            {/* 🟢 التعديل هنا: استخدام div بدلاً من الفقرة لتجنب خطأ التداخل */}
+            <div className="text-sm text-muted-foreground space-y-3 pt-2">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                    <span className="text-sm font-bold text-blue-700 block">{weekTitle}</span>
+                    <span className="text-[10px] text-slate-500 mt-1 block">
+                        الفترة: من <span className="font-bold">{startDate}</span> إلى <span className="font-bold">{endDate}</span>
+                    </span>
+                </div>
+                <div className="text-sm text-slate-600 leading-relaxed">
+                    هل أنت متأكد   في حفظ درجات هذا الأسبوع لـ <span className="font-bold">{soldiers.length}</span> طالب؟ 
+                    {existingReportId && <span className="block text-amber-600 font-bold mt-1">⚠️ سيتم تحديث التقرير الموجود مسبقاً.</span>}
+                </div>
+            </div>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="flex-row-reverse gap-3 mt-6">
+            <AlertDialogAction 
+                onClick={executeSave}
+                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 rounded-xl shadow-lg shadow-blue-100"
+            >
+                تأكيد الحفظ
+            </AlertDialogAction>
+            <AlertDialogCancel className="flex-1 h-11 rounded-xl border-slate-200 text-slate-500 font-medium">
+                تراجع
+            </AlertDialogCancel>
+        </AlertDialogFooter>
+    </AlertDialogContent>
+</AlertDialog>
         </ProtectedRoute>
     )
 }

@@ -575,7 +575,7 @@ const fetchDisciplinaryRegulations = async () => {
                 throw new Error("فشل تحديث البيانات");
             })
             .then(freshUser => {
-                console.log("✅ تم تحديث الصلاحيات من السيرفر:", freshUser.extra_permissions);
+                
                 
                 // تحديث الحالة في الصفحة فوراً
                 setCurrentUser(freshUser);
@@ -1209,7 +1209,7 @@ const removeDayRow = (templateId: string, dayName: string) => {
   }));
 };
   if (!mounted) return null
-console.log("🛠️ صلاحيات المستخدم الحالية:", currentUser?.extra_permissions);
+
 
 if (!mounted) return null
   return (

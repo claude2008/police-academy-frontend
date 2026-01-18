@@ -20,6 +20,7 @@ import { toast } from "sonner"
 export default function DashboardPage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   
   const [selectionState, setSelectionState] = useState<{
     isOpen: boolean;
@@ -37,10 +38,24 @@ export default function DashboardPage() {
 
   const [currentSlide, setCurrentSlide] = useState(0); 
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem("user")
-    if (storedUser) setUser(JSON.parse(storedUser))
-  }, [])
+ useEffect(() => {
+    // دالة داخلية لتحديث البيانات
+    const refreshUser = () => {
+        const storedUser = localStorage.getItem("user");
+        if (storedUser) {
+            setUser(JSON.parse(storedUser));
+        }
+        setIsLoadingAuth(false);
+    };
+
+    // تنفيذ التحديث عند فتح الصفحة لأول مرة
+    refreshUser();
+
+    // 🟢 السر هنا: تحديث البيانات فوراً عند العودة للصفحة (مثلاً من الإعدادات)
+    window.addEventListener('focus', refreshUser);
+
+    return () => window.removeEventListener('focus', refreshUser);
+}, []);
 
   const containerVariants: Variants = {
     hidden: { opacity: 0, y: 20 },
@@ -208,24 +223,37 @@ export default function DashboardPage() {
   // =========================================================
   // 🚀 المحرك الذكي (The Smart Engine)
   // =========================================================
-  const handleFeatureClick = (featureId: any) => {
-    if (!user) return;
+ const handleFeatureClick = (featureId: any) => {
+    // 1. القراءة المباشرة من الذاكرة (لحل مشكلة البيانات القديمة)
+    const storedUser = localStorage.getItem("user");
+    
+    if (!storedUser) {
+        toast.error("يرجى تسجيل الدخول أولاً");
+        router.push("/login");
+        return;
+    }
 
-    // ✅ تم رفع التعريفات للأعلى لتجنب خطأ "used before declaration"
-    const role = user.role || "";
+    const currentUser = JSON.parse(storedUser);
+    
+    // تحديث الحالة في الواجهة لتبقى متناسقة
+    if (!user) setUser(currentUser);
+
+    // 🟢 استخدام البيانات الطازجة (currentUser) بدلاً من القديمة
+    const role = currentUser.role || "";
+    
     const isTrainer = ["military_trainer", "sports_trainer"].includes(role);
     const isSupervisorOrOfficer = ["military_supervisor", "sports_supervisor", "military_officer", "sports_officer", "assistant_admin"].includes(role);
     const isSuperAdmin = ["owner", "manager", "admin"].includes(role);
 
-   // 🟢 معالجة زر "أخرى"
+    // 🟢 معالجة زر "أخرى"
     if (featureId === 'others') {
         
-        // ❌ المنع الجديد: ضابط ومشرف العسكري (لا يحدث شيء عند الضغط)
+        // ❌ المنع الجديد: ضابط ومشرف العسكري
         if (["military_supervisor", "military_officer"].includes(role)) {
-            return; // توقف هنا، لن تفتح أي نافذة ولن يظهر أي شيء
+            return; 
         }
 
-        // 1. الموظفين (رياضي + مساعد مسؤول) - تظهر لهم الخيارات
+        // 1. الموظفين (رياضي + مساعد مسؤول)
         if (["sports_trainer", "sports_supervisor", "sports_officer", "assistant_admin"].includes(role)) {
             setSelectionState({
                 isOpen: true,
@@ -237,7 +265,7 @@ export default function DashboardPage() {
             return;
         }
 
-        // 2. الإدارة العليا (يختار الفرع أولاً)
+        // 2. الإدارة العليا
         if (isSuperAdmin) {
             setSelectionState({
                 isOpen: true,
@@ -252,18 +280,19 @@ export default function DashboardPage() {
         return; 
     }
 
-    // تحديد الفرع تلقائياً
+    // تحديد الفرع تلقائياً بناءً على البيانات الجديدة
     let autoBranch: 'military' | 'sports' | null = null;
     if (role.includes("military")) autoBranch = 'military';
     if (role.includes("sports")) autoBranch = 'sports';
     if (role === 'assistant_admin') autoBranch = 'sports';
+
     // ---------------------------------------------------------
     // 🛑 السيناريو الأول: الموظفين (مدرب، مشرف، ضابط، مساعد)
     // ---------------------------------------------------------
     if (isTrainer || isSupervisorOrOfficer) {
         const myBranch = autoBranch || 'military'; 
 
-        // أ. زر التقارير (دائماً يفتح نافذة خيارات)
+        // أ. زر التقارير
         if (featureId === 'reports') {
             setSelectionState({
                 isOpen: true,
@@ -275,7 +304,7 @@ export default function DashboardPage() {
             return;
         }
 
-        // ب. المدرب (توجيه مباشر في الغالب)
+        // ب. المدرب
         if (isTrainer) {
             if (featureId === 'attendance') router.push(`/daily-schedule?branch=${myBranch}`);
             if (featureId === 'violations') router.push(`/violations?branch=${myBranch}`);
@@ -286,33 +315,31 @@ export default function DashboardPage() {
             return;
         }
 
-        // ج. المشرف/الضابط (نافذة خيارات)
-       // ج. المشرف/الضابط (نافذة خيارات)
-    if (isSupervisorOrOfficer) {
-        
-        // 🟢 التعديل الجديد للمشرف (Supervisor) فقط
-        if (featureId === 'soldiers' && role.includes("_supervisor")) {
-            // المشرف يذهب مباشرة لملفات المجندين دون خيارات
-            router.push(`/courses/${autoBranch || 'military'}/soldiers`);
+        // ج. المشرف/الضابط
+        if (isSupervisorOrOfficer) {
+            
+            // 🟢 التعديل للمشرف (Supervisor) فقط
+            if (featureId === 'soldiers' && role.includes("_supervisor")) {
+                router.push(`/courses/${autoBranch || 'military'}/soldiers`);
+                return;
+            }
+
+            // الضابط ومساعد المسؤول
+            if (featureId === 'soldiers') {
+                setSelectionState({ isOpen: true, step: 'action_select', feature: featureId, selectedBranch: autoBranch || 'military', selectedExamType: null });
+                return;
+            }
+
+            // باقي الأزرار
+            setSelectionState({
+                isOpen: true,
+                step: featureId === 'exams' ? 'exam_select' : 'action_select',
+                feature: featureId,
+                selectedBranch: autoBranch || 'military',
+                selectedExamType: null
+            });
             return;
         }
-
-        // الضابط ومساعد المسؤول (تظهر لهم نافذة الخيارات كما هي)
-        if (featureId === 'soldiers') {
-            setSelectionState({ isOpen: true, step: 'action_select', feature: featureId, selectedBranch: autoBranch || 'military', selectedExamType: null });
-            return;
-        }
-
-        // باقي الأزرار (الاختبارات، التكميل، إلخ) تظهر فيها النافذة للجميع
-        setSelectionState({
-            isOpen: true,
-            step: featureId === 'exams' ? 'exam_select' : 'action_select',
-            feature: featureId,
-            selectedBranch: autoBranch || 'military',
-            selectedExamType: null
-        });
-        return;
-    }
     }
 
     // ---------------------------------------------------------

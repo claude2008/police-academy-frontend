@@ -108,7 +108,32 @@ export default function WeightsPage() {
     }
     fetchFilters()
   }, [filterCourse, filterBatch, filterCompany])
+  const isPathComplete = useMemo(() => {
+    // 1. الدورة أساسية دائماً
+    if (filterCourse === "all" || !filterCourse) return false;
 
+    // 2. فحص الدفعة: إذا كان هناك خيارات للدفعة ولم يختر المستخدم واحدة
+    if (filterOptions.batches?.length > 0 && filterBatch === "all") return false;
+
+    // 3. فحص السرية: إذا كان هناك خيارات للسرية ولم يختر المستخدم واحدة
+    if (filterOptions.companies?.length > 0 && filterCompany === "all") return false;
+
+    // 4. فحص الفصيل: إذا كان هناك خيارات للفصيل ولم يختر المستخدم واحدة
+    if (filterOptions.platoons?.length > 0 && filterPlatoon === "all") return false;
+
+    // إذا تجاوز كل الفحوصات، فالمسار مكتمل
+    return true;
+  }, [filterCourse, filterBatch, filterCompany, filterPlatoon, filterOptions]);
+useEffect(() => {
+      setSoldiers([]);
+      setHasSearched(false);
+
+      // ⚡ إذا اكتمل المسار تماماً، اطلب البيانات فوراً تلقائياً
+      if (isPathComplete) {
+          fetchData();
+          setHasSearched(true);
+      }
+  }, [filterCourse, filterBatch, filterCompany, filterPlatoon, isPathComplete]);
   // 4. دالة جلب البيانات من السيرفر
  const fetchData = async () => {
       setLoading(true)
@@ -416,7 +441,8 @@ export default function WeightsPage() {
     filterCompany !== 'all' ? `السرية ${filterCompany}` : '',
     filterPlatoon !== 'all' ? filterPlatoon : '',
   ].filter(Boolean).join(' / ');
-
+// 🛡️ فحص اكتمال المسار المعتمد
+  
   return (
     <ProtectedRoute allowedRoles={["owner","manager","admin","assistant_admin","sports_officer","sports_supervisor", "sports_trainer"]}>
     <div className="space-y-6 pb-20 md:pb-32 " dir="rtl">
@@ -453,9 +479,9 @@ export default function WeightsPage() {
           <p className="text-slate-500 mt-1">سجل دوري لمتابعة التطور البدني للمجندين</p>
         </div>
         <div className="flex gap-2">
-            <Button variant="outline" onClick={() => { document.title = `متابعة الأوزان - ${filterText}`; window.print(); }} className="gap-2"><Printer className="w-4 h-4" /> طباعة</Button>
-            <Button variant="outline" onClick={handleExportExcel} className="gap-2 border-green-600 text-green-700 hover:bg-green-50"><Download className="w-4 h-4" /> Excel</Button>
-            <Button onClick={handleSave} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
+            <Button variant="outline" disabled={!isPathComplete} onClick={() => { document.title = `متابعة الأوزان - ${filterText}`; window.print(); }} className="gap-2"><Printer className="w-4 h-4" /> طباعة</Button>
+            <Button variant="outline" disabled={!isPathComplete} onClick={handleExportExcel} className="gap-2 border-green-600 text-green-700 hover:bg-green-50"><Download className="w-4 h-4" /> Excel</Button>
+            <Button onClick={handleSave} disabled={isSaving || !isPathComplete} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
                 {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} حفظ السجل
             </Button>
         </div>
@@ -540,9 +566,13 @@ export default function WeightsPage() {
                 <Input placeholder="بحث بالاسم أو الرقم العسكري..." className="max-w-md" value={search} onChange={(e) => setSearch(e.target.value)} />
                 <Button onClick={handleAddSession} size="icon" className="md:hidden bg-green-600 text-white hover:bg-green-700 shrink-0"><Plus className="w-5 h-5" /></Button>
                 <div className="flex-1"></div>
-                <Button onClick={handleShowList} disabled={loading} className="bg-slate-900 text-white hover:bg-slate-800 gap-2 w-32">
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : <Search className="w-4 h-4" />} عرض القائمة
-                </Button>
+                <Button 
+    onClick={handleShowList} 
+    disabled={loading || !isPathComplete} 
+    className={`${!isPathComplete ? 'opacity-50 cursor-not-allowed' : ''} bg-slate-900 text-white w-32`}
+>
+    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : "عرض القائمة"}
+</Button>
             </div>
         </CardContent>
       </Card>
