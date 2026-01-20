@@ -638,45 +638,58 @@ const handleFetchTrainerScores = async () => {
 
         // 2. الشيتات التفصيلية (للاشتباك فقط)
         if (selectedGroup.type === "engagement") {
-            const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
-                const rows: any[] = [];
-                finalReportData.forEach((s: any, i: number) => {
-                    const evaluatorScores = s[scoreKey] || [];
-                    evaluatorScores.forEach((evaluator: any, idx: number) => {
-                        const detailRow: any = {
-                            "م": i + 1,
-                            "الرقم العسكري": s.military_id,
-                            "الاسم": s.name,
-                            "المقيم": evaluator.by || `مقيم ${idx + 1}`
-                        };
-
-                        let snap = evaluator.exam_snapshot || evaluator.snapshot;
-                        if (typeof snap === 'string') { try { snap = JSON.parse(snap); } catch { snap = null; } }
-
-                        let configsList = [];
-                        if (Array.isArray(snap)) configsList = snap;
-                        else if (snap && typeof snap === 'object') configsList = [snap];
-
-                        configsList.forEach((config: any) => {
-                            if (config.axes && Array.isArray(config.axes)) {
-                                config.axes.forEach((axis: any) => {
-                                    if (axis.criteria && Array.isArray(axis.criteria)) {
-                                        axis.criteria.forEach((crit: any) => {
-                                            const colName = `${axis.title || axis.name} - ${crit.name}`;
-                                            const val = crit.score;
-                                            if (val !== undefined && val !== null) detailRow[colName] = val;
-                                        });
-                                    }
-                                });
-                            }
-                        });
-
-                        detailRow["إجمالي الدرجة"] = evaluator.val;
-                        rows.push(detailRow);
-                    });
-                });
-                return rows;
+const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
+    const rows: any[] = [];
+    finalReportData.forEach((s: any, i: number) => {
+        const evaluatorScores = s[scoreKey] || [];
+        
+        evaluatorScores.forEach((evaluator: any, idx: number) => {
+            const detailRow: any = {
+                "م": i + 1,
+                "الرقم العسكري": s.military_id,
+                "الاسم": s.name,
+                // 🟢 التعديل الجوهري هنا:
+                // يبحث عن الاسم في 'by' (الذي حقناه يدوياً) 
+                // أو في 'creator_name' (الذي يأتي من السجل الأصلي)
+                "المقيم": evaluator.by || s.creator_name || `مقيم ${idx + 1}`
             };
+
+            // معالجة الـ Snapshot (المعايير)
+            let snap = evaluator.exam_snapshot || evaluator.snapshot || s.exam_snapshot;
+            
+            // تحويل النص إلى Object إذا كان القادم من الباك إند نصاً
+            if (typeof snap === 'string') { 
+                try { snap = JSON.parse(snap); } catch { snap = null; } 
+            }
+
+            let configsList = [];
+            if (Array.isArray(snap)) configsList = snap;
+            else if (snap && typeof snap === 'object') configsList = [snap];
+
+            // استخراج الدرجات التفصيلية لكل معيار
+            configsList.forEach((config: any) => {
+                if (config.axes && Array.isArray(config.axes)) {
+                    config.axes.forEach((axis: any) => {
+                        if (axis.criteria && Array.isArray(axis.criteria)) {
+                            axis.criteria.forEach((crit: any) => {
+                                // دمج اسم المحور مع اسم المعيار ليكون عنوان العمود واضحاً
+                                const colName = `${axis.title || axis.name} - ${crit.name}`;
+                                const val = crit.score;
+                                if (val !== undefined && val !== null) {
+                                    detailRow[colName] = val;
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+
+            detailRow["إجمالي الدرجة"] = evaluator.val;
+            rows.push(detailRow);
+        });
+    });
+    return rows;
+};
 
             const techRows = buildDetailSheet('technical_scores');
             if (techRows.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(techRows), "تفاصيل الفني");
@@ -785,46 +798,48 @@ const handleFetchTrainerScores = async () => {
                                         <SelectContent><SelectItem value="all">الكل</SelectItem>{Array.from(new Set(processedGroupData.students.map((s:any)=>s.platoon || s["الفصيل"]))).filter(Boolean).map(p=><SelectItem key={p as string} value={p as string}>{p as string}</SelectItem>)}</SelectContent>
                                     </Select>
                                 </div>
-                               <div className="flex flex-wrap items-center gap-2 w-full md:justify-end no-print" >
-                                
-                                    {selectedGroup.type === "engagement" && (
-                        <div className="flex bg-white rounded-lg border h-10 px-2 items-center gap-2 shadow-sm flex-1 md:flex-none min-w-[180px]">
-                            <Label className="text-[9px] font-bold text-slate-500 whitespace-nowrap">جهة الطباعة:</Label>
-                            <Select value={printDestination} onValueChange={(v:any)=>setPrintDestination(v)}>
-                                <SelectTrigger className="w-full border-none text-[10px] font-bold focus:ring-0 h-7">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="sports">المكتب الرياضي</SelectItem>
-                                    <SelectItem value="control">مكتب الكنترول</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                    )}
-
-                   <div className="flex flex-col md:grid md:grid-cols-6 gap-3 bg-slate-100 p-3 rounded-xl border no-print shadow-sm w-full max-w-full box-border overflow-hidden">
+                               {/* 🟢 حاوية التحكم والأزرار المطورة: متوافقة تماماً مع الهاتف والحاسوب */}
+<div className="flex flex-col md:flex-row items-center justify-between gap-3 w-full no-print bg-slate-50 p-3 rounded-xl border shadow-sm">
     
-    {/* 🟢 حاوية الأزرار: شبكة (Grid) متكيفة تماماً للهاتف وسطر واحد للكمبيوتر */}
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:flex-wrap items-center gap-2 w-full md:w-auto">
+    {/* 1. جهة الطباعة (تظهر فقط في الاشتباك) */}
+    {selectedGroup.type === "engagement" ? (
+        <div className="flex bg-white rounded-lg border h-10 px-2 items-center gap-2 shadow-sm w-full md:w-auto">
+            <Label className="text-[9px] font-bold text-slate-500 whitespace-nowrap">جهة الطباعة:</Label>
+            <Select value={printDestination} onValueChange={(v:any)=>setPrintDestination(v)}>
+                <SelectTrigger className="w-full md:w-32 border-none text-[10px] font-bold focus:ring-0 h-7">
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="sports">المكتب الرياضي</SelectItem>
+                    <SelectItem value="control">مكتب الكنترول</SelectItem>
+                </SelectContent>
+            </Select>
+        </div>
+    ) : (
+        <div className="hidden md:block w-1"></div> // مساحة فارغة للتوازن
+    )}
+
+    {/* 2. مجموعة الأزرار: 2 جنب بعض في الهاتف وسطر واحد في الكمبيوتر */}
+    <div className="grid grid-cols-2 sm:grid-cols-2 md:flex md:flex-row items-center gap-2 w-full md:w-auto">
         
-        {/* زر جلب درجة المدرب - يظهر فقط عند تفعيل العمود */}
+        {/* زر جلب الدرجات - يظهر في سطر كامل في الهاتف إذا كان متاحاً */}
         {viewMode === "official" && showTrainerColumn && (
             <Button 
                 onClick={handleFetchTrainerScores} 
                 disabled={loading} 
-                className="bg-orange-600 hover:bg-orange-700 h-10 px-2 text-[10px] gap-1 font-bold shadow-md text-white w-full md:w-auto"
+                className="col-span-2 md:col-auto bg-orange-600 hover:bg-orange-700 h-10 px-3 text-[10px] gap-1 font-bold shadow-md text-white"
             >
                 {loading ? <Loader2 className="animate-spin w-3 h-3"/> : <UserCheck className="w-3 h-3" />}
                 جلب الدرجات
             </Button>
         )}
 
-        {/* زر إخفاء/إظهار درجة المدرب - يظهر فقط في الاشتباك */}
+        {/* زر إخفاء/إظهار الدرجة */}
         {selectedGroup.type === "engagement" && (
             <Button 
                 onClick={() => setShowTrainerColumn(!showTrainerColumn)} 
                 variant="outline"
-                className={`h-10 px-2 text-[10px] font-bold border-2 transition-all w-full md:w-auto ${
+                className={`h-10 px-2 text-[10px] font-bold border-2 transition-all ${
                     !showTrainerColumn ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-slate-300 text-slate-600'
                 }`}
             >
@@ -835,31 +850,16 @@ const handleFetchTrainerScores = async () => {
         {/* زر الطباعة */}
         <Button 
             onClick={() => {
-                // 1. حفظ العنوان الأصلي للصفحة
                 const originalTitle = document.title;
-                
-                // 2. تجهيز البيانات لاسم الملف
                 const examType = selectedGroup.type === "fitness" ? "اختبار_لياقة_بدنية" : "اختبار_اشتباك";
-                const courseName = selectedGroup.course.replace(/\s+/g, '_'); // استبدال المسافات بشرطة سفلية
+                const courseName = selectedGroup.course.replace(/\s+/g, '_');
                 const batchName = selectedGroup.batch.replace(/\s+/g, '_');
                 const examDate = selectedGroup.exam_date;
-
-                // 3. صياغة اسم الملف الكامل بالعربي
-                // التنسيق: نوع الاختبار-دورة-دفعة-تاريخ
-                const fileName = `${examType}_${courseName}_دفعة_${batchName}_تاريخ_${examDate}`;
-
-                // 4. تغيير عنوان المتصفح مؤقتاً (هذا ما يقرأه الـ PDF كاسم للملف)
-                document.title = fileName;
-
-                // 5. تنفيذ أمر الطباعة
+                document.title = `${examType}_${courseName}_دفعة_${batchName}_تاريخ_${examDate}`;
                 window.print();
-
-                // 6. إعادة العنوان الأصلي بعد إغلاق نافذة الطباعة
-                setTimeout(() => {
-                    document.title = originalTitle;
-                }, 500);
+                setTimeout(() => { document.title = originalTitle; }, 500);
             }} 
-            className="bg-slate-900 h-10 px-3 text-[10px] md:text-xs gap-1 font-bold shadow-md text-white w-full md:w-auto"
+            className="bg-slate-900 h-10 px-3 text-[10px] md:text-xs gap-1 font-bold shadow-md text-white"
         >
             <Printer className="w-4 h-4" /> طباعة
         </Button>
@@ -868,14 +868,12 @@ const handleFetchTrainerScores = async () => {
         <Button 
             variant="outline" 
             onClick={exportToExcel} 
-            className="text-green-700 border-green-600 h-10 px-2 text-[10px] bg-white font-bold shadow-sm w-full md:w-auto gap-1"
+            className="text-green-700 border-green-600 h-10 px-2 text-[10px] bg-white font-bold shadow-sm gap-1"
         >
             <Download className="w-4 h-4" /> Excel
         </Button>
-
     </div>
 </div>
-                                </div>
                             </div>
                         </div>
 

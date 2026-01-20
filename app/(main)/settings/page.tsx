@@ -90,6 +90,13 @@ type DisciplinaryRegulation = { id: string; name: string; degrees: ViolationDegr
 const toEnglishDigits = (str: string) => {
   return str.replace(/[٠-٩]/g, (d) => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
 };
+const MILITARY_SECTIONS = [
+  { id: 'shooting', name: 'الرماية' },
+  { id: 'infantry', name: 'المشاة' },
+  { id: 'student_teacher', name: 'تلميذ بدور معلم' },
+  { id: 'weapons', name: 'الأسلحة' },
+  { id: 'specialized_courses', name: 'دورات تخصيصية' }
+];
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
@@ -109,6 +116,7 @@ const [filterOptions, setFilterOptions] = useState<{ courses: string[], batches:
   const [isEditingTemplate, setIsEditingTemplate] = useState(false); // وضع التعديل
   // 🟢 متغيرات التاب الجديد (الديناميكي)
   const [allExamConfigs, setAllExamConfigs] = useState<any[]>([]); // قائمة بكل الاختبارات (قديم وجديد)
+  const [militarySections, setMilitarySections] = useState<any[]>([]);
   const [selectedConfigId, setSelectedConfigId] = useState<string | null>(null); // الاختبار المختار حالياً للتعديل
   const [newTestName, setNewTestName] = useState(""); // لإنشاء اختبار جديد
   // أيام الأسبوع الثابتة للجدول
@@ -118,6 +126,8 @@ const [filterOptions, setFilterOptions] = useState<{ courses: string[], batches:
   const [userMilId, setUserMilId] = useState<string | null>(null)
   const [editingAxis, setEditingAxis] = useState<{tabId: string, axisId: string, name: string} | null>(null);
 const [isAxisModalOpen, setIsAxisModalOpen] = useState(false);
+const [isAddSectionOpen, setIsAddSectionOpen] = useState(false);
+const [newSectionData, setNewSectionData] = useState({ name: "", key: "" });
   // إعدادات اللياقة والتفضيلات
   const [calcSettings, setCalcSettings] = useState({
     distance: "3200", pass_rate: 60, base_score: 100, mercy_mode: false, rows_per_page: "10"
@@ -557,6 +567,8 @@ useEffect(() => {
     fetchTrainingTemplates();
     fetchDisciplinaryRegulations();
     fetchAllConfigs(); // 👈 أضفنا هذه الدالة هنا لجلب الاختبارات الشاملة (الجديدة)
+    fetchMilitarySections();
+
 
     // 2. معالجة بيانات المستخدم وتحديثها
     try {
@@ -649,6 +661,42 @@ const fetchAllConfigs = async () => {
       }
     } catch (e) { console.error("Error fetching all configs"); }
   };
+const fetchMilitarySections = async () => {
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/military-sections`, {
+            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            setMilitarySections(data);
+        }
+    } catch (e) { console.error("Error fetching military sections"); }
+};
+
+const handleCreateMilitarySection = async (name: string, key: string) => {
+    setLoading(true);
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/military-sections`, {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("token")}`
+            },
+            body: JSON.stringify({ name, key, is_active: true })
+        });
+        if (res.ok) {
+            toast.success("تم إضافة القسم بنجاح ✅");
+            fetchMilitarySections(); // تحديث القائمة فوراً لتظهر في التابات
+        } else {
+            const err = await res.json();
+            toast.error(err.detail || "فشل إضافة القسم");
+        }
+    } catch (e) {
+        toast.error("خطأ في الاتصال بالسيرفر");
+    } finally {
+        setLoading(false);
+    }
+};
   const saveMilitaryConfigs = async () => {
     setLoading(true);
     try {
@@ -738,19 +786,22 @@ const confirmPermanentDelete = async () => {
       headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
     });
 
+    const data = await res.json(); // 👈 سحب البيانات القادمة من السيرفر
+
     if (res.ok) {
-      toast.success("تم حذف الاختبار من السجلات نهائياً");
-      // مسحه من الواجهة
-      setMilitaryData(prev => prev.map(b => 
-        b.id === testToDelete.branchId ? { ...b, tests: b.tests.filter(t => t.id !== testToDelete.testId) } : b
-      ));
+      setAllExamConfigs(prev => prev.filter(conf => conf.id.toString() !== testToDelete.testId));
+      toast.success("تم حذف الاختبار بنجاح ✅");
+      setIsDeleteDialogOpen(false);
     } else {
-      toast.error("فشل الحذف من السيرفر");
+      // 🟢 هنا التعديل: إظهار الرسالة التفصيلية التي أرسلها الباك إند
+      toast.error(data.detail || "تعذر الحذف لوجود ارتباطات");
+      // ملاحظة: لا نغلق النافذة هنا لكي يقرأ المستخدم الرسالة
     }
+  } catch (e) {
+    toast.error("حدث خطأ في الاتصال بالسيرفر");
   } finally {
     setLoading(false);
-    setIsDeleteDialogOpen(false);
-    setTestToDelete(null);
+    // إغلاق النافذة فقط في حال عدم وجود خطأ أو بعد القراءة
   }
 };
   const updateTestName = (branchId: string, testId: string, newName: string) => {
@@ -1263,9 +1314,6 @@ if (!mounted) return null
         </TabsTrigger>
     )}
 
-<TabsTrigger value="dynamic-tests" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-indigo-600 data-[state=active]:text-white">
-    🚀 الاختبارات الشاملة (جديد)
-</TabsTrigger>
 
     {/* 2. معايير اللياقة */}
     {(["owner", "manager", "admin", "assistant_admin", "sports_officer"].includes(userRole || "") || 
@@ -1312,65 +1360,255 @@ if (!mounted) return null
 </TabsList>
         </div>
 
-        {/* 🔵 تاب معايير العسكري */}
-        <TabsContent value="mil-standards">
-          {(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("military_standards")) ? (
-          <Card className="border-t-4 border-t-blue-600 shadow-md">
-            <CardHeader className="text-right pb-2">
-              <CardTitle className="text-blue-700">إدارة اختبارات التدريب العسكري</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <Tabs value={activeMilTab} onValueChange={setActiveMilTab} className="w-full">
-                <TabsList className="w-full grid grid-cols-2 mb-4 h-12 bg-slate-200 p-1">
-                  <TabsTrigger value="shooting" className="gap-2 font-bold h-10"><Target className="w-4 h-4"/> الرماية</TabsTrigger>
-                  <TabsTrigger value="infantry" className="gap-2 font-bold h-10"><Footprints className="w-4 h-4"/> المشاة</TabsTrigger>
+      
+{/* 🔵 تاب معايير العسكري المطور (دعم الأقسام الديناميكية مع زر الإضافة) */}
+<TabsContent value="mil-standards">
+  {(["owner", "manager", "admin", "military_officer"].includes(userRole || "") || 
+    currentUser?.extra_permissions?.includes("military_standards")) ? (
+    <Card className="border-t-4 border-t-blue-600 shadow-xl" >
+      <CardHeader className="text-right flex flex-col md:flex-row justify-between items-center gap-4">
+        <div>
+          <CardTitle className="text-blue-700 flex items-center gap-2">
+            <ShieldCheck className="w-6 h-6" /> إدارة اختبارات التدريب العسكري
+          </CardTitle>
+          <CardDescription>أضف أقسام الاختبارات الرئيسية، والأنواع الفرعية لكل قسم.</CardDescription>
+        </div>
+
+        {/* 🟢 زر (+) السحري لإضافة أقسام رئيسية (رماية، أسلحة...) مباشرة من الواجهة */}
+        {/* 🛡️ لا يظهر الزر إلا إذا كان المستخدم هو المالك */}
+{mounted && userRole === "owner" && (
+  <Button 
+    variant="outline" 
+    size="sm" 
+    onClick={() => setIsAddSectionOpen(true)}
+    className="h-8 gap-1 text-[10px] font-bold border-[#c5b391] text-[#8a7a5b] hover:bg-[#c5b391]/10"
+  >
+    <Plus className="w-3 h-3" />
+    إضافة قسم رئيسي
+  </Button>
+)}
+      </CardHeader>
+      
+      <CardContent>
+        {/* فحص إذا كانت الأقسام لا تزال فارغة من قاعدة البيانات */}
+        {militarySections.length === 0 ? (
+          <div className="flex flex-col items-center justify-center p-20 bg-slate-50 rounded-2xl border-2 border-dashed">
+            <AlertTriangle className="w-12 h-12 text-amber-500 mb-4" />
+            <p className="font-bold text-slate-500 text-center">لا توجد أقسام عسكرية مضافة حالياً في قاعدة البيانات.</p>
+            <p className="text-xs text-slate-400 mt-2">استخدم زر "إضافة قسم رئيسي" بالأعلى للبدء.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col md:flex-row gap-6 min-h-[500px]">
+            {/* القائمة الجانبية الديناميكية */}
+            <div className="w-full md:w-1/3 border rounded-xl bg-slate-50 flex flex-col overflow-hidden">
+              <Tabs defaultValue={militarySections[0]?.key} className="w-full h-full flex flex-col">
+                {/* التبويبات العلوية - توليد تلقائي بناءً على الأقسام الموجودة في الداتابيز */}
+                <TabsList className="w-full grid grid-cols-2 lg:grid-cols-3 rounded-none bg-slate-200 h-auto p-1">
+                  {militarySections.map(s => (
+                    <TabsTrigger key={s.id} value={s.key} className="text-[10px] font-bold py-2 truncate">
+                      {s.name.split(' ')[0]}
+                    </TabsTrigger>
+                  ))}
                 </TabsList>
 
-                {militaryData.map((branch) => (
-                  <TabsContent key={branch.id} value={branch.id} className="space-y-6">
-                    {branch.tests.map((test) => (
-                      <div key={test.id} className="border-2 border-slate-200 rounded-xl overflow-hidden bg-white dark:bg-slate-950">
-                        <div className="bg-slate-50 dark:bg-slate-900 p-3 flex justify-between items-center border-b">
-                          <Input value={test.name} onChange={(e) => updateTestName(branch.id, test.id, e.target.value)} className="font-bold border-blue-200 w-1/2" />
-                          <div className="flex items-center gap-2">
-                            <Badge variant="secondary">إجمالي: {test.criteria.reduce((acc, curr) => acc + (curr.max || 0), 0)} درجة</Badge>
-                            <Button variant="destructive" size="icon" onClick={() => deleteMilitaryTest(branch.id, test.id)} className="h-9 w-9"><Trash2 className="w-4 h-4" /></Button>
-                          </div>
+                {militarySections.map((section) => (
+                  <TabsContent key={section.id} value={section.key} className="p-3 space-y-3 mt-0 flex-1 overflow-y-auto">
+                    {/* حقل إضافة اختبار جديد داخل القسم (رماية، أسلحة، إلخ) */}
+                    <div className="flex gap-2 mb-4 bg-white p-2 rounded-lg border border-blue-100 shadow-sm" dir="rtl">
+                      <Input 
+                        placeholder={`إضافة نوع في ${section.name}...`} 
+                        className="h-10 text-xs"
+                        id={`input-${section.key}`}
+                      />
+                      <Button size="sm" className="bg-blue-600 h-10 w-12" onClick={() => {
+                        const input = document.getElementById(`input-${section.key}`) as HTMLInputElement;
+                        if(!input.value) return toast.error("اكتب اسماً للاختبار");
+                        
+                        const newTest = { 
+                          id: `temp-${Date.now()}`, 
+                          subject: section.key, 
+                          exam_type: input.value, 
+                          criteria: [{ id: `c-${Date.now()}`, name: "المعيار الأول", max: 10 }], 
+                          is_active: true 
+                        };
+                        setAllExamConfigs([...allExamConfigs, newTest]);
+                        setSelectedConfigId(newTest.id);
+                        input.value = "";
+                      }}>
+                        <Plus className="w-5 h-5" />
+                      </Button>
+                    </div>
+
+                    {/* عرض الاختبارات المرتبطة بهذا القسم */}
+                    <div className="space-y-1 max-h-[400px] overflow-y-auto">
+                      {allExamConfigs.filter(c => c.subject === section.key).map(conf => (
+                        <div 
+                          key={conf.id} 
+                          onClick={() => setSelectedConfigId(conf.id)}
+                          className={cn(
+                            "p-3 rounded-lg cursor-pointer transition-all border flex justify-between items-center",
+                            selectedConfigId === conf.id ? "bg-blue-600 text-white shadow-md border-blue-700" : "bg-white hover:bg-slate-100 border-slate-200"
+                          )}
+                        >
+                          <span className="font-bold text-xs truncate">{conf.exam_type}</span>
+                         <Trash2 
+  className="w-3.5 h-3.5 opacity-50 hover:opacity-100 text-red-400" 
+  onClick={(e) => {
+    e.stopPropagation();
+    
+    // 🛡️ المنطق الذكي للحذف:
+    const testId = conf.id.toString();
+
+    if (testId.startsWith('temp-')) {
+      // 1. إذا كان مؤقتاً: احذفه فوراً من الحالة (State) فقط
+      setAllExamConfigs(allExamConfigs.filter(c => c.id !== conf.id));
+      toast.info("تم إزالة المسودة قبل الحفظ");
+    } else {
+      // 2. إذا كان حقيقياً: افتح نافذة التأكيد للحذف من قاعدة البيانات
+      setTestToDelete({ branchId: conf.subject, testId: testId });
+      setIsDeleteDialogOpen(true);
+    }
+  }}
+/>
                         </div>
-                        <div className="p-4 space-y-3">
-                          {test.criteria.map((crit, idx) => (
-                            <div key={crit.id} className="flex items-center gap-2">
-                              <span className="text-xs text-slate-400 w-6 text-center">{idx + 1}.</span>
-                              <Input value={crit.name} placeholder="المعيار" onChange={(e) => updateCriterion(branch.id, test.id, crit.id, 'name', e.target.value)} className="h-8 text-xs bg-slate-50 flex-1" />
-                              <Input type="number" value={crit.max} onChange={(e) => updateCriterion(branch.id, test.id, crit.id, 'max', e.target.value)} className="h-8 w-20 text-center font-bold text-blue-700 bg-slate-50" />
-                              <Button variant="ghost" size="icon" onClick={() => deleteCriterion(branch.id, test.id, crit.id)} className="h-8 w-8 text-red-400"><X className="w-3 h-3" /></Button>
-                            </div>
-                          ))}
-                          <Button variant="outline" size="sm" onClick={() => addCriterion(branch.id, test.id)} className="w-full mt-2 border-dashed h-8 text-xs"><Plus className="w-3 h-3 ml-1" /> إضافة معيار</Button>
-                        </div>
-                      </div>
-                    ))}
-                    <Button onClick={() => addMilitaryTest(branch.id)} className="w-full h-12 border-2 border-dashed border-slate-300 bg-transparent text-slate-600 hover:border-blue-500 hover:text-blue-600"><Plus className="w-5 h-5 ml-2" /> إضافة اختبار جديد</Button>
+                      ))}
+                    </div>
                   </TabsContent>
                 ))}
               </Tabs>
-            </CardContent>
-            <CardFooter className="bg-slate-50 p-4 flex justify-end border-t">
-              <Button onClick={saveMilitaryConfigs} disabled={loading} className="bg-blue-600 hover:bg-blue-700 text-white gap-2 font-bold">
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} حفظ معايير العسكري
-              </Button>
-            </CardFooter>
-          </Card>
-          ) : (
+            </div>
 
-        // ❌ إذا لا: اظهر له هذه الرسالة بدلاً من الجدول
-        <div className="flex flex-col items-center justify-center p-20 bg-slate-50 rounded-2xl border-2 border-dashed">
-             <Lock className="w-12 h-12 text-slate-300 mb-4" />
-             <p className="font-bold text-slate-500">عذراً، لا تملك صلاحية الوصول لهذا القسم.</p>
-        </div>
+            {/* منطقة المحرر (تعديل المعايير) */}
+            <div className="flex-1 border rounded-xl bg-white p-4 relative border-dashed min-h-[400px]">
+              {selectedConfigId ? (
+                (() => {
+                  const activeConf = allExamConfigs.find(c => c.id === selectedConfigId);
+                  if (!activeConf) return null;
+                  return (
+                    <div className="space-y-6">
+                     <div className="flex items-center gap-4 border-b pb-4 mb-4">
+  <h2 className="text-lg font-black text-slate-800">{activeConf.exam_type}</h2>
+  
+  {/* 🔫 حقل إجمالي الطلقات - يظهر فقط في قسم الرماية */}
+  {activeConf.subject === 'shooting' && (
+    <div className="flex items-center gap-2 bg-orange-50 px-3 py-1 rounded-lg border border-orange-200">
+      <Label className="text-xs font-bold text-orange-700 whitespace-nowrap">إجمالي الطلقات:</Label>
+      <Input 
+        type="number" 
+        value={activeConf.total_shots || 0} 
+        onChange={(e) => {
+          const newConfigs = [...allExamConfigs];
+          const target = newConfigs.find(c => c.id === selectedConfigId);
+          if(target) target.total_shots = Number(e.target.value);
+          setAllExamConfigs(newConfigs);
+        }}
+        className="w-16 h-8 text-center font-bold border-orange-300"
+      />
+    </div>
+  )}
+                        <Button 
+  onClick={() => {
+    // 🔍 1. البحث عن بيانات الاختبار الذي تعدله الآن
+    const activeConf = allExamConfigs.find(c => c.id === selectedConfigId);
+    
+    if (activeConf) {
+      // ✅ 2. إرسال البيانات الحقيقية للدالة بدلاً من إرسال "حدث النقر"
+      saveDynamicConfig(activeConf); 
+    } else {
+      toast.error("يرجى اختيار اختبار أولاً");
+    }
+  }} 
+  disabled={loading} // 🔒 الزر سيقفل فعلياً بفضل حالة loading
+  className="bg-green-700 hover:bg-green-800 text-white font-bold h-10 gap-2 shadow-md px-6"
+>
+  {loading ? (
+    <>
+      <Loader2 className="w-4 h-4 animate-spin" />
+      جاري الحفظ...
+    </>
+  ) : (
+    <>
+      <Save className="w-4 h-4" />
+      حفظ المعايير
+    </>
+  )}
+</Button>
+                      </div>
+                      
+                      <div className="space-y-3">
+                         {activeConf.criteria?.map((crit: any, idx: number) => (
+  <div key={idx} className="flex gap-2 items-center bg-slate-50 p-2 rounded-lg border">
+    <span className="text-xs font-bold text-slate-400 w-6 text-center">{idx + 1}</span>
+    
+    {/* اسم المعيار */}
+    <Input 
+      value={crit.name} 
+      onChange={(e) => {
+        const newConfigs = [...allExamConfigs];
+        const target = newConfigs.find(c => c.id === selectedConfigId);
+        if(target) target.criteria[idx].name = e.target.value;
+        setAllExamConfigs(newConfigs);
+      }}
+      className="h-9 bg-white text-xs" 
+    />
 
+    {/* 🟢 الإخفاء الذكي لحقل الدرجة في الرماية فقط */}
+    {activeConf.subject !== 'shooting' && (
+      <Input 
+        type="number" 
+        value={crit.max} 
+        onChange={(e) => {
+          const newConfigs = [...allExamConfigs];
+          const target = newConfigs.find(c => c.id === selectedConfigId);
+          if(target) target.criteria[idx].max = Number(e.target.value);
+          setAllExamConfigs(newConfigs);
+        }}
+        className="h-9 w-20 text-center font-bold text-blue-600 bg-white" 
+      />
     )}
-        </TabsContent>
+
+    {/* زر الحذف */}
+    <X className="w-4 h-4 text-red-300 cursor-pointer" onClick={() => {
+        const newConfigs = [...allExamConfigs];
+        const target = newConfigs.find(c => c.id === selectedConfigId);
+        if(target) target.criteria = target.criteria.filter((_:any, i:number) => i !== idx);
+        setAllExamConfigs(newConfigs);
+    }}/>
+  </div>
+))}
+                         <Button variant="outline" className="w-full border-dashed text-blue-600 h-10 mt-4" onClick={() => {
+                            const newConfigs = [...allExamConfigs];
+                            const target = newConfigs.find(c => c.id === selectedConfigId);
+                            if(target) {
+                              if(!target.criteria) target.criteria = [];
+                              target.criteria.push({ id: `c-${Date.now()}`, name: "", max: 10 });
+                            }
+                            setAllExamConfigs(newConfigs);
+                         }}>
+                           <Plus className="w-4 h-4 ml-2"/> إضافة معيار جديد
+                         </Button>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-slate-300 py-20">
+                    <Target className="w-16 h-16 mb-4 opacity-10"/>
+                    <p className="font-bold text-sm">اختر الاختبار من القائمة الجانبية للبدء</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  ) : (
+    <div className="flex flex-col items-center justify-center p-20 bg-slate-50 rounded-2xl border-2 border-dashed">
+         <Lock className="w-12 h-12 text-slate-300 mb-4" />
+         <p className="font-bold text-slate-500">عذراً، لا تملك صلاحية الوصول لهذا القسم.</p>
+    </div>
+  )}
+</TabsContent>
 
         {/* 🟢 تاب معايير اللياقة */}
         <TabsContent value="standards">
@@ -1906,176 +2144,7 @@ if (!mounted) return null
 
     )}
 </TabsContent>
-{/* 🚀 التاب الجديد الديناميكي - الاختبارات الشاملة */}
-       {/* 🚀 التاب الجديد الديناميكي المحدث - مع ميزة الحذف وحل خطأ الـ Input */}
-<TabsContent value="dynamic-tests">
-  <Card className="border-t-4 border-t-indigo-600 shadow-xl">
-    <CardHeader className="text-right">
-      <CardTitle className="text-indigo-700 flex items-center gap-2">
-        <Sliders className="w-6 h-6" /> إدارة جميع الاختبارات الميدانية
-      </CardTitle>
-      <CardDescription>أضف أي نوع اختبار جديد وحدد معايير التقييم الخاصة به بسهولة.</CardDescription>
-    </CardHeader>
-    <CardContent>
-      <div className="flex flex-col md:flex-row gap-6 min-h-[500px]">
-        
-        {/* القائمة الجانبية للاختبارات */}
-        <div className="w-full md:w-1/3 border rounded-xl bg-slate-50 flex flex-col overflow-hidden">
-          <div className="p-3 border-b bg-white">
-             <div className="flex gap-2">
-               <Input 
-                 placeholder="اسم اختبار جديد..." 
-                 className="h-10 text-xs shadow-sm" 
-                 value={newTestName || ""} // 👈 حماية من الـ undefined
-                 onChange={(e)=>setNewTestName(e.target.value)} 
-               />
-               <Button size="sm" className="bg-indigo-600 h-10 w-12" onClick={() => {
-                  if(!newTestName) return toast.error("اكتب اسماً للاختبار");
-                  const newTest = { id: `temp-${Date.now()}`, subject: 'specialized', exam_type: newTestName, criteria: [], is_active: true };
-                  setAllExamConfigs([...allExamConfigs, newTest]);
-                  setSelectedConfigId(newTest.id);
-                  setNewTestName("");
-               }}>
-                 <Plus className="w-5 h-5 text-white" />
-               </Button>
-             </div>
-          </div>
-          <div className="flex-1 overflow-y-auto p-2 space-y-2">
-            {allExamConfigs.map(conf => (
-              <div 
-                key={conf.id} 
-                onClick={() => setSelectedConfigId(conf.id)}
-                className={cn(
-                    "p-3 rounded-lg cursor-pointer transition-all border flex flex-col gap-1 relative group",
-                    selectedConfigId === conf.id 
-                    ? "bg-indigo-600 border-indigo-700 text-white shadow-md" 
-                    : "bg-white hover:bg-slate-100 border-slate-200 text-slate-700"
-                )}
-              >
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-sm truncate max-w-[80%]">{conf.exam_type}</span>
-                  
-                  {/* 🗑️ أيقونة حذف الاختبار من القائمة الجانبية */}
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation(); // منع فتح الاختبار عند الضغط على حذف
-                      if(confirm(`هل أنت متأكد من حذف اختبار (${conf.exam_type}) نهائياً؟`)) {
-                          // هنا نربطها بدالة الحذف confirmPermanentDelete التي عرفناها سابقاً
-                          setTestToDelete({ branchId: conf.subject, testId: conf.id.toString() });
-                          setIsDeleteDialogOpen(true);
-                      }
-                    }}
-                    className={cn(
-                      "p-1 rounded-md hover:bg-red-500 hover:text-white transition-colors",
-                      selectedConfigId === conf.id ? "text-indigo-200" : "text-slate-300"
-                    )}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-                <div className="flex justify-between items-center">
-                   <span className={cn("text-[9px]", selectedConfigId === conf.id ? "text-indigo-100" : "text-slate-400")}>
-                      {conf.subject === 'shooting' ? 'رماية' : conf.subject === 'infantry' ? 'مشاة' : 'مهارات تخصصية'}
-                   </span>
-                   <Badge variant={selectedConfigId === conf.id ? "outline" : "secondary"} className="text-[8px] h-4">
-                      {conf.criteria?.length || 0} معيار
-                   </Badge>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
 
-        {/* منطقة محرر المعايير */}
-        <div className="flex-1 border rounded-xl bg-white p-4 md:p-6 overflow-y-auto relative border-dashed">
-          {selectedConfigId ? (
-            (() => {
-              const activeConf = allExamConfigs.find(c => c.id === selectedConfigId);
-              if (!activeConf) return null;
-              return (
-                <div className="space-y-6 animate-in fade-in slide-in-from-left-4">
-                  <div className="flex justify-between items-center border-b pb-4">
-                    <h2 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                       <Edit className="w-4 h-4 text-indigo-500"/> معايير: {activeConf.exam_type}
-                    </h2>
-                    <Button onClick={() => saveDynamicConfig(activeConf)} className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 font-bold h-9">
-                      <Save className="w-4 h-4" /> حفظ التعديلات
-                    </Button>
-                  </div>
-
-                  <div className="space-y-3">
-                     <div className="grid grid-cols-12 gap-2 text-[10px] font-bold text-slate-400 px-2">
-                        <div className="col-span-1 text-center">#</div>
-                        <div className="col-span-7">اسم المعيار</div>
-                        <div className="col-span-3 text-center">الدرجة</div>
-                        <div className="col-span-1"></div>
-                     </div>
-                     
-                     {activeConf.criteria?.map((crit: any, idx: number) => (
-                       <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
-                          <div className="col-span-1 text-center font-bold text-slate-400 text-xs">{idx + 1}</div>
-                          <div className="col-span-7">
-                             <Input 
-                               value={crit.name || ""} // 👈 حماية من الـ undefined
-                               onChange={(e) => {
-                                 const newConfigs = [...allExamConfigs];
-                                 const target = newConfigs.find(c => c.id === selectedConfigId);
-                                 target.criteria[idx].name = e.target.value;
-                                 setAllExamConfigs(newConfigs);
-                               }}
-                               className="h-9 bg-white text-xs font-bold" 
-                             />
-                          </div>
-                          <div className="col-span-3">
-                             <Input 
-                               type="number" 
-                               value={crit.max ?? 0} // 👈 حماية من الـ undefined
-                               onChange={(e) => {
-                                 const newConfigs = [...allExamConfigs];
-                                 const target = newConfigs.find(c => c.id === selectedConfigId);
-                                 target.criteria[idx].max = Number(e.target.value);
-                                 setAllExamConfigs(newConfigs);
-                               }}
-                               className="h-9 bg-white text-center font-black text-indigo-600" 
-                             />
-                          </div>
-                          <div className="col-span-1 text-center">
-                             <button onClick={() => {
-                                 const newConfigs = [...allExamConfigs];
-                                 const target = newConfigs.find(c => c.id === selectedConfigId);
-                                 target.criteria = target.criteria.filter((_:any, i:number) => i !== idx);
-                                 setAllExamConfigs(newConfigs);
-                             }} className="text-red-300 hover:text-red-600 transition-colors">
-                               <X className="w-4 h-4"/>
-                             </button>
-                          </div>
-                       </div>
-                     ))}
-                     
-                     <Button variant="outline" className="w-full border-dashed text-indigo-600 border-indigo-200 h-10 mt-4 bg-indigo-50/30" onClick={() => {
-                        const newConfigs = [...allExamConfigs];
-                        const target = newConfigs.find(c => c.id === selectedConfigId);
-                        if(!target.criteria) target.criteria = [];
-                        target.criteria.push({ id: `new-${Date.now()}`, name: "", max: 10 });
-                        setAllExamConfigs(newConfigs);
-                     }}>
-                        <Plus className="w-4 h-4 ml-2"/> إضافة معيار جديد
-                     </Button>
-                  </div>
-                </div>
-              );
-            })()
-          ) : (
-            <div className="flex flex-col items-center justify-center h-full text-slate-300 py-20">
-               <ShieldCheck className="w-16 h-16 mb-4 opacity-10"/>
-               <p className="font-bold text-sm">اختر اختباراً من القائمة الجانبية للبدء</p>
-            </div>
-          )}
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-</TabsContent>
         {/* 🎨 تاب المظهر */}
         <TabsContent value="appearance">
           <Card className="shadow-md border-t-4 border-t-blue-600">
@@ -2502,6 +2571,88 @@ if (!mounted) return null
       <Button onClick={() => setEditingViolationText(null)} className="flex-1 bg-amber-700 text-white font-bold">
         تم الحفظ
       </Button>
+    </div>
+  </DialogContent>
+</Dialog>
+<Dialog open={isAddSectionOpen} onOpenChange={setIsAddSectionOpen}>
+  <DialogContent className="max-w-md rounded-2xl" dir="rtl">
+    <DialogHeader className="text-right border-b pb-3">
+      <DialogTitle className="text-blue-700 flex items-center gap-2">
+        <Plus className="w-5 h-5" /> إضافة ركن تدريبي جديد
+      </DialogTitle>
+    </DialogHeader>
+    <div className="py-6 space-y-4 text-right">
+      <div className="space-y-2">
+        <Label className="text-xs font-bold text-slate-500">اسم القسم (بالعربي):</Label>
+        <Input 
+          placeholder="مثال: الأسلحة، الرماية، المشاة..." 
+          value={newSectionData.name}
+          onChange={(e) => setNewSectionData({...newSectionData, name: e.target.value})}
+          className="h-11 border-blue-100 focus:ring-blue-500"
+        />
+      </div>
+      {/* رمز القسم (Key) - تحول من Input إلى Select لسهولة الاستخدام */}
+<div className="space-y-2">
+  <Label className="text-xs font-bold text-slate-500">نوع القسم (الربط البرمجي):</Label>
+  <Select 
+    value={newSectionData.key} 
+    onValueChange={(val) => {
+      // إذا اختار قسماً معروفاً، نأخذ اسمه ونضعه في حقل الاسم تلقائياً لتوفير الوقت
+      const knownNames: any = {
+        'shooting': 'الرماية',
+        'infantry': 'المشاة',
+        'student_teacher': 'تلميذ بدور معلم',
+        'weapons': 'الأسلحة',
+        'specialized_courses': 'دورات تخصيصية'
+      };
+      setNewSectionData({
+        key: val,
+        name: knownNames[val] || newSectionData.name
+      });
+    }}
+  >
+    <SelectTrigger className="h-11 border-blue-100">
+      <SelectValue placeholder="اختر نوع القسم لربط البيانات" />
+    </SelectTrigger>
+    <SelectContent dir="rtl">
+      <SelectItem value="shooting">الرماية (لربط البيانات القديمة)</SelectItem>
+      <SelectItem value="infantry">المشاة (لربط البيانات القديمة)</SelectItem>
+      <SelectItem value="weapons">الأسلحة</SelectItem>
+      <SelectItem value="student_teacher">تلميذ بدور معلم</SelectItem>
+      <SelectItem value="specialized_courses">دورات تخصيصية</SelectItem>
+      <SelectItem value="custom">قسم جديد تماماً (أخرى)</SelectItem>
+    </SelectContent>
+  </Select>
+</div>
+
+{/* إذا اختار "قسم جديد تماماً"، نظهر له حقل لكتابة الرمز يدوياً (للمستقبل) */}
+{newSectionData.key === "custom" && (
+  <div className="space-y-2 animate-in fade-in slide-in-from-top-1">
+    <Label className="text-xs font-bold text-orange-500">أدخل رمزاً فريداً (بالإنجليزي):</Label>
+    <Input 
+      placeholder="مثال: military_law" 
+      onChange={(e) => setNewSectionData({...newSectionData, key: e.target.value})}
+      className="h-11 border-orange-200"
+    />
+  </div>
+)}
+    </div>
+    <div className="flex gap-2">
+      <Button 
+        onClick={() => {
+          if(newSectionData.name && newSectionData.key) {
+            handleCreateMilitarySection(newSectionData.name, newSectionData.key);
+            setIsAddSectionOpen(false);
+            setNewSectionData({ name: "", key: "" });
+          } else {
+            toast.error("يرجى ملء كافة الحقول");
+          }
+        }} 
+        className="flex-1 bg-blue-600 text-white font-bold h-11 shadow-lg"
+      >
+        حفظ القسم الجديد
+      </Button>
+      <Button variant="outline" onClick={() => setIsAddSectionOpen(false)} className="h-11">إلغاء</Button>
     </div>
   </DialogContent>
 </Dialog>

@@ -41,10 +41,12 @@ export function setupFetchInterceptor() {
       }
     }
 
+   // اذهب للجزء السفلي من الملف واستبدل الـ try/catch بهذا الكود:
+
     try {
       const response = await originalFetch(input, updatedInit);
 
-      // إذا رفض السيرفر الطلب بسبب انتهاء الهوية (401)
+      // 1. معالجة حالة انتهاء الجلسة (401)
       if (response.status === 401 && isApiRequest && !isLoginRequest) {
         localStorage.removeItem("token");
         localStorage.removeItem("user");
@@ -55,9 +57,19 @@ export function setupFetchInterceptor() {
         }
       }
 
+      // 🟢 2. إرجاع الرد كما هو (حتى لو كان خطأ 400 أو 500) 
+      // لكي تتمكن الصفحة من قراءة حالة الخطأ وإظهار رسالة toast
       return response;
+
     } catch (error) {
-      throw error;
-    }
+    console.error("🌐 Fetch Interceptor Error:", error);
+    // نرجع كائن يشبه الـ Response لكي لا ينهار الكود الذي ينتظر الرد
+    return new Response(JSON.stringify({ 
+        detail: "حدث خطأ في الاتصال بالسيرفر أو قيود في قاعدة البيانات" 
+    }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+    });
+}
   };
 }

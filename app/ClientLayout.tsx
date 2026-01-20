@@ -110,6 +110,12 @@ const navigationStructure: NavItem[] = [
 				name: "التدريب العسكري", 
 				icon: Shield,
 				children: [
+                    { 
+            id: "dig-mil-unified", 
+            name: "رصد الاختبارات الموحد", 
+            href: "/exams/military/MilitaryExams", 
+            icon: ShieldCheck 
+        },
 					{ id: "dig-mil-shoot", name: "اختبار الرماية", href: "/exams/military/shooting", icon: Target },
 					{ id: "dig-mil-inf", name: "اختبار المشاة", href: "/exams/military/infantry", icon: Footprints },
 					{ id: "dig-mil-results", name: "سجل النتائج", href: "/exams/military/results", icon: Table },
