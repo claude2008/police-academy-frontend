@@ -1307,7 +1307,7 @@ if (!mounted) return null
           <TabsList className="grid w-full h-auto grid-cols-4 md:grid-cols-8 gap-2 bg-slate-200/50 p-1 rounded-xl">
     
     {/* 1. معايير العسكري */}
-    {(["owner", "manager", "admin", "military_officer"].includes(userRole || "") || 
+    {(["owner", "manager", "admin"].includes(userRole || "") || 
       currentUser?.extra_permissions?.includes("military_standards")) && (
         <TabsTrigger value="mil-standards" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             معايير العسكري
@@ -1316,7 +1316,7 @@ if (!mounted) return null
 
 
     {/* 2. معايير اللياقة */}
-    {(["owner", "manager", "admin", "assistant_admin", "sports_officer"].includes(userRole || "") || 
+    {(["owner", "manager", "admin"].includes(userRole || "") || 
       currentUser?.extra_permissions?.includes("fitness_standards")) && (
         <TabsTrigger value="standards" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-green-600 data-[state=active]:text-white">
             معايير اللياقة
@@ -1324,7 +1324,7 @@ if (!mounted) return null
     )}
 
     {/* 3. معايير الاشتباك */}
-    {(["owner", "manager", "admin", "sports_officer"].includes(userRole || "") || 
+    {(["owner", "manager", "admin"].includes(userRole || "") || 
       currentUser?.extra_permissions?.includes("combat_standards")) && (
         <TabsTrigger value="engagement" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
             معايير الاشتباك
@@ -1363,7 +1363,7 @@ if (!mounted) return null
       
 {/* 🔵 تاب معايير العسكري المطور (دعم الأقسام الديناميكية مع زر الإضافة) */}
 <TabsContent value="mil-standards">
-  {(["owner", "manager", "admin", "military_officer"].includes(userRole || "") || 
+  {(["owner", "manager", "admin"].includes(userRole || "") || 
     currentUser?.extra_permissions?.includes("military_standards")) ? (
     <Card className="border-t-4 border-t-blue-600 shadow-xl" >
       <CardHeader className="text-right flex flex-col md:flex-row justify-between items-center gap-4">
@@ -1485,55 +1485,56 @@ if (!mounted) return null
                   const activeConf = allExamConfigs.find(c => c.id === selectedConfigId);
                   if (!activeConf) return null;
                   return (
-                    <div className="space-y-6">
-                     <div className="flex items-center gap-4 border-b pb-4 mb-4">
-  <h2 className="text-lg font-black text-slate-800">{activeConf.exam_type}</h2>
-  
-  {/* 🔫 حقل إجمالي الطلقات - يظهر فقط في قسم الرماية */}
-  {activeConf.subject === 'shooting' && (
-    <div className="flex items-center gap-2 bg-orange-50 px-3 py-1 rounded-lg border border-orange-200">
-      <Label className="text-xs font-bold text-orange-700 whitespace-nowrap">إجمالي الطلقات:</Label>
-      <Input 
-        type="number" 
-        value={activeConf.total_shots || 0} 
-        onChange={(e) => {
-          const newConfigs = [...allExamConfigs];
-          const target = newConfigs.find(c => c.id === selectedConfigId);
-          if(target) target.total_shots = Number(e.target.value);
-          setAllExamConfigs(newConfigs);
-        }}
-        className="w-16 h-8 text-center font-bold border-orange-300"
-      />
+  <div className="space-y-6">
+    {/* --- رأس المحرر المحسن للموبايل والكمبيوتر --- */}
+    <div className="flex flex-col gap-4 border-b pb-6 mb-6">
+      
+      {/* السطر الأول: الاسم + زر الحفظ (يصبحان عموديين في الموبايل) */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <h2 className="text-lg font-black text-slate-800 break-words max-w-full">
+          {activeConf.exam_type}
+        </h2>
+        
+        <Button 
+          onClick={() => {
+            const activeConfData = allExamConfigs.find(c => c.id === selectedConfigId);
+            if (activeConfData) {
+              saveDynamicConfig(activeConfData); 
+            } else {
+              toast.error("يرجى اختيار اختبار أولاً");
+            }
+          }} 
+          disabled={loading}
+          className="w-full sm:w-auto bg-green-700 hover:bg-green-800 text-white font-bold h-10 gap-2 shadow-md px-6 shrink-0"
+        >
+          {loading ? (
+            <> <Loader2 className="w-4 h-4 animate-spin" /> جاري الحفظ... </>
+          ) : (
+            <> <Save className="w-4 h-4" /> حفظ المعايير </>
+          )}
+        </Button>
+      </div>
+
+      {/* السطر الثاني: مربع الطلقات (يظهر تحتهم في الموبايل) */}
+      {activeConf.subject === 'shooting' && (
+        <div className="flex items-center gap-2 bg-orange-50 p-2.5 rounded-xl border border-orange-200 self-start shadow-sm transition-all animate-in fade-in slide-in-from-right-2">
+          <Label className="text-[11px] font-bold text-orange-700 whitespace-nowrap flex items-center gap-1">
+            <Target className="w-3.5 h-3.5" /> إجمالي الطلقات المسموح بها:
+          </Label>
+          <Input 
+            type="number" 
+            value={activeConf.total_shots || 0} 
+            onChange={(e) => {
+              const newConfigs = [...allExamConfigs];
+              const target = newConfigs.find(c => c.id === selectedConfigId);
+              if(target) target.total_shots = Number(e.target.value);
+              setAllExamConfigs(newConfigs);
+            }}
+            className="w-16 h-8 text-center font-black border-orange-300 bg-white text-orange-800 focus-visible:ring-orange-500"
+          />
+        </div>
+      )}
     </div>
-  )}
-                        <Button 
-  onClick={() => {
-    // 🔍 1. البحث عن بيانات الاختبار الذي تعدله الآن
-    const activeConf = allExamConfigs.find(c => c.id === selectedConfigId);
-    
-    if (activeConf) {
-      // ✅ 2. إرسال البيانات الحقيقية للدالة بدلاً من إرسال "حدث النقر"
-      saveDynamicConfig(activeConf); 
-    } else {
-      toast.error("يرجى اختيار اختبار أولاً");
-    }
-  }} 
-  disabled={loading} // 🔒 الزر سيقفل فعلياً بفضل حالة loading
-  className="bg-green-700 hover:bg-green-800 text-white font-bold h-10 gap-2 shadow-md px-6"
->
-  {loading ? (
-    <>
-      <Loader2 className="w-4 h-4 animate-spin" />
-      جاري الحفظ...
-    </>
-  ) : (
-    <>
-      <Save className="w-4 h-4" />
-      حفظ المعايير
-    </>
-  )}
-</Button>
-                      </div>
                       
                       <div className="space-y-3">
                          {activeConf.criteria?.map((crit: any, idx: number) => (

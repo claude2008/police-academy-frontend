@@ -237,7 +237,8 @@ const handleApprove = async (level: string, customTitle: string) => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "سجل المخالفات");
-    XLSX.writeFile(wb, `سجل_مخالفات_${selectedReport.course}_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+    const excelFileName = `سجل_مخالفات_${selectedReport.course}_${selectedReport.batch}_من_${startDate}_إلى_${endDate}.xlsx`;
+    XLSX.writeFile(wb, excelFileName);
 };
 // 1. دالة حذف مخالفة واحدة
 const executeSingleDelete = async (violationId: number) => {
@@ -430,7 +431,24 @@ const confirmDeleteAll = async () => {
                 <div className="no-print flex justify-between items-center mb-8 bg-slate-100 p-4 rounded-2xl border">
                     <Button variant="ghost" onClick={() => setSelectedReport(null)} className="gap-2 font-bold"><ArrowRight className="w-5 h-5"/> العودة</Button>
                     <div className="flex gap-3">
-                        <Button onClick={() => window.print()} className="bg-slate-900 text-white gap-2"><Printer className="w-4 h-4"/> طباعة</Button>
+                        <Button onClick={() => {
+    // 1. حفظ العنوان القديم
+    const originalTitle = document.title;
+    
+    // 2. تجهيز الاسم الجديد: المخالفات_من_إلى_الدورة_الدفعة
+    const fileName = `المخالفات_${startDate}_إلى_${endDate}_${selectedReport.course}_${selectedReport.batch}`;
+    
+    // 3. تعيين العنوان الجديد للمتصفح
+    document.title = fileName;
+    
+    // 4. فتح نافذة الطباعة
+    window.print();
+    
+    // 5. إعادة العنوان الأصلي بعد ثانية (لكي لا يتغير شكل التبويب دائماً)
+    setTimeout(() => { document.title = originalTitle; }, 1000);
+}} className="bg-slate-900 text-white gap-2">
+    <Printer className="w-4 h-4"/> طباعة
+</Button>
                         <Button onClick={exportToExcel} variant="outline" className="border-green-600 text-green-700 gap-2"><Download className="w-4 h-4"/> إكسل</Button>
                     </div>
                 </div>

@@ -55,18 +55,24 @@ export default function TrainerProfilePage({ params }: { params: Promise<{ id: s
   const [isWorkloadModalOpen, setIsWorkloadModalOpen] = useState(false)
   const [trainer, setTrainer] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-
+  const [userRole, setUserRole] = useState<string | null>(null)
   // جلب بيانات المدرب
  useEffect(() => {
+    // 🟢 الجزء المضاف لجلب رتبة المستخدم الحالي
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+        const localUser = JSON.parse(userStr);
+        setUserRole(localUser.role || null);
+    }
+
     const fetchTrainer = async () => {
         try {
             const token = localStorage.getItem("token"); 
-            // 🛡️ إضافة حماية: إذا لم يوجد توكن، لا تحاول الاتصال بالسيرفر
             if (!token) return;
 
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${resolvedParams.id}`, {
                 headers: {
-                    'Authorization': `Bearer ${token}`, // ✅ موجودة وصحيحة
+                    'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 }
             });
@@ -75,7 +81,7 @@ export default function TrainerProfilePage({ params }: { params: Promise<{ id: s
         finally { setLoading(false) }
     }
     fetchTrainer();
-}, [resolvedParams.id]);
+}, [resolvedParams.id]);;
 const [counts, setCounts] = useState({
     workloads: 0,
     statuses: 0,
@@ -290,7 +296,7 @@ const [counts, setCounts] = useState({
                 </AccordionItem>
 
                 {/* القسم 5: التقارير */}
-                {/* القسم 5: التقارير والمخالفات */}
+               {userRole !== "assistant_admin" && (
 <AccordionItem value="item-5" className="bg-white dark:bg-slate-900 border rounded-xl px-2 shadow-sm no-break">
     <AccordionTrigger className="px-4 py-4 hover:no-underline">
     <div className="flex items-center gap-3">
@@ -316,6 +322,7 @@ const [counts, setCounts] = useState({
         {trainer && <TrainerReportsCard trainerId={trainer.id} />}
     </AccordionContent>
 </AccordionItem>
+)}
             </Accordion>
         </div>
 

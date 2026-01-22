@@ -21,6 +21,11 @@ const normalizeNumbers = (val: string) => {
   const arabicNums = "٠١٢٣٤٥٦٧٨٩"; const englishNums = "0123456789";
   return val.replace(/[٠-٩]/g, (d) => englishNums[arabicNums.indexOf(d)])
 }
+// تحت دالة normalizeNumbers الموجودة في أعلى الكود لديك
+const extractTargetValue = (name: string) => {
+  const match = name.match(/\d+/); 
+  return match ? parseInt(match[0]) : 0;
+};
 
 type StudentRecord = {
   military_id: string;
@@ -44,7 +49,7 @@ export default function MilitaryExamsPage() {
   // بيانات النظام (تُجلب من الباك إند)
   const [militarySections, setMilitarySections] = useState<any[]>([])
   const [allExamConfigs, setAllExamConfigs] = useState<any[]>([])
-  
+  const [isConfirmSaveOpen, setIsConfirmSaveOpen] = useState(false);
   // حالات الجدول والرصد (نفس منطق الرماية)
   const [students, setStudents] = useState<StudentRecord[]>([])
   const [searchQuery, setSearchQuery] = useState("")
@@ -94,7 +99,7 @@ export default function MilitaryExamsPage() {
       setStudents([]);
     }
   }, [selectedExamId]);
-
+const isShooting = useMemo(() => selectedSectionKey === 'shooting', [selectedSectionKey]);
   // 5. حساب المجموع الأقصى (للعرض في الجدول)
   const maxTotalScore = useMemo(() => {
     return activeConfig?.criteria.reduce((sum: number, c: any) => sum + c.max, 0) || 0;
@@ -120,39 +125,71 @@ export default function MilitaryExamsPage() {
     } finally { setLoading(false); }
   };
 
-  const confirmAddition = () => {
+ const confirmAddition = () => {
     if (!activeConfig || !selectedSoldier) return;
     
     const currentCriteria = activeConfig.criteria;
     const finalScores: Record<string, number> = {};
     let total = 0;
     
-    // التحقق من الإدخال
-    const enteredValuesCount = Object.keys(tempScores).filter(key => tempScores[key] !== "").length;
-    const allCriteriaFilled = enteredValuesCount === currentCriteria.length;
-    const hasNote = tempNotes.trim().length > 0;
+    // متغير لتتبع ما إذا كان هناك أي حقل فارغ بدون ملاحظة
+    let missingScoreFound = false;
 
-    if (!hasNote && !allCriteriaFilled) {
-        return toast.error("يرجى إكمال رصد جميع المعايير أو كتابة ملاحظة");
-    }
-
+    // 1. الدوران على كل المعايير للتحقق والحساب
     for (const crit of currentCriteria) {
-        const rawVal = tempScores[crit.name];
-        if (hasNote && (rawVal === "" || rawVal === undefined)) {
+        let rawVal = tempScores[crit.name];
+        
+        // تنظيف القيمة من المسافات
+        if (typeof rawVal === 'string') rawVal = rawVal.trim();
+
+        // 🛑 التحقق الصارم:
+        // إذا لم يكن رماية، وكانت الدرجة فارغة، والملاحظات فارغة أيضاً -> نمنع المرور
+        if (!isShooting && (rawVal === "" || rawVal === undefined) && tempNotes.trim() === "") {
+            missingScoreFound = true;
+            // لا نخرج فوراً (return) لكي نكمل الفحص، أو يمكن الخروج فوراً برسالة
+            // هنا سنوقف العملية فوراً
+            return toast.error(`عفواً: يجب إدخال درجة للمعيار "${crit.name}" أو كتابة ملاحظة (مثل: غياب/إصابة)`);
+        }
+
+        // إذا مررنا من الفحص، نبدأ المعالجة
+        if (rawVal === "" || rawVal === undefined) {
             finalScores[crit.name] = 0; 
         } else {
-            const val = parseFloat(normalizeNumbers(rawVal || "0"));
-            if (val > crit.max) return toast.error(`تجاوزت الحد في ${crit.name}`);
-            finalScores[crit.name] = val; 
-            total += val;
+            const numHitsOrScore = parseFloat(normalizeNumbers(rawVal));
+
+            if (isShooting) {
+                // منطق الرماية
+                const targetValue = extractTargetValue(crit.name);
+                finalScores[crit.name] = numHitsOrScore; 
+                total += (numHitsOrScore * targetValue); 
+            } else {
+                // منطق المشاة والأسلحة
+                if (numHitsOrScore > crit.max) {
+                    return toast.error(`تجاوزت الحد المسموح في ${crit.name} (الحد: ${crit.max})`);
+                }
+                finalScores[crit.name] = numHitsOrScore; 
+                total += numHitsOrScore;
+            }
         }
     }
 
-    const updated = [...students, { ...selectedSoldier, scores: finalScores, total, notes: tempNotes }];
+    // 2. إذا وصلنا هنا، يعني كل شيء سليم
+    const updated = [...students, { 
+        ...selectedSoldier, 
+        scores: finalScores, 
+        total, 
+        notes: tempNotes 
+    }];
+    
     setStudents(updated);
     localStorage.setItem(`exam_draft_${selectedExamId}`, JSON.stringify(updated));
+    
+    // 3. إغلاق النافذة وتفريغ الحقول
     setIsModalOpen(false); 
     setSearchQuery("");
+    setTempScores({}); 
+    setTempNotes(""); 
+    toast.success("تم رصد الدرجة بنجاح");
   };
 
   const handleFinalSave = async () => {
@@ -256,7 +293,25 @@ export default function MilitaryExamsPage() {
           </div>
         </CardContent>
       </Card>
-
+{activeConfig && (
+  <div className="flex flex-col md:flex-row justify-between items-end gap-2 px-1 mb-2">
+    <div className="flex flex-col gap-1">
+      <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+  <Target className="w-6 h-6 text-[#c5b391]" />
+  {activeConfig?.exam_type} {/* 👈 تأكد من وجود العلامة هنا */}
+</h2>
+      <p className="text-xs text-slate-500 font-bold">
+        القسم: {militarySections.find(s => s.key === selectedSectionKey)?.name}
+      </p>
+    </div>
+    
+    {isShooting && (
+      <Badge className="bg-orange-600 text-white px-4 py-1.5 rounded-full text-sm shadow-md border-orange-700 animate-pulse">
+        🎯 إجمالي الطلقات المسموح بها: {activeConfig.total_shots || 0}
+      </Badge>
+    )}
+  </div>
+)}
       {/* 2. منطقة العمل (تظهر فقط عند اختيار اختبار) */}
       {activeConfig ? (
         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -277,10 +332,14 @@ export default function MilitaryExamsPage() {
                     <Button onClick={handleSearch} className="flex-1 md:w-auto bg-[#c5b391] hover:bg-[#b4a280] text-slate-900 font-bold h-11 gap-2">
                         <UserPlus className="w-5 h-5" /> إضافة
                     </Button>
-                    <Button onClick={handleFinalSave} disabled={loading || students.length===0} className="flex-1 md:w-auto bg-green-700 hover:bg-green-800 text-white font-bold h-11 gap-2 shadow-lg">
-                        {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <Save className="w-5 h-5" />}
-                        حفظ النتائج
-                    </Button>
+                    <Button 
+  onClick={() => setIsConfirmSaveOpen(true)} // فتح نافذة التأكيد أولاً
+  disabled={loading || students.length === 0} 
+  className="flex-1 md:w-auto bg-green-700 hover:bg-green-800 text-white font-bold h-11 gap-2 shadow-lg"
+>
+  {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <Save className="w-5 h-5" />}
+  حفظ النتائج
+</Button>
                 </div>
             </div>
 
@@ -293,22 +352,24 @@ export default function MilitaryExamsPage() {
                                 <TableHead className="text-slate-900 font-bold text-center w-10">#</TableHead>
                                 <TableHead className="text-slate-900 font-bold text-center w-14">الصورة</TableHead>
                                 <TableHead className="text-slate-900 font-bold text-right">البيانات الشخصية</TableHead>
-                                <TableHead className="text-slate-900 font-bold text-center">الموقع</TableHead>
+                                <TableHead className="text-slate-900 font-bold text-center">السرية / الفصيل</TableHead>
                                 {/* توليد الأعمدة ديناميكياً بناءً على معايير الاختبار المختار */}
                                 {activeConfig.criteria.map((c: any) => (
-                                    <TableHead key={c.name} className="text-slate-900 font-bold text-center bg-[#bfa87e]">
-                                        <div className="flex flex-col text-[10px] items-center">
-                                            <span>{c.name}</span>
-                                            <span className="opacity-70">({c.max})</span>
-                                        </div>
-                                    </TableHead>
-                                ))}
+    <TableHead key={c.name} className="text-slate-900 font-bold text-center bg-[#bfa87e]">
+        <div className="flex flex-col text-[10px] items-center">
+            <span>{c.name}</span>
+            {/* 🟢 إخفاء الدرجة القصوى في الرماية فقط */}
+            {!isShooting && <span className="opacity-70">({c.max})</span>}
+        </div>
+    </TableHead>
+))}
                                 <TableHead className="text-slate-900 font-bold text-center bg-[#b4a280] w-20">
-                                    <div className="flex flex-col text-[10px] items-center">
-                                        <span>المجموع</span>
-                                        <span className="text-red-900 font-black">({maxTotalScore})</span>
-                                    </div>
-                                </TableHead>
+    <div className="flex flex-col text-[10px] items-center">
+        <span>المجموع</span>
+        {/* التعديل هنا 👇 */}
+        {!isShooting && <span className="text-red-900 font-black">({maxTotalScore})</span>}
+    </div>
+</TableHead>
                                 <TableHead className="text-slate-900 font-bold text-right">ملاحظات</TableHead>
                                 <TableHead className="w-10"></TableHead>
                             </TableRow>
@@ -430,31 +491,85 @@ export default function MilitaryExamsPage() {
         </div>
 
         {/* 2. قائمة المعايير (بدون سكرول داخلي - تتحرك مع النافذة) */}
-        <div className="space-y-2 border-t pt-4">
-          {activeConfig?.criteria.map((c: any) => (
-            <div key={c.name} className="flex items-center justify-between p-2 hover:bg-slate-50 border-b">
-              <div className="flex flex-col text-right">
-                <span className="text-xs font-bold text-slate-700">{c.name}</span>
-                <span className="text-[10px] text-red-500 font-mono">الأقصى: {c.max}</span>
-              </div>
-              <div className="relative w-24">
-                <Input 
-                  type="text" 
-                  inputMode="decimal" 
-                  className="text-center font-bold font-mono h-9 border-[#c5b391]/30 focus:ring-[#c5b391] rounded-md" 
-                  value={tempScores[c.name] || ""} 
-                  onChange={(e) => {
-                    const v = normalizeNumbers(e.target.value); 
-                    if(v === "" || (parseFloat(v) <= c.max && !isNaN(Number(v)))) {
-                      setTempScores({...tempScores, [c.name]: v})
-                    }
-                  }} 
-                />
-                <span className="absolute left-1 top-2.5 text-[9px] text-slate-300 font-bold">/{c.max}</span>
-              </div>
-            </div>
-          ))}
+       <div className="space-y-2 border-t pt-4">
+  {activeConfig?.criteria.map((c: any) => {
+    // استخراج قيمة الهدف إذا كان الاختبار رماية (مثلاً: "هدف 5" -> 5)
+    const targetValue = isShooting ? extractTargetValue(c.name) : null;
+    
+    return (
+      <div key={c.name} className="flex items-center justify-between p-2 hover:bg-slate-50 border-b">
+        <div className="flex flex-col text-right">
+          <span className="text-xs font-bold text-slate-700">{c.name}</span>
+          <span className="text-[10px] text-orange-500 font-mono">
+            {isShooting ? `القيمة: ${targetValue} نقاط` : `الأقصى: ${c.max}`}
+          </span>
         </div>
+        
+        <div className="relative w-28">
+          <Input 
+            type="text" 
+            inputMode="numeric" 
+            placeholder={isShooting ? "عدد الإصابات" : "الدرجة"}
+            className="text-center font-bold font-mono h-9 border-[#c5b391]/30 focus:ring-[#c5b391] rounded-md" 
+            value={tempScores[c.name] || ""} 
+            onChange={(e) => {
+    const v = normalizeNumbers(e.target.value);
+    
+    // 1. السماح بمسح الحقل
+    if (v === "") {
+        const newScores = { ...tempScores };
+        delete newScores[c.name];
+        setTempScores(newScores);
+        return;
+    }
+
+    const numV = parseInt(v);
+    if (isNaN(numV)) return;
+
+    if (isShooting) {
+        // 🎯 منطق الرماية (يعتمد على عدد الطلقات الإجمالي)
+        const otherHits = Object.entries(tempScores)
+            .filter(([key]) => key !== c.name)
+            .reduce((sum, [, val]) => sum + parseInt(val || "0"), 0);
+        
+        const totalHitsWithNewValue = otherHits + numV;
+        const maxAllowedShots = activeConfig.total_shots || 0;
+
+        if (totalHitsWithNewValue > maxAllowedShots) {
+            return toast.error(`خطأ: إجمالي الإصابات (${totalHitsWithNewValue}) تجاوز إجمالي الطلقات المسموح (${maxAllowedShots})`);
+        }
+        
+        // إذا كان ضمن المسموح، نقبل الرقم
+        setTempScores({ ...tempScores, [c.name]: v });
+    } else {
+        // ⚔️ منطق المواد الأخرى (مشاة، أسلحة، فني...)
+        // هنا نقارن الدرجة بالحد الأقصى للمعيار (crit.max)
+        if (numV <= c.max) {
+            setTempScores({ ...tempScores, [c.name]: v });
+        } else {
+            return toast.error(`عفواً: الدرجة ${numV} تتجاوز الحد الأقصى المسموح (${c.max})`);
+        }
+    }
+}}
+          />
+          {isShooting && (
+            <span className="absolute left-1 top-2 text-[8px] text-slate-400 font-bold">إصابة</span>
+          )}
+        </div>
+      </div>
+    );
+  })}
+  
+  {/* عرض العداد المتبقي من الطلقات في الرماية */}
+  {isShooting && (
+    <div className="p-2 bg-blue-50 rounded-lg flex justify-between items-center text-xs font-bold text-blue-700">
+      <span>إجمالي الطلقات المتبقية:</span>
+      <Badge variant="secondary" className="bg-blue-600 text-white">
+        {(activeConfig?.total_shots || 0) - Object.values(tempScores).reduce((a, b) => a + parseInt(b || "0"), 0)}
+      </Badge>
+    </div>
+  )}
+</div>
 
         {/* 3. الملاحظات والأزرار */}
         <div className="space-y-4">
@@ -508,7 +623,36 @@ export default function MilitaryExamsPage() {
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
+<AlertDialog open={isConfirmSaveOpen} onOpenChange={setIsConfirmSaveOpen}>
+  <AlertDialogContent dir="rtl" className="border-t-4 border-t-green-600">
+    <AlertDialogHeader>
+      <AlertDialogTitle className="flex items-center gap-2 text-green-700 text-xl font-black">
+        <ShieldCheck className="w-6 h-6" /> تأكيد رصد الدرجات
+      </AlertDialogTitle>
+      <div className="py-4 space-y-3">
+        <p className="text-slate-600 leading-relaxed font-bold">
+         أنت على وشك اعتماد وحفظ نتائج لعدد <span className="text-blue-700 text-lg">({students.length})</span> طالب في اختبار <span className="text-blue-700 text-lg">"{activeConfig?.exam_type || 'الاختبار المختار'}"</span>.
+        </p>
+        <div className="bg-amber-50 p-3 rounded-lg border border-amber-200 text-xs text-amber-800 flex gap-2">
+          <AlertTriangle className="w-5 h-5 shrink-0" />
+          بعد الحفظ، سيتم ترحيل البيانات للأرشيف وتصفير الجدول الحالي للاستعداد لرصد جديد. هل أنت متأكد؟
+        </div>
+      </div>
+    </AlertDialogHeader>
+    <AlertDialogFooter className="flex-row-reverse gap-3 mt-2">
+      <AlertDialogCancel className="flex-1 font-bold h-12 border-slate-200">تراجع</AlertDialogCancel>
+      <AlertDialogAction 
+        onClick={() => {
+          setIsConfirmSaveOpen(false);
+          handleFinalSave(); // استدعاء دالة الحفظ الفعلية
+        }}
+        className="flex-1 bg-green-700 hover:bg-green-800 text-white font-black h-12 shadow-md active:scale-95 transition-all"
+      >
+        نعم، اعتمد الحفظ
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
     </div>
     </ProtectedRoute>
   )

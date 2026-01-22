@@ -50,31 +50,28 @@ export default function LoginPage() {
       if (res.ok) {
         const data = await res.json()
         
+        // 1. حفظ التوكن والكوكيز أولاً (بدون توجيه)
         if (data.access_token) {
-    localStorage.setItem("token", data.access_token);
-    // تأكد أن التوكن يكتب في الكوكيز أولاً
-    document.cookie = `token=${data.access_token}; path=/; max-age=604800; samesite=lax`;
-    
-    // ثم نقوم بالانتقال
-    window.dispatchEvent(new Event("auth-change"));
-    router.push("/dashboard");
-}
+            localStorage.setItem("token", data.access_token);
+            document.cookie = `token=${data.access_token}; path=/; max-age=604800; samesite=lax`;
+        }
 
         if (data.user) {
+            // 🛑 2. فحص هل التغيير إجباري؟
             if (data.user.must_change_password) {
                 setTempUser(data.user)
-                localStorage.setItem("token", data.access_token)
                 setShowForceChange(true)
                 setLoading(false)
-                return 
+                return // 👈 نتوقف هنا تماماً ولا نكمل التوجيه
             }
 
+            // ✅ 3. إذا لم يكن إجبارياً، نقوم بالدخول الطبيعي
             localStorage.setItem("user", JSON.stringify(data.user))
-            localStorage.setItem("token", data.access_token)
             window.dispatchEvent(new Event("auth-change"))
             router.push("/dashboard")
         } else {
-             router.push("/dashboard")
+            // حالة احتياطية إذا لم تصل بيانات المستخدم
+            router.push("/dashboard")
         }
       } else {
         const data = await res.json()

@@ -11,7 +11,7 @@ import {
     Dumbbell, Shield, UserCircle, Activity, Swords, Target, Footprints,
     UserCog, FileText, Scale, GraduationCap, Shirt, FolderKanban, ShieldAlert, User,
     Loader2,
-    ShieldCheck,Badge // 👈 أضف هذه الكلمة هنا
+    ShieldCheck,Badge,Bell // 👈 أضف هذه الكلمة هنا
 } from "lucide-react"
 // 1. استيراد مكتبة الرسائل (لحل خطأ toast)
 import { toast } from "sonner"
@@ -106,21 +106,22 @@ const navigationStructure: NavItem[] = [
 				]
 			},
 			{ 
-				id: "dig-military",
-				name: "التدريب العسكري", 
-				icon: Shield,
-				children: [
+                id: "dig-military",
+                name: "التدريب العسكري", 
+                icon: Shield,
+                children: [
                     { 
-            id: "dig-mil-unified", 
-            name: "رصد الاختبارات الموحد", 
-            href: "/exams/military/MilitaryExams", 
-            icon: ShieldCheck 
-        },
-					{ id: "dig-mil-shoot", name: "اختبار الرماية", href: "/exams/military/shooting", icon: Target },
-					{ id: "dig-mil-inf", name: "اختبار المشاة", href: "/exams/military/infantry", icon: Footprints },
-					{ id: "dig-mil-results", name: "سجل النتائج", href: "/exams/military/results", icon: Table },
-				]
-			},
+                        id: "dig-mil-unified", 
+                        // 🟢 تم تغيير الاسم حسب طلبك
+                        name: "الاختبارات العسكرية", 
+                        href: "/exams/military/MilitaryExams", 
+                        icon: ShieldCheck 
+                    },
+                    
+                    
+                    { id: "dig-mil-results", name: "سجل النتائج", href: "/exams/military/results", icon: Table },
+                ]
+            },
 			
 		]
 	},
@@ -611,12 +612,24 @@ if (item.id === "cs-sp-sol") {
 </SheetContent>
 												</Sheet>
 										)}
-                                        {!isLoading && displayName && (
-    <div className="flex flex-col -space-y-1 animate-in fade-in slide-in-from-right-2 duration-500">
-        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">مرحباً بك</span>
-        <span className="text-xs font-black text-slate-700 dark:text-white truncate max-w-[120px]">
-            {displayName}
-        </span>
+                                       {/* الحاوية التي تجمع الترحيب والجرس */}
+{!isLoading && displayName && (
+    <div className="flex items-center gap-4 animate-in fade-in slide-in-from-right-2 duration-500">
+        
+        {/* 🔔 أيقونة الإشعارات (للعرض فقط حالياً) */}
+        <div className="relative cursor-pointer hover:bg-slate-100 p-2 rounded-full transition-all group">
+            <Bell className="w-5 h-5 text-slate-500 group-hover:text-blue-600 transition-colors" />
+            {/* دائرة حمراء وهمية لإعطاء انطباع بوجود تنبيهات */}
+            <span className="absolute top-1.5 right-1.5 bg-red-600 w-2 h-2 rounded-full border-2 border-white"></span>
+        </div>
+
+        {/* نصوص الترحيب */}
+        <div className="flex flex-col -space-y-1">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">مرحباً بك</span>
+            <span className="text-xs font-black text-slate-700 dark:text-white truncate max-w-[120px]">
+                {displayName}
+            </span>
+        </div>
     </div>
 )}
     </div>

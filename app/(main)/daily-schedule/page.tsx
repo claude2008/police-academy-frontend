@@ -137,7 +137,10 @@ useEffect(() => {
     setLoading(true);
     try {
         const params = new URLSearchParams({ course: selectedCourse, batch: selectedBatch, limit: "1000" });
-        if (selectedCompany !== "all") params.append("company", selectedCompany);
+        
+        // 🔴 قمنا بحذف هذا السطر لكي يجلب النظام كل السرايا في الذاكرة أولاً
+        // if (selectedCompany !== "all") params.append("company", selectedCompany);
+
         const [sRes, dRes] = await Promise.all([
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${params.toString()}`),
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/day-data?date=${date}`, { headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } })
@@ -157,16 +160,25 @@ const availableBatches = useMemo(() => {
     const batches = new Set(soldiers.map(s => s.batch));
     return Array.from(batches).filter(b => b && b !== "none" && b !== "").sort();
 }, [soldiers]);
-
+// 🟢 التعديل الجديد: استخراج السرايا الموجودة فعلياً في هذه الدورة والدفعة فقط
+const availableCompanies = useMemo(() => {
+    const companies = new Set(soldiers.map(s => s.company));
+    // تنظيف القائمة من الفراغات وترتيبها
+    return Array.from(companies).filter(c => c && c !== "none" && c !== "").sort();
+}, [soldiers]);
  // 🟢 1. الفرز الذكي (يعتمد عليه الإجمالي والجدول)
+// 🟢 1. الفرز الذكي (يعتمد عليه الإجمالي والجدول)
 const filteredSoldiers = useMemo(() => {
     return soldiers.filter(s => {
         const matchSearch = (s.name || "").includes(searchTerm) || (s.military_id || "").includes(searchTerm);
         const matchPlatoon = selectedPlatoon === "all" || s.platoon === selectedPlatoon;
-        // ملاحظة: السرية مفلترة أصلاً من السيرفر عند جلب الـ soldiers
-        return matchSearch && matchPlatoon;
+        
+        // 🟢 أضفنا شرط السرية هنا
+        const matchCompany = selectedCompany === "all" || s.company === selectedCompany;
+
+        return matchSearch && matchPlatoon && matchCompany;
     });
-}, [soldiers, searchTerm, selectedPlatoon]);
+}, [soldiers, searchTerm, selectedPlatoon, selectedCompany]); // 👈 لا تنس إضافة selectedCompany هنا
 
 // 🟢 2. تقسيم الصفحات بناءً على الفرز الفعلي
 const paginatedSoldiers = useMemo(() => {
@@ -393,7 +405,18 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
                   </SelectContent>
                 </Select>
 
-                <Select value={selectedCompany} onValueChange={setSelectedCompany}><SelectTrigger className="h-9 text-xs"><SelectValue placeholder="السرية" /></SelectTrigger><SelectContent><SelectItem value="all">كل السرايا</SelectItem>{filterOptions.companies?.map((c:any)=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select>
+                <Select value={selectedCompany} onValueChange={(v) => { setSelectedCompany(v); setSelectedPlatoon("all"); }}>
+  <SelectTrigger className="h-9 text-xs">
+    <SelectValue placeholder="السرية" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="all">كل السرايا</SelectItem>
+    {/* 🟢 نستخدم القائمة الذكية الجديدة هنا لضمان عدم التكرار */}
+    {availableCompanies.map((c: any) => (
+      <SelectItem key={c} value={c}>{c}</SelectItem>
+    ))}
+  </SelectContent>
+</Select>
                 <Select value={selectedPlatoon} onValueChange={setSelectedPlatoon}><SelectTrigger className="h-9 text-xs"><SelectValue placeholder="الفصيل" /></SelectTrigger><SelectContent><SelectItem value="all">كل الفصائل</SelectItem>{platoonsList.map(p=><SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent></Select>
                 <div className="relative col-span-2 md:col-span-2">
                     <Search className="absolute right-3 top-2.5 w-4 h-4 text-slate-400" />

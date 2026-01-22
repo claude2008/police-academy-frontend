@@ -22,7 +22,9 @@ import ProtectedRoute from "@/components/ProtectedRoute"
 import * as XLSX from 'xlsx';
 const absenceKeywords = ["غياب", "غائب", "إصابة", "لم يختبر", "شطب", "مؤجل", "اعتذار", "طبية", "مستشفى", "ملحق", "عيادة", "مرضية", "مفصول", "اصابة", "استقالة", "إستقالة"];
 export default function ResultsArchivePage() {
-    const [activeTab, setActiveTab] = useState("shooting")
+    const [selectedSection, setSelectedSection] = useState<string>("all")
+const [selectedExamType, setSelectedExamType] = useState<string>("all")
+const [militarySections, setMilitarySections] = useState<any[]>([])
     const [selectedRecord, setSelectedRecord] = useState<any>(null)
     const [userRole, setUserRole] = useState<string>("")
     const [records, setRecords] = useState<any[]>([])
@@ -32,7 +34,7 @@ export default function ResultsArchivePage() {
     const [courseFilter, setCourseFilter] = useState("all")
 const [batchFilter, setBatchFilter] = useState("all")
     const [currentPage, setCurrentPage] = useState(1)
-    const [itemsPerPage, setItemsPerPage] = useState(10)
+    const [itemsPerPage, setItemsPerPage] = useState(12)
     const [innerCurrentPage, setInnerCurrentPage] = useState(1);
 const [innerItemsPerPage, setInnerItemsPerPage] = useState(20);
     const [innerCompany, setInnerCompany] = useState("all")
@@ -42,7 +44,12 @@ const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
     const [viewMode, setViewMode] = useState<"field" | "official">("field");
     const [allSoldiersInBatch, setAllSoldiersInBatch] = useState<any[]>([]);
     const [tempNotes, setTempNotes] = useState<Record<string, string>>({});
-
+  const [configs, setConfigs] = useState<any[]>([])
+  // 🟢 متغيرات لحل تنازع البيانات المكررة
+const [conflictDialog, setConflictDialog] = useState(false);
+const [conflicts, setConflicts] = useState<any[]>([]); // قائمة الطلاب المكررين
+const [pendingRecord, setPendingRecord] = useState<any>(null); // السجل المؤقت قبل الاعتماد
+const [resolvedStudents, setResolvedStudents] = useState<Map<string, any>>(new Map()); // الطلاب الذين تم دمجهم بنجاح
     const [deleteTarget, setDeleteTarget] = useState<{id: number, title: string, all_ids: number[]} | null>(null);
 
     // كلمات مفتاحية لتحديد حالات الغياب
@@ -52,11 +59,26 @@ const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
         }
     }, [selectedRecord]);
 
-    useEffect(() => {
+   useEffect(() => {
         const user = JSON.parse(localStorage.getItem("user") || "{}")
         setUserRole(user.role || "")
-        fetchRecords()
-    }, [activeTab])
+        
+        const fetchInitialData = async () => {
+            const headers = { "Authorization": `Bearer ${localStorage.getItem("token")}` };
+            
+            // 1. جلب الأقسام (رماية، مشاة...)
+            const resSec = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/military-sections`, { headers });
+            if (resSec.ok) setMilitarySections(await resSec.json());
+            
+            // 2. 🟢 جلب الإعدادات (المرجع الأساسي للهوية)
+            const resConf = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/configs`, { headers });
+            if (resConf.ok) setConfigs(await resConf.json());
+            
+            await fetchRecords();
+        };
+
+        fetchInitialData();
+    }, [])
 
     const fetchRecords = async () => {
     setLoading(true); // 1. البدء في إظهار علامة التحميل
@@ -128,6 +150,110 @@ const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
             fetchBatch();
         }
     }, [selectedRecord, viewMode]);
+     // 🟢 دالة فتح البطاقة ودمج البيانات وكشف التكرار
+  const handleCardClick = (group: any) => {
+        const relatedRecords = records.filter(r => group.all_ids.includes(r.id));
+        const mergedMap = new Map<string, any>();
+        const foundConflicts: any[] = [];
+
+        relatedRecords.forEach((record) => {
+            const creatorName = record.creator_name || "غير معروف";
+            const studentsList = Array.isArray(record.students_data) ? record.students_data : [];
+
+            studentsList.forEach((student: any) => {
+                const milId = String(student.military_id);
+                const studentData = { 
+                    ...student, 
+                    recorded_by: student.recorded_by || creatorName, 
+                    source_record_id: record.id 
+                };
+
+                if (mergedMap.has(milId)) {
+                    const existing = mergedMap.get(milId);
+                    // إذا كانت الدرجات مختلفة، نعتبره تضارب
+                    if (String(existing.total) !== String(studentData.total)) {
+                        foundConflicts.push({
+                            student_name: student.name,
+                            military_id: milId,
+                            version_A: existing,
+                            version_B: studentData
+                        });
+                    }
+                } else {
+                    mergedMap.set(milId, studentData);
+                }
+            });
+        });
+
+        if (foundConflicts.length > 0) {
+            setResolvedStudents(mergedMap);
+            setConflicts(foundConflicts);
+            setPendingRecord(group);
+            setConflictDialog(true);
+        } else {
+            setSelectedRecord({ ...group, students_data: Array.from(mergedMap.values()) });
+        }
+    };
+
+ const resolveConflict = async (conflictIndex: number, selectedVersion: 'A' | 'B') => {
+        const conflict = conflicts[conflictIndex];
+        // النسخة التي ضغط المستخدم على زر حذفها (Destructive) هي الخاسرة
+        const winner = selectedVersion === 'A' ? conflict.version_A : conflict.version_B;
+        const loser = selectedVersion === 'A' ? conflict.version_B : conflict.version_A;
+
+        // 1. تحديث الذاكرة المحلية فوراً لفتح الجدول للمستخدم دون تأخير
+        const updatedMap = new Map(resolvedStudents);
+        updatedMap.set(String(conflict.military_id), winner);
+        setResolvedStudents(updatedMap);
+
+        const nextConflicts = conflicts.filter((_, i) => i !== conflictIndex);
+        setConflicts(nextConflicts);
+
+        if (nextConflicts.length === 0) {
+            setConflictDialog(false);
+            setSelectedRecord({ ...pendingRecord, students_data: Array.from(updatedMap.values()) });
+        }
+
+        // 2. 🗑️ الحذف الفعلي من سوبابيز عبر الباك إند
+        const loserRecordOrig = records.find(r => r.id === loser.source_record_id);
+        
+        if (loserRecordOrig) {
+            try {
+                // جلب القائمة الحالية والتأكد من أنها مصفوفة
+                const currentList = Array.isArray(loserRecordOrig.students_data) 
+                    ? loserRecordOrig.students_data 
+                    : JSON.parse(loserRecordOrig.students_data || "[]");
+
+                // 🟢 تعريف المتغير هنا يحل مشكلة الخطأ الذي ظهر لك
+                const filteredList = currentList.filter(
+                    (s: any) => String(s.military_id) !== String(conflict.military_id)
+                );
+
+                // إرسال التحديث للسيرفر
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records/${loser.source_record_id}`, {
+                    method: "PUT",
+                    headers: { 
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${localStorage.getItem("token")}` 
+                    },
+                    body: JSON.stringify({ students_data: filteredList })
+                });
+
+                if (res.ok) {
+                    // تحديث الحالة الكلية لضمان عدم ظهور التكرار مجدداً عند إعادة فتح البطاقة
+                    setRecords(prev => prev.map(r => 
+                        r.id === loser.source_record_id ? { ...r, students_data: filteredList } : r
+                    ));
+                    toast.success(`تم حذف نسخة ${loser.recorded_by} من قاعدة البيانات ✅`);
+                } else {
+                    console.error("Failed to delete from DB");
+                }
+            } catch (e) {
+                console.error("Conflict Resolution Error:", e);
+                toast.error("حدث خطأ أثناء محاولة تحديث قاعدة البيانات");
+            }
+        }
+    };
 // استخراج قوائم الفلاتر ديناميكياً من السجلات
 const coursesList = useMemo(() => {
     return Array.from(new Set(records.map(r => r.course))).filter(Boolean);
@@ -303,9 +429,7 @@ const batchesList = useMemo(() => {
             row["الملاحظات"] = s.notes || "";
 
             // 4. مدخل البيانات (في وضع الرصد فقط)
-            if (viewMode === "field") {
-                row["مدخل البيانات"] = s.recorded_by || "النظام";
-            }
+            row["مدخل البيانات"] = s.recorded_by || "";
 
             return row;
         });
@@ -324,91 +448,81 @@ const batchesList = useMemo(() => {
         toast.error("حدث خطأ أثناء التصدير");
     }
 };
-
-   // 1. ابحث عن هذا المتغير
-const groupedRecords = useMemo(() => {
-        // 1. كلمات مفتاحية للعناوين
+// 🟢 الدالة المفقودة التي تحل الخطأ 2304
+    const detectRealType = (record: any) => {
         const shootingKeywords = ["رماية", "مسدس", "بندقية", "m16", "رشاش", "shooting"];
         const engagementKeywords = ["اشتباك", "دفاع عن النفس", "engagement"];
         const fitnessKeywords = ["لياقة", "بدنية", "fitness", "رياضة", "sports"];
 
-        // 2. دالة فحص المحتوى (الذكاء الجديد 🧠)
-        const detectRealType = (record: any) => {
-            const titleLower = (record.title || "").toLowerCase();
-            const subjectLower = (record.subject || "").toLowerCase();
-            
-            // أ. الفحص بالعنوان (الأسهل)
-            if (shootingKeywords.some(k => titleLower.includes(k) || subjectLower.includes(k))) return "shooting";
-            if (engagementKeywords.some(k => titleLower.includes(k) || subjectLower.includes(k))) return "engagement";
-            if (fitnessKeywords.some(k => titleLower.includes(k) || subjectLower.includes(k))) return "fitness";
+        const title = (record.title || "").toLowerCase();
+        const subject = (record.subject || "").toLowerCase();
 
-            // ب. الفحص بالمحتوى (للأسماء العامة مثل "تجريبي")
-            // نفحص أول طالب لنرى نوع البيانات
-            if (Array.isArray(record.students_data) && record.students_data.length > 0) {
-                const s = record.students_data[0];
-                
-                // علامات اختبار اللياقة (مفاتيح مميزة)
-                const hasFitnessKeys = 
-                    s["الجري"] !== undefined || s["الضغط"] !== undefined || 
-                    s["run_score"] !== undefined || s["push_score"] !== undefined ||
-                    s["run_time"] !== undefined;
+        if (shootingKeywords.some(k => title.includes(k) || subject.includes(k))) return "shooting";
+        if (engagementKeywords.some(k => title.includes(k) || subject.includes(k))) return "engagement";
+        if (fitnessKeywords.some(k => title.includes(k) || subject.includes(k))) return "fitness";
 
-                if (hasFitnessKeys) return "fitness";
-
-                // علامات الاشتباك (محاور)
-                const hasEngagementKeys = 
-                    s.snapshot || s.exam_snapshot || 
-                    (s.technical_scores && s.technical_scores.length > 0);
-                
-                if (hasEngagementKeys) return "engagement";
-            }
-
-            // إذا لم نجد أي علامة مميزة، نعتبره مشاة/عام
-            return "infantry";
-        };
+        return "infantry"; // الافتراضي للمواد العسكرية الأخرى (مشاة، أسلحة..)
+    };
+   // 1. ابحث عن هذا المتغير
+const groupedRecords = useMemo(() => {
+    const filtered = records.filter(r => {
+        // 🎯 البحث عن "هوية" الاختبار في جدول المعايير المرجعي
+        const config = configs.find(c => c.id === r.config_id);
         
-        // 3. الفلترة والتجميع
-        const filtered = records.filter(r => {
-            const realType = detectRealType(r); // تحديد النوع الحقيقي
+        // إذا لم نجد الإعداد (ربما حُذف)، نحاول التكهن بالعنوان كخيار احتياطي أخير جداً
+        const realSubject = config ? config.subject : (r.subject || "infantry");
+        const realExamType = config ? config.exam_type : r.title.split(" - ")[0];
 
-            let matchesTab = false;
-            if (activeTab === "shooting") {
-                matchesTab = (realType === "shooting");
-            } else if (activeTab === "infantry") {
-                // تاب المشاة يظهر المشاة فقط (ويستبعد اللياقة والاشتباك والرماية)
-                matchesTab = (realType === "infantry");
-            }
+        // 🛡️ شرط الحماية: استبعاد اللياقة والاشتباك (المصنفة في السيستم كـ engagement)
+        if (realSubject.includes("engagement") || realSubject === "fitness") return false;
 
-            const matchesSearch = r.title.includes(searchQuery);
-            const matchesDate = !dateSearch || r.exam_date === dateSearch;
-            const matchesCourse = courseFilter === "all" || r.course === courseFilter;
-    const matchesBatch = batchFilter === "all" || r.batch === batchFilter;
-            return matchesTab && matchesSearch && matchesDate;
-        });
+        // 1. المطابقة مع القسم المختار (shooting, infantry, weapons, student_teacher)
+        const matchesSection = selectedSection === "all" || realSubject === selectedSection;
+        
+        // 2. المطابقة مع نوع الاختبار (الاسم الرسمي المبرمج في الـ Config)
+        const matchesExamType = selectedExamType === "all" || realExamType === selectedExamType;
 
-        // 4. التجميع (كما هو)
-        const groups: Record<string, any> = {};
-        filtered.forEach(r => {
-            const key = `${r.exam_date}-${r.title}-${r.course}-${r.batch}`;
-            if (!groups[key]) {
-                groups[key] = { ...r, all_ids: [r.id] };
-                groups[key].students_data = Array.isArray(r.students_data) ? r.students_data.map((s: any) => ({
-                    ...s, recorded_by: s.recorded_by || r.creator_name || "النظام" 
-                })) : [];
-            } else {
-                const existingIds = groups[key].students_data.map((s: any) => String(s.military_id));
-                const newStudents = Array.isArray(r.students_data) ? r.students_data
-                    .filter((s: any) => !existingIds.includes(String(s.military_id)))
-                    .map((s: any) => ({ ...s, recorded_by: s.recorded_by || r.creator_name || "النظام" })) : [];
-                
-                groups[key].students_data = [...groups[key].students_data, ...newStudents];
-                groups[key].all_ids.push(r.id);
-                if (r.status === 'approved') groups[key].status = 'approved';
-            }
-        });
+        // 3. بقية الفلاتر العادية
+        const matchesSearch = r.title.includes(searchQuery);
+        const matchesDate = !dateSearch || r.exam_date === dateSearch;
+        const matchesCourse = courseFilter === "all" || r.course === courseFilter;
+        const matchesBatch = batchFilter === "all" || r.batch === batchFilter;
 
-        return Object.values(groups);
-    }, [records, activeTab, searchQuery, dateSearch]);
+        return matchesSection && matchesExamType && matchesSearch && matchesDate && matchesCourse && matchesBatch;
+    });
+
+    // منطق التجميع (Groups) مع حساب العدد الحقيقي للطلاب
+    const groups: Record<string, any> = {};
+    filtered.forEach(r => {
+        const key = `${r.exam_date}-${r.title}-${r.course}-${r.batch}`;
+        
+        // جلب أرقام الطلاب في السجل الحالي
+        const currentStudentIds = Array.isArray(r.students_data) 
+            ? r.students_data.map((s: any) => String(s.military_id)) 
+            : [];
+
+        if (!groups[key]) {
+            groups[key] = { 
+                ...r, 
+                all_ids: [r.id],
+                // 🟢 ننشئ Set لتخزين الأرقام العسكرية الفريدة لضمان عدم التكرار
+                unique_students: new Set(currentStudentIds) 
+            };
+        } else {
+            groups[key].all_ids.push(r.id);
+            if (r.status === 'approved') groups[key].status = 'approved';
+            
+            // 🟢 إضافة طلاب السجل المدمج للـ Set
+           currentStudentIds.forEach((id: any) => groups[key].unique_students.add(id));
+        }
+    });
+
+    // تحويل الكائن إلى مصفوفة وإضافة حقل total_count النهائي
+    return Object.values(groups).map((group: any) => ({
+        ...group,
+        total_count: group.unique_students.size // ✅ هذا هو الرقم الذي ستستخدمه في البطاقة
+    }));
+}, [records, configs, selectedSection, selectedExamType, searchQuery, dateSearch, courseFilter, batchFilter]);
 
     const paginatedRecords = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
@@ -495,13 +609,26 @@ const saveTrainerScoresToDB = async () => {
     // --- بداية الجزء المصحح ---
     if (selectedRecord) {
         const dayName = format(new Date(selectedRecord.exam_date), "EEEE", { locale: ar });
-        
+        const currentConfig = configs.find(c => c.id === selectedRecord.config_id);
+    const isShooting = currentConfig?.subject === "shooting";
+    const totalShots = currentConfig?.total_shots || 0;
+
+    // دالة التصنيف العسكري للرماية
+    const getShootingClass = (score: number) => {
+        if (score === null || score === undefined) return "";
+        if (score >= 90) return "هداف";
+        if (score >= 80) return "أولى";
+        if (score >= 70) return "ثانية";
+        if (score >= 60) return "ثالثة";
+        return "راسب";
+    };
+   
         return (
 <ProtectedRoute allowedRoles={["owner","manager","admin","military_officer","military_supervisor"]}>
             <div className="min-h-screen bg-white p-2 md:p-8 flex flex-col space-y-6 pb-10 md:pb-32 overflow-x-hidden relative" dir="rtl">
                <style jsx global>{`
     @media print {
-        @page { size: A4 portrait; margin: 2mm; }
+        @page { size: A4 portrait; margin: 5mm; }
         body { zoom: 0.85; -webkit-print-color-adjust: exact; }
         .no-print { display: none !important; }
         table { width: 100% !important; border-collapse: collapse !important; }
@@ -697,27 +824,55 @@ const saveTrainerScoresToDB = async () => {
                 {/* الجدول */}
                 <div className="border-2 border-transparent rounded-lg overflow-x-auto shadow-sm">
     <Table className="w-full">
-                        <TableHeader className="bg-[#c5b391]">
-                            <TableRow className="border-b-2 border-black text-black">
-                                <TableHead className="text-center border-l border-black font-bold w-10">#</TableHead>
-                                <TableHead className="text-center border-l border-black font-bold w-24">الرتبة</TableHead>
-                                <TableHead className="text-center border-l border-black font-bold w-32">الرقم العسكري</TableHead>
-                                <TableHead className="text-right border-l border-black font-bold px-4">الاسم</TableHead>
-                                <TableHead className="text-center border-l border-black font-bold">السرية / الفصيل</TableHead>
-                                <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-24">
-    {showTrainerScore ? "المجموع (90%)" : "المجموع"}
-</TableHead>
+                       <TableHeader className="bg-[#c5b391]">
+    <TableRow className="border-b-2 border-black text-black">
+        <TableHead className="text-center border-l border-black font-bold w-10">#</TableHead>
+        <TableHead className="text-center border-l border-black font-bold w-24">الرتبة</TableHead>
+        <TableHead className="text-center border-l border-black font-bold w-32">الرقم العسكري</TableHead>
+        <TableHead className="text-right border-l border-black font-bold px-4">الاسم</TableHead>
+        <TableHead className="text-center border-l border-black font-bold">السرية / الفصيل</TableHead>
 
-{/* عمود درجة المدرب - يظهر فقط عند الضغط على الزر */}
-{showTrainerScore && (
-    <TableHead className="text-center border-l border-black font-black bg-[#d4c3a1] w-24 animate-in slide-in-from-right-2">
-        درجة المدرب (10%)
-    </TableHead>
-)}
-                                <TableHead className="text-center border-l border-black font-bold w-24">التقدير</TableHead>
-                                <TableHead className="text-right font-bold px-4">ملاحظات</TableHead>
-                            </TableRow>
-                        </TableHeader>
+        {/* 1️⃣ أولاً: استخراج ورسم أعمدة الأهداف ديناميكياً (تظهر فقط في الرماية) */}
+        {isShooting && (() => {
+            const targets = new Set<string>();
+            selectedRecord.students_data.forEach((student: any) => {
+                if (student.scores) Object.keys(student.scores).forEach(key => targets.add(key));
+            });
+            return Array.from(targets).sort().map(targetName => (
+                <TableHead key={targetName} className="text-center border-l border-black font-bold bg-[#bfa87e] w-20">
+                    {targetName}
+                </TableHead>
+            ));
+        })()}
+
+        {/* 2️⃣ ثانياً: عمود النتيجة/المجموع - تم نقله ليصبح بعد الأهداف مباشرة */}
+        <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-24">
+            {isShooting ? "النتيجة" : (showTrainerScore ? "المجموع (90%)" : "المجموع")}
+        </TableHead>
+
+        {/* 3️⃣ ثالثاً: بقية أعمدة الرماية الثابتة (التصنيف ونسبة الإصابة) */}
+        {isShooting && (
+            <>
+                <TableHead className="text-center border-l border-black font-bold w-24 bg-[#bfa87e]">التصنيف</TableHead>
+                <TableHead className="text-center border-l border-black font-bold w-28 bg-[#bfa87e]">نسبة إصابة الهدف</TableHead>
+            </>
+        )}
+
+        {/* عمود درجة المدرب - يظهر فقط عند الضغط على الزر */}
+        {showTrainerScore && (
+            <TableHead className="text-center border-l border-black font-black bg-[#d4c3a1] w-24 animate-in slide-in-from-right-2">
+                درجة المدرب (10%)
+            </TableHead>
+        )}
+
+        {/* إخفاء عمود التقدير في حال كان الاختبار رماية */}
+        {!isShooting && (
+            <TableHead className="text-center border-l border-black font-bold w-24">التقدير</TableHead>
+        )}
+
+        <TableHead className="text-right font-bold px-4">ملاحظات</TableHead>
+    </TableRow>
+</TableHeader>
                         <TableBody>
                             {finalReportData.map((s: any, idx: number) => {
                                 const g = getGradeInfo(s.total, s.notes);
@@ -726,38 +881,78 @@ const saveTrainerScoresToDB = async () => {
                                 
                                 return (
                                     <TableRow 
-                                        key={`${s.military_id}-${viewMode}`} 
-                                        className={`border-b border-black font-bold text-center h-10 hover:bg-slate-50 transition-colors 
-                                        ${isVisibleOnScreen ? 'table-row' : 'hidden print:table-row force-print'}`}
-                                    >
-                                        <TableCell className="border-l border-black">{idx + 1}</TableCell>
-                                        <TableCell className="border-l border-black">{s.rank}</TableCell>
-                                        <TableCell className="border-l border-black font-mono">{s.military_id}</TableCell>
-                                        <TableCell className="text-right border-l border-black px-4 whitespace-nowrap">{s.name}</TableCell>
-                                        <TableCell className="border-l border-black text-[10px] font-bold">{s.company} / {s.platoon}</TableCell>
-                                        <TableCell className="border-l border-black font-black text-lg bg-slate-50">
-    {isAbsent ? "-" : s.total}
-</TableCell>
+    key={`${s.military_id}-${viewMode}`} 
+    className={`border-b border-black font-bold text-center h-10 hover:bg-slate-50 transition-colors 
+    ${isVisibleOnScreen ? 'table-row' : 'hidden print:table-row force-print'}`}
+>
+    <TableCell className="border-l border-black">{idx + 1}</TableCell>
+    <TableCell className="border-l border-black">{s.rank}</TableCell>
+    <TableCell className="border-l border-black font-mono">{s.military_id}</TableCell>
+    <TableCell className="text-right border-l border-black px-4 whitespace-nowrap">{s.name}</TableCell>
+    <TableCell className="border-l border-black text-[10px] font-bold">{s.company} / {s.platoon}</TableCell>
 
-{/* خلية درجة المدرب - تجلب القيمة من ملف الإكسل المستورد */}
-{showTrainerScore && (
-    <TableCell className="border-l border-black font-black text-lg text-blue-700 bg-orange-50/30">
-        {isAbsent ? "-" : (
-            // 🟢 إذا كانت هناك درجة مستوردة الآن، اعرضها، وإلا اعرض الدرجة المخزنة سابقاً
-            trainerScores[String(s.military_id)] !== undefined 
-                ? trainerScores[String(s.military_id)] 
-                : (s.trainer_score || 0)
-        )}
+    {/* 1️⃣ أولاً: عرض درجات الأهداف بشكل ديناميكي (تظهر فقط في الرماية) */}
+    {isShooting && (() => {
+        const targets = new Set<string>();
+        selectedRecord.students_data.forEach((student: any) => {
+            if (student.scores) Object.keys(student.scores).forEach(key => targets.add(key));
+        });
+        return Array.from(targets).sort().map(targetName => (
+            <TableCell key={targetName} className="border-l border-black bg-white/50 text-center">
+                {isAbsent ? "-" : (s.scores?.[targetName] || 0)}
+            </TableCell>
+        ));
+    })()}
+
+    {/* 2️⃣ ثانياً: خلية النتيجة (المجموع) - تم نقلها لتصبح بعد الأهداف مباشرة */}
+    <TableCell className="border-l border-black font-black text-lg bg-slate-50">
+        {isAbsent ? "-" : s.total}
     </TableCell>
-)}
-                                        <TableCell className="border-l border-black">{isAbsent ? "-" : g.result}</TableCell>
-                                        <TableCell className="text-right border-l border-black px-2 no-print min-w-[150px]">
-                                            {renderNoteCell(s)}
-                                        </TableCell>
-                                        <TableCell className="text-right px-2 hidden print:table-cell text-[10px]">
-                                            {tempNotes[s.military_id] || s.notes || (isAbsent ? "" : "-")}
-                                        </TableCell>
-                                    </TableRow>
+
+    {/* 3️⃣ ثالثاً: بقية خلايا الرماية (التصنيف ونسبة الإصابة) */}
+    {isShooting && (
+        <>
+            <TableCell className="border-l border-black text-blue-800 font-black bg-white">
+                {isAbsent ? "" : getShootingClass(s.total)}
+            </TableCell>
+
+            <TableCell className="border-l border-black font-mono font-bold text-orange-700 bg-white text-center">
+                {isAbsent ? "" : (() => {
+                    const totalHits = Object.values(s.scores || {}).reduce((sum: number, val: any) => {
+                        return sum + (Number(val) || 0);
+                    }, 0);
+                    const accuracyPercentage = totalShots > 0 ? (totalHits / totalShots) * 100 : 0;
+                    return `${accuracyPercentage.toFixed(0)}%`;
+                })()}
+            </TableCell>
+        </>
+    )}
+
+    {/* خلية درجة المدرب - تجلب القيمة من ملف الإكسل المستورد */}
+    {showTrainerScore && (
+        <TableCell className="border-l border-black font-black text-lg text-blue-700 bg-orange-50/30">
+            {isAbsent ? "-" : (
+                trainerScores[String(s.military_id)] !== undefined 
+                    ? trainerScores[String(s.military_id)] 
+                    : (s.trainer_score || 0)
+            )}
+        </TableCell>
+    )}
+
+    {!isShooting && (
+        <TableCell className="border-l border-black">
+            {isAbsent ? "-" : g.result}
+        </TableCell>
+    )}
+
+    <TableCell className="text-right border-l border-black px-2 no-print min-w-[150px]">
+        {renderNoteCell(s)}
+    </TableCell>
+
+    <TableCell className="text-right px-2 hidden print:table-cell text-[10px]">
+        {tempNotes[s.military_id] || s.notes || (isAbsent ? "" : "-")}
+    </TableCell>
+</TableRow>
                                 );
                             })}
                         </TableBody>
@@ -854,76 +1049,112 @@ const saveTrainerScoresToDB = async () => {
                 <h1 className="text-2xl font-bold flex items-center gap-2 text-slate-800">
                     <TableIcon className="w-6 h-6 text-[#c5b391]" /> أرشيف الاختبارات العملي
                 </h1>
-               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 bg-slate-100 p-2 rounded-xl border no-print shadow-sm w-full max-w-full overflow-hidden">
+              {/* 🟢 شريط الفلاتر المجمع والمنظم في 3 سطور */}
+<div className="flex flex-col gap-4 bg-slate-100 p-4 rounded-xl border no-print shadow-sm w-full mb-6" dir="rtl">
     
-    {/* 1. البحث بالعنوان (يأخذ مساحة عمودين في الشاشات الكبيرة) */}
-    <div className="relative sm:col-span-1 lg:col-span-2">
-        <Search className="absolute right-3 top-2.5 w-4 h-4 text-slate-400" />
-        <Input 
-            placeholder="بحث بالعنوان..." 
-            className="h-9 pr-9 bg-white w-full shadow-sm" 
-            value={searchQuery} 
-            onChange={(e)=>setSearchQuery(e.target.value)} 
-        />
+    {/* 1️⃣ السطر الأول: البحث + التاريخ + زر التحديث (3 أعمدة) */}
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* البحث بالعنوان */}
+        <div className="relative">
+            <Search className="absolute right-3 top-3 w-4 h-4 text-slate-400" />
+            <Input 
+                placeholder="بحث بالعنوان..." 
+                className="h-10 pr-10 bg-white w-full shadow-sm font-bold" 
+                value={searchQuery} 
+                onChange={(e)=>setSearchQuery(e.target.value)} 
+            />
+        </div>
+
+        {/* فلتر التاريخ */}
+        <div className="relative"> 
+            <Calendar className="absolute right-3 top-3 w-4 h-4 text-slate-400 z-10" />
+            <Input 
+                type="date" 
+                className="h-10 pr-10 bg-white font-bold w-full shadow-sm appearance-none" 
+                value={dateSearch} 
+                onChange={(e)=>setDateSearch(e.target.value)} 
+            />
+        </div>
+
+        {/* زر التحديث والمزامنة */}
+        <Button 
+            onClick={fetchRecords} 
+            disabled={loading} 
+            className="h-10 bg-blue-600 hover:bg-blue-700 text-white gap-2 font-bold shadow-md transition-all active:scale-95"
+        >
+            <RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 
+            تحديث البيانات
+        </Button>
     </div>
 
-    {/* 2. فلتر الدورة */}
-    <Select value={courseFilter} onValueChange={(v) => {setCourseFilter(v); setBatchFilter("all"); setCurrentPage(1);}}>
-        <SelectTrigger className="h-9 bg-white font-bold shadow-sm">
-            <SelectValue placeholder="الدورة" />
-        </SelectTrigger>
-        <SelectContent dir="rtl">
-            <SelectItem value="all">كل الدورات</SelectItem>
-            {coursesList.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-        </SelectContent>
-    </Select>
+    {/* 2️⃣ السطر الثاني: الدورة + الدفعة (عمودين) */}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* فلتر الدورة */}
+        <div className="space-y-1">
+            <Select value={courseFilter} onValueChange={(v) => {setCourseFilter(v); setBatchFilter("all"); setCurrentPage(1);}}>
+                <SelectTrigger className="h-10 bg-white font-bold border-slate-200">
+                    <SelectValue placeholder="-- اختر الدورة --" />
+                </SelectTrigger>
+                <SelectContent dir="rtl">
+                    <SelectItem value="all">كل الدورات</SelectItem>
+                    {coursesList.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                </SelectContent>
+            </Select>
+        </div>
 
-    {/* 3. فلتر الدفعة */}
-    <Select value={batchFilter} onValueChange={(v) => {setBatchFilter(v); setCurrentPage(1);}}>
-        <SelectTrigger className="h-9 bg-white font-bold shadow-sm">
-            <SelectValue placeholder="الدفعة" />
-        </SelectTrigger>
-        <SelectContent dir="rtl">
-            <SelectItem value="all">كل الدفعات</SelectItem>
-            {batchesList.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-        </SelectContent>
-    </Select>
-
-    {/* 4. فلتر التاريخ */}
-    <div className="relative w-full min-w-0"> 
-        <Calendar className="absolute right-3 top-2.5 w-4 h-4 text-slate-400 z-10" />
-        <Input 
-            type="date" 
-            className="h-9 pr-9 bg-white font-bold w-full box-border appearance-none shadow-sm" 
-            style={{ fontSize: '14px' }} 
-            value={dateSearch} 
-            onChange={(e)=>setDateSearch(e.target.value)} 
-        />
+        {/* فلتر الدفعة */}
+        <div className="space-y-1">
+            <Select value={batchFilter} onValueChange={(v) => {setBatchFilter(v); setCurrentPage(1);}}>
+                <SelectTrigger className="h-10 bg-white font-bold border-slate-200">
+                    <SelectValue placeholder="-- اختر الدفعة --" />
+                </SelectTrigger>
+                <SelectContent dir="rtl">
+                    <SelectItem value="all">كل الدفعات</SelectItem>
+                    {batchesList.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+            </Select>
+        </div>
     </div>
 
-    {/* 5. زر التحديث */}
-    <Button 
-        variant="default" 
-        onClick={fetchRecords} 
-        disabled={loading} 
-        className="h-9 bg-blue-600 hover:bg-blue-700 text-white gap-2 px-4 shadow-md transition-all active:scale-95"
-    >
-        <RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> 
-        <span className="font-bold">تحديث</span>
-    </Button>
+    {/* 3️⃣ السطر الثالث: القسم + النوع (عمودين - مخصص للعسكري) */}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* فلتر القسم الرئيسي */}
+        <Select value={selectedSection} onValueChange={(v) => {setSelectedSection(v); setSelectedExamType("all"); setCurrentPage(1);}}>
+            <SelectTrigger className="h-10 bg-white border-blue-200 text-blue-800 font-bold shadow-sm">
+                <SelectValue placeholder="القسم التدريبي" />
+            </SelectTrigger>
+            <SelectContent dir="rtl">
+                <SelectItem value="all">كل الإختبارات العسكرية</SelectItem>
+                {militarySections.map(s => <SelectItem key={s.id} value={s.key}>{s.name}</SelectItem>)}
+            </SelectContent>
+        </Select>
+
+        {/* فلتر نوع الاختبار التفصيلي */}
+        <Select value={selectedExamType} onValueChange={(v) => {setSelectedExamType(v); setCurrentPage(1);}} disabled={selectedSection === "all"}>
+            <SelectTrigger className="h-10 bg-white border-blue-200 text-blue-800 font-bold shadow-sm">
+                <SelectValue placeholder="نوع الاختبار" />
+            </SelectTrigger>
+            <SelectContent dir="rtl">
+    <SelectItem value="all">كل الأنواع</SelectItem>
+    {/* 🟢 عرض الأنواع الرسمية من جدول الـ Configs بناءً على القسم المختار */}
+    {configs
+        .filter(c => c.subject === selectedSection) // فلترة حسب القسم (رماية، أسلحة..)
+        .map(c => (
+            <SelectItem key={c.id} value={c.exam_type}>
+                {c.exam_type}
+            </SelectItem>
+        ))
+    }
+</SelectContent>
+        </Select>
+    </div>
 </div>
             </div>
-
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList className="bg-slate-200 p-1 rounded-xl w-full max-md:max-w-md mx-auto mb-8 flex h-10 shadow-md" dir="rtl">
-                    <TabsTrigger value="shooting" className="flex-1 font-bold h-8 transition-all">نتائج الرماية</TabsTrigger>
-                    <TabsTrigger value="infantry" className="flex-1 font-bold h-8 transition-all">نتائج المشاة</TabsTrigger>
-                </TabsList>
-                <TabsContent value={activeTab}>
+<div className="mt-8">
                     {loading ? <div className="flex justify-center py-20"><Loader2 className="animate-spin w-10 h-10 text-[#c5b391]" /></div> : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" dir="rtl">
                             {paginatedRecords.map((record: any) => (
-                                <Card key={`${record.exam_date}-${record.title}-${record.course}-${record.batch}`} className="cursor-pointer border-r-8 border-[#c5b391] hover:shadow-2xl transition-all group relative overflow-hidden" onClick={() => setSelectedRecord(record)}>
+                                <Card key={`${record.exam_date}-${record.title}-${record.course}-${record.batch}`} className="cursor-pointer border-r-8 border-[#c5b391] hover:shadow-2xl transition-all group relative overflow-hidden" onClick={() => handleCardClick(record)}>
                                     <CardHeader className="pb-2">
                                         <div className="flex justify-between items-start flex-row-reverse mb-2">
                                             <Badge className={record.status === 'approved' ? "bg-green-600 text-white shadow-sm" : "bg-orange-50 text-orange-600 border border-orange-200"}>
@@ -936,7 +1167,7 @@ const saveTrainerScoresToDB = async () => {
                                     </CardHeader>
                                     <CardContent className="pt-4 border-t flex justify-between items-center flex-row-reverse bg-slate-50/30">
                                         <div className="flex items-center gap-3">
-                                            <span className="text-xs font-black text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">{record.students_data?.length || 0} طالب</span>
+                                            <span className="text-xs font-black text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">{record.total_count} طالب</span>
                                             <Eye className="w-4 h-4 text-slate-300 group-hover:text-blue-600" />
                                         </div>
                                         {["owner", "admin", "manager"].includes(userRole) && (
@@ -949,9 +1180,7 @@ const saveTrainerScoresToDB = async () => {
                             ))}
                         </div>
                     )}
-                </TabsContent>
-            </Tabs>
-
+</div>
             {!loading && groupedRecords.length > 0 && (
     <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 bg-white border rounded-xl mt-8 shadow-sm no-print">
         {/* اختيار عدد العناصر في الصفحة */}
@@ -960,8 +1189,8 @@ const saveTrainerScoresToDB = async () => {
             <Select value={String(itemsPerPage)} onValueChange={(v) => {setItemsPerPage(Number(v)); setCurrentPage(1);}}>
                 <SelectTrigger className="w-24 h-8 text-xs bg-white font-bold shadow-sm"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                    <SelectItem value="10">10 بطاقات</SelectItem>
-                    <SelectItem value="20">20 بطاقة</SelectItem>
+                    <SelectItem value="12">12 بطاقات</SelectItem>
+                    <SelectItem value="24">24 بطاقة</SelectItem>
                     <SelectItem value="50">50 بطاقة</SelectItem>
                 </SelectContent>
             </Select>
@@ -999,7 +1228,66 @@ const saveTrainerScoresToDB = async () => {
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+       {/* 🟢 نافذة حل تعارض البيانات المكررة المحدثة بأيقونات الحذف */}
+<AlertDialog open={conflictDialog}>
+    <AlertDialogContent dir="rtl" className="max-w-2xl">
+        <AlertDialogHeader className="border-b pb-4">
+            <AlertDialogTitle className="text-red-600 flex items-center gap-2 text-xl font-black">
+                <AlertTriangle className="w-6 h-6" /> تنبيه: تكرار في رصد الدرجات
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-600 font-bold">
+                يوجد درجتان مختلفتان لنفس الطالب. اختر النسخة التي تريد **حذفها نهائياً** من قاعدة البيانات.
+            </AlertDialogDescription>
+        </AlertDialogHeader>
+
+        {conflicts.length > 0 && (
+            <div className="space-y-6 mt-6">
+                <div className="text-center bg-slate-100 p-3 rounded-lg border border-dashed border-slate-300">
+                    <p className="text-lg font-black text-slate-800">{conflicts[0].student_name}</p>
+                    <p className="text-sm font-mono text-blue-600 font-bold">{conflicts[0].military_id}</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* النسخة A */}
+                    <div className="group relative border-2 border-slate-200 p-5 rounded-2xl bg-white hover:border-red-400 transition-all shadow-sm">
+                        <Badge className="absolute -top-3 right-4 bg-blue-600">الرصد الأول</Badge>
+                        <p className="text-xs text-slate-400 mb-1">الراصد: {conflicts[0].version_A.recorded_by}</p>
+                        <div className="text-4xl font-black text-slate-700 my-2">{conflicts[0].version_A.total}</div>
+                        
+                        <Button 
+                            variant="destructive" 
+                            className="w-full mt-4 gap-2 font-bold shadow-md active:scale-95 transition-transform"
+                            onClick={() => resolveConflict(0, 'B')} // يعني سنعتمد B ونحذف A
+                        >
+                            <Trash2 className="w-4 h-4" /> حذف هذه النسخة
+                        </Button>
+                    </div>
+
+                    {/* النسخة B */}
+                    <div className="group relative border-2 border-slate-200 p-5 rounded-2xl bg-white hover:border-red-400 transition-all shadow-sm">
+                        <Badge className="absolute -top-3 right-4 bg-orange-600">الرصد الثاني</Badge>
+                        <p className="text-xs text-slate-400 mb-1">الراصد: {conflicts[0].version_B.recorded_by}</p>
+                        <div className="text-4xl font-black text-slate-700 my-2">{conflicts[0].version_B.total}</div>
+
+                        <Button 
+                            variant="destructive" 
+                            className="w-full mt-4 gap-2 font-bold shadow-md active:scale-95 transition-transform"
+                            onClick={() => resolveConflict(0, 'A')} // يعني سنعتمد A ونحذف B
+                        >
+                            <Trash2 className="w-4 h-4" /> حذف هذه النسخة
+                        </Button>
+                    </div>
+                </div>
+                
+                <p className="text-center text-[10px] text-slate-400 italic">
+                    * المتبقي للمعالجة: {conflicts.length} طالب
+                </p>
+            </div>
+        )}
+    </AlertDialogContent>
+</AlertDialog>
         </div>
+
        </ProtectedRoute> 
     );
 }

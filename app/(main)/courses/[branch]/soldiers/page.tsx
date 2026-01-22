@@ -59,7 +59,7 @@ const [milSubjectFilter, setMilSubjectFilter] = useState("all"); // الفلتر
     const [vioTo, setVioTo] = useState("");
     const [sportsFrom, setSportsFrom] = useState("");
     const [sportsTo, setSportsTo] = useState("");
-    
+    const [milSectionsList, setMilSectionsList] = useState<any[]>([]);
     // --- 4. States (UI Logic) ---
     const [violationSubjectFilter, setViolationSubjectFilter] = useState("all")
     const [reportSubjectFilter, setReportSubjectFilter] = useState("all")
@@ -103,26 +103,42 @@ const [showReportFilter, setShowReportFilter] = useState(false);
    // 🟢 تعديل فلتر "الاختبارات العسكرية" لاستبعاد اللياقة
 const milExamsList = useMemo(() => {
     return (profileData.military_exams || []).filter((ex: any) => {
-        // 1. استبعاد اختبارات اللياقة (بالاعتماد على المفاتيح)
+        // 1. استبعاد اختبارات اللياقة (بالاعتماد على وجود مفاتيح الجري/الضغط)
         const isFitness = ex["الجري"] !== undefined || ex["الضغط"] !== undefined || ex["البطن"] !== undefined;
         if (isFitness) return false;
 
-        // 2. تحديد النوع بناءً على العنوان
+        // 2. تحديد قسم الاختبار (Subject)
+        // نحاول جلب القسم من الحقل الصريح، وإذا لم يوجد نكهن به من العنوان
+        const examSubject = ex.subject || ex.config?.subject || "";
         const title = (ex.title || "").toLowerCase();
-        const isShooting = title.includes("رماية") || title.includes("مسدس") || title.includes("بندقية");
-        const isInfantry = title.includes("مشاة") || !isShooting; // إذا لم يكن رماية نعتبره مشاة أو عام
 
-        // 3. تطبيق فلتر الاختيار (الكل، مشاة، رماية)
+        // 3. تطبيق فلتر الاختيار (الكل، مشاة، رماية، إلخ)
         let matchesSubject = true;
-        if (milSubjectFilter === "shooting") matchesSubject = isShooting;
-        if (milSubjectFilter === "infantry") matchesSubject = isInfantry && !isShooting;
+        if (milSubjectFilter !== "all") {
+            // أ - التحقق من المفتاح البرمجي (مثلاً shooting أو infantry)
+            const matchByKey = examSubject === milSubjectFilter;
+            
+            // ب - التحقق بالكلمات المفتاحية (دعم إضافي للسجلات التي قد لا تملك subject صريح)
+            let matchByTitle = false;
+            if (milSubjectFilter === "shooting") {
+                matchByTitle = title.includes("رماية") || title.includes("مسدس") || title.includes("بندقية");
+            } else if (milSubjectFilter === "infantry") {
+                matchByTitle = title.includes("مشاة") || title.includes("عصا");
+            } else {
+                // للأقسام الأخرى، نعتمد على مسمى القسم في الإعدادات
+                const sectionName = milSectionsList.find(s => s.key === milSubjectFilter)?.name || "";
+                matchByTitle = title.includes(sectionName);
+            }
+
+            matchesSubject = matchByKey || matchByTitle;
+        }
 
         // 4. فلتر التاريخ
         const matchesDate = (!milFrom || ex.exam_date >= milFrom) && (!milTo || ex.exam_date <= milTo);
         
         return matchesSubject && matchesDate;
     });
-}, [profileData.military_exams, milFrom, milTo, milSubjectFilter]);
+}, [profileData.military_exams, milFrom, milTo, milSubjectFilter, milSectionsList]);
 
     const filteredReports = useMemo(() => {
         let base = profileData.reports || [];
@@ -250,25 +266,56 @@ const totalFitExamsPages = Math.ceil(fitnessExamsList.length / fitExamsPerPage);
         : "دليل المجندين (التدريب الرياضي)";
 
     // --- 6. Effects ---
-    useEffect(() => { setIsClient(true) }, [])
-
+    // 1️⃣ هذا الـ Effect مسؤول عن جلب البيانات الأولية "مرة واحدة فقط" عند فتح الصفحة
     useEffect(() => {
-        const fetchFilters = async () => {
+        setIsClient(true);
+        
+        const fetchInitialData = async () => {
             const token = localStorage.getItem("token");
+            if (!token) return;
+            const headers = { "Authorization": `Bearer ${token}` };
+            
+            try {
+                // جلب الأقسام العسكرية (رماية، مشاة، أسلحة، إلخ)
+                const resSec = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/military-sections`, { headers });
+                if (resSec.ok) {
+                    const sections = await resSec.json();
+                    setMilSectionsList(sections);
+                }
+
+                // جلب خيارات الفلاتر الأولية
+                const resFilters = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`, { headers });
+                if (resFilters.ok) setFilterOptions(await resFilters.json());
+            } catch (e) {
+                console.error("Initial Data Fetch Error:", e);
+            }
+        };
+
+        fetchInitialData();
+    }, []);
+
+    // 2️⃣ هذا الـ Effect مسؤول عن تحديث خيارات الفلاتر "فقط" عند تغيير الاختيارات
+    useEffect(() => {
+        if (!isClient) return;
+
+        const fetchDependentFilters = async () => {
+            const token = localStorage.getItem("token");
+            const headers = { "Authorization": `Bearer ${token}` };
             try {
                 const p = new URLSearchParams();
                 if (filterCourse !== 'all') p.append('course', filterCourse);
                 if (filterBatch !== 'all') p.append('batch', filterBatch);
                 if (filterCompany !== 'all') p.append('company', filterCompany);
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${p.toString()}`, {
-                    headers: { "Authorization": `Bearer ${token}` }
-                });
-                if (res.ok) setFilterOptions(await res.json());
-            } catch (e) { console.error("Filter error"); }
-        }
-        if (isClient) fetchFilters();
-    }, [filterCourse, filterBatch, filterCompany, isClient]);
 
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${p.toString()}`, { headers });
+                if (res.ok) setFilterOptions(await res.json());
+            } catch (e) {
+                console.error("Filter Update Error:", e);
+            }
+        };
+
+        fetchDependentFilters();
+    }, [filterCourse, filterBatch, filterCompany, isClient]);
     const fetchSoldiers = async () => {
         setLoading(true);
         const token = localStorage.getItem("token");
@@ -899,17 +946,22 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
             </Button>
         </div>
 
-        {/* قائمة اختيار نوع الاختبار */}
-        <Select value={milSubjectFilter} onValueChange={(val) => { setMilSubjectFilter(val); setMilExamsPage(1); }}>
-            <SelectTrigger className="w-[150px] h-8 text-[10px] bg-slate-50 border-slate-200 font-bold">
-                <SelectValue placeholder="نوع الاختبار" />
-            </SelectTrigger>
-            <SelectContent dir="rtl">
-                <SelectItem value="all">كل الاختبارات العسكرية</SelectItem>
-                <SelectItem value="infantry">اختبارات المشاة فقط</SelectItem>
-                <SelectItem value="shooting">اختبارات الرماية فقط</SelectItem>
-            </SelectContent>
-        </Select>
+       {/* قائمة اختيار نوع الاختبار - ديناميكية من قاعدة البيانات */}
+<Select value={milSubjectFilter} onValueChange={(val) => { setMilSubjectFilter(val); setMilExamsPage(1); }}>
+    <SelectTrigger className="w-[180px] h-8 text-[10px] bg-slate-50 border-slate-200 font-bold">
+        <SelectValue placeholder="نوع الاختبار العسكري" />
+    </SelectTrigger>
+    <SelectContent dir="rtl">
+        <SelectItem value="all">كل الاختبارات العسكرية</SelectItem>
+        
+        {/* 🟢 عرض كافة الأقسام المسجلة في الإعدادات (رماية، مشاة، أسلحة، الخ) */}
+        {milSectionsList.map((sec: any) => (
+            <SelectItem key={sec.id} value={sec.key}>
+                {sec.name}
+            </SelectItem>
+        ))}
+    </SelectContent>
+</Select>
     </div>
 
         {/* 🟢 مربع التاريخ: يظهر فقط إذا كانت showMilFilter تساوي true */}
@@ -1167,7 +1219,7 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                                     {item.status_label}
                                 </Badge>
                             </TableCell>
-                            <TableCell className="text-center font-black text-xs">{item.duration} ي</TableCell>
+                            <TableCell className="text-center font-black text-xs">{item.duration} يوم</TableCell>
                             <TableCell className="text-[11px] text-slate-500 leading-relaxed max-w-[250px]">{item.note || "-"}</TableCell>
                             <TableCell className="text-center no-print">
                                 <div className="flex justify-center gap-1">

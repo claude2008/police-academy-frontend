@@ -413,16 +413,16 @@ if (feature === 'others') {
       setSelectionState(prev => ({ ...prev, isOpen: false }));
   };
 
-  const handleExamTypeSelect = (type: string) => {
+ const handleExamTypeSelect = (type: string) => {
       const { selectedBranch } = selectionState;
       
       if (selectedBranch === 'military') {
-          if (type === 'shooting') router.push('/exams/military/shooting');
-          if (type === 'infantry') router.push('/exams/military/infantry');
-          if (type === 'results') router.push('/exams/military/results');
+          // 🟢 التوجيه الموحد الجديد للاختبارات العسكرية
+          router.push('/exams/military/MilitaryExams');
           setSelectionState(prev => ({ ...prev, isOpen: false }));
       } 
       else {
+          // ... (هنا يبقى كود اللياقة والاشتباك كما هو دون تغيير)
           if (type === 'fitness') {
               setSelectionState(prev => ({ ...prev, step: 'action_select', selectedExamType: 'fitness' }));
           } else if (type === 'combat') {
@@ -651,14 +651,23 @@ if (feature === 'others') {
                            {selectionState.step === 'exam_select' && (
                                <div className="grid grid-cols-1 gap-3">
                                    {selectionState.selectedBranch === 'military' ? (
-                                       <>
-                                           <button onClick={() => handleExamTypeSelect('shooting')} className="w-full p-4 bg-slate-50 hover:bg-green-50 text-slate-700 hover:text-green-700 font-bold rounded-2xl transition-all border border-slate-100">🎯 اختبار الرماية</button>
-                                           <button onClick={() => handleExamTypeSelect('infantry')} className="w-full p-4 bg-slate-50 hover:bg-green-50 text-slate-700 hover:text-green-700 font-bold rounded-2xl transition-all border border-slate-100">🦶 اختبار المشاة</button>
-                                           {!["military_trainer"].includes(user?.role) && (
-                                               <button onClick={() => handleExamTypeSelect('results')} className="w-full p-4 bg-slate-800 text-white font-bold rounded-2xl transition-all">📊 سجل النتائج</button>
-                                           )}
-                                       </>
-                                   ) : (
+            <>
+                {/* 🟢 الزر الموحد الجديد بدلاً من الرماية والمشاة */}
+                <button 
+                    onClick={() => handleExamTypeSelect('unified')} 
+                    className="w-full p-6 bg-gradient-to-r from-green-600 to-emerald-700 text-white font-black rounded-3xl transition-all shadow-lg hover:shadow-green-200 hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3"
+                >
+                    <ShieldCheck className="w-6 h-6" />
+                    الاختبارات العسكرية
+                </button>
+
+                {!["military_trainer"].includes(user?.role) && (
+                    <button onClick={() => handleExamTypeSelect('results')} className="w-full p-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-all flex items-center justify-center gap-2 border border-slate-200">
+                        <Table className="w-5 h-5"/> سجل النتائج
+                    </button>
+                )}
+            </>
+        ) : (
                                        <>
                                            <button onClick={() => handleExamTypeSelect('fitness')} className="w-full p-4 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold rounded-2xl transition-all border border-slate-100">🏃 اختبار اللياقة</button>
                                            <button onClick={() => handleExamTypeSelect('combat')} className="w-full p-4 bg-slate-50 hover:bg-red-50 text-slate-700 hover:text-red-700 font-bold rounded-2xl transition-all border border-slate-100">🤼 اختبار الاشتباك</button>

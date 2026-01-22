@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { 
   Search, Printer, Download, ChevronLeft, ChevronRight, 
-  ArrowUpDown, RefreshCcw, X, FileText, BookOpen, GraduationCap ,Save
+  ArrowUpDown, RefreshCcw, X, FileText, BookOpen, GraduationCap ,Save,Loader2
 } from "lucide-react"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -26,6 +26,8 @@ import ProtectedRoute from "@/components/ProtectedRoute"
 // في ملف ResultsPage.tsx (أعلى الملف)
 const ORDERED_KEYS = [
   'الرتبة', 
+  'السرية',        // 🆕 أضفنا السرية
+  'الفصيل',
   'الرقم العسكري', 
   'الإسم', 
   'الجري', 'درجة الجري', 'تقدير الجري',
@@ -273,10 +275,47 @@ const handleRecalculate = async () => {
     window.print()
   }
 
-  const handleDownloadExcel = () => {
-    const fileName = examName || "النتائج_النهائية"
-    window.location.href = `${process.env.NEXT_PUBLIC_API_URL}/export/excel?filename=${encodeURIComponent(fileName)}`
-  }
+  const handleDownloadExcel = async () => {
+    try {
+        const fileName = examName || "النتائج_النهائية";
+        const token = localStorage.getItem("token"); // جلب التوكن من المتصفح
+
+        const res = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/export/excel?filename=${encodeURIComponent(fileName)}`,
+            {
+                method: "GET",
+                headers: {
+                    "Authorization": `Bearer ${token}` // 🛡️ إرسال التوكن لحل المشكلة
+                }
+            }
+        );
+
+        if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.detail || "فشل تحميل الملف");
+        }
+
+        // تحويل الرد إلى ملف (Blob)
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        
+        // إنشاء عنصر رابط وهمي للتحميل
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${fileName}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        
+        // تنظيف الذاكرة
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        toast.success("تم تجهيز ملف الإكسل بنجاح");
+    } catch (error: any) {
+        console.error(error);
+        toast.error(error.message || "حدث خطأ أثناء تصدير الملف");
+    }
+};
 
   // --- القوائم الفريدة للفلاتر ---
   const uniqueCourses = useMemo(() => [...new Set(data.map(item => item['اسم الدورة']).filter(Boolean))], [data])
@@ -289,7 +328,14 @@ const handleRecalculate = async () => {
     let filtered = [...data]
     if (search) {
       const lowerSearch = search.toLowerCase()
-      filtered = filtered.filter((item) => Object.values(item).some(val => String(val).toLowerCase().includes(lowerSearch)))
+      filtered = filtered.filter((item) => {
+        // 🔍 البحث الذكي بالاسم أو الرقم العسكري أو السرية
+        return (
+          String(item['الإسم'] || "").toLowerCase().includes(lowerSearch) ||
+          String(item['الرقم العسكري'] || "").includes(lowerSearch) ||
+          String(item['السرية'] || "").toLowerCase().includes(lowerSearch)
+        )
+      })
     }
     if (filterCourse !== "all") filtered = filtered.filter(i => i['اسم الدورة'] === filterCourse)
     if (filterCompany !== "all") filtered = filtered.filter(i => i['السرية'] === filterCompany)
@@ -369,11 +415,28 @@ const effectiveBaseScore = data.length > 0 && (data[0].base_score || data[0]['ba
   const printableRows = processedData;
 
   // الأعمدة المرئية للطباعة
+  // الأعمدة المرئية للطباعة
+  // الأعمدة المرئية للطباعة
   const printVisibleColumns = targetKeys.filter(key => {
-    if (key === 'trainer_score' && reportType === 'control' && baseScore === 90) return true;
+    // 1. إخفاء عمود تاريخ الميلاد تماماً إذا كان التقرير موجه للاتحاد الرياضي
+    if (reportType === 'union' && (key === 'تاريخ الميلاد' || key === 'dob')) {
+        return false;
+    }
+
+    // 🌟 التعديل الذهبي: جعل الملاحظات تظهر دائماً
+    if (key === 'ملاحظات' || key === 'notes') {
+        return true; 
+    }
+
+    // 2. ضمان ظهور درجة المدرب في الكنترول فقط إذا كان المعيار 90
+    if (key === 'trainer_score' && reportType === 'control' && baseScore === 90) {
+        return true;
+    }
+
+    // 3. المنطق الأصلي: إخفاء أي عمود آخر إذا كانت كل خلاياه فارغة
     return printableRows.some(row => {
         const val = row[key];
-        return val !== "" && val !== null && val !== 0 && val !== undefined;
+        return val !== "" && val !== null && val !== 0 && val !== undefined && val !== "-";
     })
   })
 
@@ -501,7 +564,19 @@ const screenVisibleColumns = useMemo(() => {
               </DialogContent>
             </Dialog>
 
-            <Button variant="outline" onClick={handleRecalculate} className="gap-2"><RefreshCcw className="w-4 h-4" /> تحديث</Button>
+            <Button 
+  variant="outline" 
+  onClick={handleRecalculate} 
+  disabled={loading} // 🔒 يقفل الزر فور الضغط لمنع التكرار
+  className="gap-2"
+>
+  {loading ? (
+    <Loader2 className="w-4 h-4 animate-spin" /> // 🔄 أيقونة الدوران
+  ) : (
+    <RefreshCcw className="w-4 h-4" />
+  )} 
+  تحديث
+</Button>
             <Button variant="outline" onClick={handleDownloadExcel} className="gap-2"><Download className="w-4 h-4" /> Excel</Button>
             <Button onClick={handlePrint} className="bg-slate-900 text-white gap-2 hover:bg-slate-800"><Printer className="w-4 h-4" /> طباعة</Button>
             </div>
@@ -566,24 +641,101 @@ const screenVisibleColumns = useMemo(() => {
         </Card>
 
         {/* الفلاتر */}
-        <Card className="border-t-4 border-t-blue-600 shadow-sm">
-            <CardContent className="p-4 space-y-4">
-            <div className="flex gap-2">
-                <div className="relative flex-1">
-                <Search className="absolute right-3 top-3 h-4 w-4 text-slate-400" />
-                <Input placeholder="بحث سريع..." className="pr-10 bg-slate-50 dark:bg-slate-900" value={search} onChange={(e) => setSearch(e.target.value)} />
-                </div>
-                <Button variant="ghost" onClick={resetFilters} className="text-red-500"><X className="w-4 h-4 ml-1" />مسح</Button>
-            </div>
-            <div className="grid grid-cols-4 md:grid-cols-5 lg:grid-cols-5 gap-3">
-                <Select value={filterCourse} onValueChange={setFilterCourse}><SelectTrigger className="text-right" dir="rtl"><SelectValue placeholder="الدورة" /></SelectTrigger><SelectContent align="end"><SelectItem value="all">الكل</SelectItem>{uniqueCourses.map((c:any)=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select>
-                <Select value={filterCompany} onValueChange={setFilterCompany}><SelectTrigger className="text-right" dir="rtl"><SelectValue placeholder="السرية" /></SelectTrigger><SelectContent align="end"><SelectItem value="all">الكل</SelectItem>{uniqueCompanies.map((c:any)=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select>
-                <Select value={filterPlatoon} onValueChange={setFilterPlatoon}><SelectTrigger className="text-right" dir="rtl"><SelectValue placeholder="الفصيل" /></SelectTrigger><SelectContent align="end"><SelectItem value="all">الكل</SelectItem>{uniquePlatoons.map((c:any)=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select>
-                <Select value={filterGrade} onValueChange={setFilterGrade}><SelectTrigger className="text-right" dir="rtl"><SelectValue placeholder="التقدير" /></SelectTrigger><SelectContent align="end"><SelectItem value="all">الكل</SelectItem>{uniqueGrades.map((c:any)=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select>
-                <Select value={filterResult} onValueChange={setFilterResult}><SelectTrigger className="text-right" dir="rtl"><SelectValue placeholder="النتيجة" /></SelectTrigger><SelectContent align="end"><SelectItem value="all">الكل</SelectItem><SelectItem value="Pass" className="text-green-600">ناجح</SelectItem><SelectItem value="Fail" className="text-red-600">راسب</SelectItem></SelectContent></Select>
-            </div>
-            </CardContent>
-        </Card>
+        <Card className="border-t-4 border-t-blue-600 shadow-sm print:hidden">
+  <CardContent className="p-4 space-y-4">
+    {/* 1. صف البحث وعدد السجلات */}
+    <div className="flex flex-col md:flex-row gap-4 items-end">
+      <div className="relative flex-1 w-full">
+        <Label className="text-[10px] font-bold text-slate-500 mb-1 block mr-1">البحث بالاسم أو الرقم العسكري</Label>
+        <div className="relative">
+          <Search className="absolute right-3 top-3 h-4 w-4 text-slate-400" />
+          <Input 
+            placeholder="اكتب الاسم أو الرقم العسكري للبحث..." 
+            className="pr-10 bg-slate-50 dark:bg-slate-900 h-10" 
+            value={search} 
+            onChange={(e) => setSearch(e.target.value)} 
+          />
+        </div>
+      </div>
+
+      <div className="w-full md:w-32">
+        <Label className="text-[10px] font-bold text-slate-500 mb-1 block mr-1">عدد السجلات</Label>
+        <Select 
+          value={itemsPerPage.toString()} 
+          onValueChange={(val) => {
+            setItemsPerPage(val === "all" ? data.length : Number(val));
+            setCurrentPage(1);
+          }}
+        >
+          <SelectTrigger className="bg-white h-10">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="10">10 سجلات</SelectItem>
+            <SelectItem value="50">50 سجل</SelectItem>
+            <SelectItem value="100">100 سجل</SelectItem>
+            <SelectItem value="200">200 سجل</SelectItem>
+            <SelectItem value="all">عرض الكل</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Button variant="outline" onClick={resetFilters} className="text-red-500 h-10 border-red-100 hover:bg-red-50">
+        <X className="w-4 h-4 ml-1" /> مسح الفلاتر
+      </Button>
+    </div>
+
+    {/* 2. صف قوائم التصفية المتبقية (تم حذف تصفية الدورة) */}
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 border-t pt-4">
+      
+      <div className="space-y-1">
+        <Label className="text-[10px] font-bold text-blue-600 mr-1">تصفية بالسرية</Label>
+        <Select value={filterCompany} onValueChange={setFilterCompany}>
+          <SelectTrigger className="text-right bg-white" dir="rtl"><SelectValue placeholder="السرية" /></SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value="all">الكل</SelectItem>
+            {uniqueCompanies.map((c: any) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[10px] font-bold text-blue-600 mr-1">تصفية بالفصيل</Label>
+        <Select value={filterPlatoon} onValueChange={setFilterPlatoon}>
+          <SelectTrigger className="text-right bg-white" dir="rtl"><SelectValue placeholder="الفصيل" /></SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value="all">الكل</SelectItem>
+            {uniquePlatoons.map((c: any) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[10px] font-bold text-blue-600 mr-1">حسب التقدير</Label>
+        <Select value={filterGrade} onValueChange={setFilterGrade}>
+          <SelectTrigger className="text-right bg-white" dir="rtl"><SelectValue placeholder="التقدير" /></SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value="all">الكل</SelectItem>
+            {uniqueGrades.map((c: any) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[10px] font-bold text-blue-600 mr-1">حسب النتيجة</Label>
+        <Select value={filterResult} onValueChange={setFilterResult}>
+          <SelectTrigger className="text-right bg-white" dir="rtl"><SelectValue placeholder="النتيجة" /></SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value="all">الكل</SelectItem>
+            <SelectItem value="Pass" className="text-green-600">ناجح</SelectItem>
+            <SelectItem value="Fail" className="text-red-600">راسب</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+    </div>
+  </CardContent>
+</Card>
 
         {/* الجدول التفاعلي (للشاشة) */}
         <div className="border rounded-lg bg-white dark:bg-slate-900 overflow-hidden shadow-sm overflow-x-auto">
@@ -655,7 +807,7 @@ const screenVisibleColumns = useMemo(() => {
             {`
                 @page { 
                     size: ${isLandscape ? 'A4 landscape' : 'A4 portrait'}; 
-                    margin: 0mm 5mm 0mm 5mm;
+                    margin: 0mm 5mm 2mm 5mm;
                     
                 }
             `}
@@ -703,7 +855,16 @@ const screenVisibleColumns = useMemo(() => {
 
             <tbody>
                 {printableRows.map((row, index) => (
-                <tr key={index} className={row.is_special_row ? 'bg-yellow-100 print:bg-yellow-100' : ''}>
+                <tr 
+  key={index} 
+  className={
+    // 🟢 تلوين الصف بالأصفر فقط إذا كان التقرير "عام" وكان هناك حالة خاصة (رأفة أو غياب)
+    // أما في تقارير الاتحاد والكنترول، سيبقى الصف أبيضاً رسمياً
+    (row.is_special_row && reportType === 'general') 
+      ? 'bg-yellow-100 print:bg-yellow-100' 
+      : ''
+  }
+>
                     <td className={`border border-black ${cellPaddingClass} text-center font-bold text-black`}>{index + 1}</td>
                     {printVisibleColumns.map((key) => (
                    <td key={key} className={`border border-black ${cellPaddingClass} text-center whitespace-nowrap font-bold text-black`}>
@@ -716,19 +877,26 @@ const screenVisibleColumns = useMemo(() => {
         }
 
         // 2. معالجة عمود تاريخ الميلاد (حل مشكلة 33940)
-        if (key === 'تاريخ الميلاد' || key === 'dob') {
-            const val = row[key];
-            if (!val || val === "" || val === "-") return "-";
-            
-            // إذا كان الرقم هو الرقم التسلسلي لإكسل (5 خانات تقريباً)
-            if (typeof val === 'number' || (!isNaN(Number(val)) && String(val).length <= 5)) {
-                try {
-                    const date = new Date(Math.round((Number(val) - 25569) * 86400 * 1000));
-                    return <span>{format(date, "yyyy-MM-dd")}</span>;
-                } catch (e) { return <span>{val}</span>; }
-            }
-            return <span>{val}</span>;
-        }
+        // ابحث عن هذا الجزء (تقريباً سطر 575) وحدثه:
+if (key === 'تاريخ الميلاد' || key === 'dob') {
+    const val = row[key];
+    
+    // 🆕 التعديل: إذا كان التقرير للاتحاد والقيمة فارغة، نرجع نصاً فارغاً
+    if (reportType === 'union' && (!val || val === "" || val === "-" || val === "0")) {
+        return ""; 
+    }
+
+    if (!val || val === "" || val === "-") return "-";
+    
+    // منطق تحويل تاريخ إكسيل (يبقى كما هو)
+    if (typeof val === 'number' || (!isNaN(Number(val)) && String(val).length <= 5)) {
+        try {
+            const date = new Date(Math.round((Number(val) - 25569) * 86400 * 1000));
+            return <span>{format(date, "yyyy-MM-dd")}</span>;
+        } catch (e) { return <span>{val}</span>; }
+    }
+    return <span>{val}</span>;
+}
 
         // 3. معالجة الدرجة النهائية (المعدل %)
         if (key === 'average') {
@@ -747,9 +915,23 @@ const screenVisibleColumns = useMemo(() => {
         }
 
         // 5. معالجة الملاحظات
-        if (key === 'notes') {
-            return <span>{row[key] || ""}</span>;
+        // 🆕 تعديل عمود الملاحظات لإخفاء كلمات الرأفة
+if (key === 'notes' || key === 'ملاحظات') {
+    const noteValue = String(row[key] || "");
+    
+    // إذا كان نوع التقرير اتحاد أو كنترول
+    if (reportType === 'union' || reportType === 'control') {
+        // قائمة الكلمات التي نريد حذفها (الرأفة بكل أشكالها)
+        const mercyKeywords = ["رأفة", "رافه", "بموجب الرأفة", "جري", "ضغط", "بطن"];
+        
+        // إذا كانت الملاحظة تحتوي على كلمة "رأفة"
+        if (mercyKeywords.some(word => noteValue.includes(word))) {
+            return ""; // نترك الخلية فاضية تماماً في الطباعة
         }
+    }
+    
+    return <span>{noteValue}</span>;
+}
 
         // 6. معالجة التلوين لتقدير (ممتاز) أو (راسب) في أي عمود آخر
         const valStr = String(row[key]);

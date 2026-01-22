@@ -611,7 +611,7 @@ const handlePrint = () => {
     );
 })}
                                         <TableCell className="text-center font-black text-xs border-l border-black">
-                                            {row.duration ? `${row.duration} ي` : "-"}
+                                            {row.duration ? `${row.duration} يوم` : "-"}
                                         </TableCell>
                                         <TableCell className="text-center font-bold text-[9px] text-slate-500 border-l border-black">
                                             {row.start_date || "-"}

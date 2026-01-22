@@ -97,6 +97,7 @@ export default function TrainerReportsCard({ trainerId }: TrainerReportsCardProp
     const [selectedReport, setSelectedReport] = useState<ReportAPI | null>(null) // 🔑 تحديث نوع البيانات
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     const [loading, setLoading] = useState(true)
+    const [userRole, setUserRole] = useState<string | null>(null)
     const [isSigning, setIsSigning] = useState(false)
     
     // 👇 متغيرات الصفحات والتاريخ (Pagination & Filter)
@@ -110,8 +111,13 @@ export default function TrainerReportsCard({ trainerId }: TrainerReportsCardProp
     // ❌ متغيرات التوقيع القديمة (signData) تم حذفها
 
     useEffect(() => {
-        fetchTrainerReports()
-    }, [trainerId])
+    const userStr = localStorage.getItem("user")
+    if (userStr) {
+        const user = JSON.parse(userStr)
+        setUserRole(user.role || null)
+    }
+    fetchTrainerReports()
+}, [trainerId])
 
     const fetchTrainerReports = async () => {
     setLoading(true)
@@ -184,7 +190,7 @@ export default function TrainerReportsCard({ trainerId }: TrainerReportsCardProp
 
     // العودة للصفحة الأولى عند التغيير
     useEffect(() => { setCurrentPage(1) }, [itemsPerPage, fromDate, toDate]);
-
+if (userRole === "assistant_admin") return null;
     return (
         <Card className="border-none shadow-none pb-10 md:pb-24 ">
             <CardHeader className="pb-2 px-0 pt-0">
