@@ -414,26 +414,30 @@ if (feature === 'others') {
   };
 
  const handleExamTypeSelect = (type: string) => {
-      const { selectedBranch } = selectionState;
-      
-      if (selectedBranch === 'military') {
-          // 🟢 التوجيه الموحد الجديد للاختبارات العسكرية
-          router.push('/exams/military/MilitaryExams');
-          setSelectionState(prev => ({ ...prev, isOpen: false }));
-      } 
-      else {
-          // ... (هنا يبقى كود اللياقة والاشتباك كما هو دون تغيير)
-          if (type === 'fitness') {
-              setSelectionState(prev => ({ ...prev, step: 'action_select', selectedExamType: 'fitness' }));
-          } else if (type === 'combat') {
-              router.push('/exams/sports/engagement');
-              setSelectionState(prev => ({ ...prev, isOpen: false }));
-          } else if (type === 'results') {
-              router.push('/exams/sports/fitness-records');
-              setSelectionState(prev => ({ ...prev, isOpen: false }));
-          }
-      }
-  };
+    const { selectedBranch } = selectionState;
+    
+    if (selectedBranch === 'military') {
+        // 🟢 التعديل هنا ليتوافق مع المسار الشغال في القائمة الجانبية
+        if (type === 'results') {
+            router.push('/exams/military/results'); // 👈 هذا هو المسار الذي يفتح الصفحة
+        } else {
+            router.push('/exams/military/MilitaryExams');
+        }
+        setSelectionState(prev => ({ ...prev, isOpen: false }));
+    } 
+    else {
+        // ... مسار التدريب الرياضي يبقى كما هو
+        if (type === 'fitness') {
+            setSelectionState(prev => ({ ...prev, step: 'action_select', selectedExamType: 'fitness' }));
+        } else if (type === 'combat') {
+            router.push('/exams/sports/engagement');
+            setSelectionState(prev => ({ ...prev, isOpen: false }));
+        } else if (type === 'results') {
+            router.push('/exams/sports/fitness-records');
+            setSelectionState(prev => ({ ...prev, isOpen: false }));
+        }
+    }
+};
 
   const handleFitnessAction = (action: string) => {
       if (action === 'shabaha') router.push('/exams/sports/fitness/shabaha-entry');
@@ -574,7 +578,7 @@ if (feature === 'others') {
                            {selectionState.step === 'action_select' && selectionState.feature === 'attendance' && (
                                <>
                                    <button onClick={() => executeAction('new')} className="w-full p-4 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><ClipboardList className="w-5 h-5"/> تسجيل حالات جديدة</button>
-                                   <button onClick={() => executeAction('audit')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><ShieldCheck className="w-5 h-5"/> عرض التكميل والتدقيق</button>
+                                   <button onClick={() => executeAction('audit')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><ShieldCheck className="w-5 h-5"/> سجل التكميل </button>
                                </>
                            )}
 
@@ -582,7 +586,7 @@ if (feature === 'others') {
                            {selectionState.step === 'action_select' && selectionState.feature === 'violations' && (
                                <>
                                    <button onClick={() => executeAction('new')} className="w-full p-4 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><ShieldAlert className="w-5 h-5"/> تسجيل مخالفة جديدة</button>
-                                   <button onClick={() => executeAction('history')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><FileText className="w-5 h-5"/> أرشيف المخالفات</button>
+                                   <button onClick={() => executeAction('history')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><FileText className="w-5 h-5"/> سجل المخالفات</button>
                                </>
                            )}
 
@@ -598,14 +602,14 @@ if (feature === 'others') {
                            {selectionState.step === 'action_select' && selectionState.feature === 'soldiers' && (
                                <div className="space-y-3">
                                    {selectionState.selectedBranch === 'military' ? (
-                                       <button onClick={() => executeAction('military_trainers')} className="w-full p-4 bg-green-50 hover:bg-green-100 text-green-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><UserCog className="w-5 h-5"/> قائمة مدربين العسكري</button>
+                                       <button onClick={() => executeAction('military_trainers')} className="w-full p-4 bg-green-50 hover:bg-green-100 text-green-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><UserCog className="w-5 h-5"/> ملف مدربين التدريب العسكري  </button>
                                    ) : (
                                        <>
-                                           <button onClick={() => executeAction('fitness_trainers')} className="w-full p-4 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><Dumbbell className="w-5 h-5"/> قائمة مدربين اللياقة</button>
-                                           <button onClick={() => executeAction('combat_trainers')} className="w-full p-4 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><Swords className="w-5 h-5"/> قائمة مدربين الاشتباك</button>
+                                           <button onClick={() => executeAction('fitness_trainers')} className="w-full p-4 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><Dumbbell className="w-5 h-5"/> ملف مدربين اللياقة</button>
+                                           <button onClick={() => executeAction('combat_trainers')} className="w-full p-4 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><Swords className="w-5 h-5"/> ملف مدربين الاشتباك</button>
                                        </>
                                    )}
-                                   <button onClick={() => executeAction('soldiers_file')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><Users className="w-5 h-5"/> ملفات المجندين</button>
+                                   <button onClick={() => executeAction('soldiers_file')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><Users className="w-5 h-5"/> ملف المجند </button>
                                </div>
                            )}
 

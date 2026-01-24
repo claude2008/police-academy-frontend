@@ -241,8 +241,9 @@ const handleApprove = async (level: string, customTitle: string) => {
     XLSX.writeFile(wb, excelFileName);
 };
 // 1. دالة حذف مخالفة واحدة
+// 1. دالة حذف مخالفة واحدة (نسخة محسنة)
 const executeSingleDelete = async (violationId: number) => {
-    setLoading(true);
+    setIsDeleting(true); // 🟢 تفعيل حالة التحميل لمنع الضغط المتكرر
     try {
         const token = localStorage.getItem("token");
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/violations/delete-by-id/${violationId}`, {
@@ -250,29 +251,30 @@ const executeSingleDelete = async (violationId: number) => {
             headers: { "Authorization": `Bearer ${token}` }
         });
         
-        const data = await res.json(); // جلب نص الاستجابة من السيرفر
+        const data = await res.json();
 
         if (res.ok) {
             toast.success("تم حذف المخالفة بنجاح ✅");
+            // 🔄 تحديث البيانات أولاً ثم إغلاق النافذة
+            await openViolationReport(selectedReport.course, selectedReport.batch);
+            setDeleteModalOpen(false); 
             setConfirmDeleteId(null);
-            openViolationReport(selectedReport.course, selectedReport.batch);
-            setDeleteModalOpen(false);
         } else {
-            // 🛡️ هنا السر: إظهار رسالة المنع بسبب الاعتماد أو الصلاحية
+            // 🛡️ إظهار رسالة المنع (مثلاً: السجل معتمد)
             toast.error(data.detail || "فشل عملية الحذف");
-            setConfirmDeleteId(null); // نلغي واجهة التأكيد الحمراء لنعود للقائمة
+            setConfirmDeleteId(null); // العودة للقائمة داخل المودال
         }
     } catch (e) {
         toast.error("خطأ في الاتصال بالسيرفر");
     } finally {
-        setLoading(false);
+        setIsDeleting(false); // 🔴 إيقاف حالة التحميل
     }
 };
 
-// 2. دالة حذف كافة مخالفات الطالب المختار
+// 2. دالة حذف كافة مخالفات الطالب (نسخة محسنة)
 const executeDeleteAll = async () => {
     if (!selectedStudentForDelete) return;
-    setLoading(true);
+    setIsDeleting(true); // 🟢 تفعيل حالة التحميل
     try {
         const token = localStorage.getItem("token");
         const ids = selectedStudentForDelete.violationTickets.map((v: any) => v.id);
@@ -290,18 +292,17 @@ const executeDeleteAll = async () => {
 
         if (res.ok) {
             toast.success("تم مسح كافة المخالفات بنجاح ✅");
-            setConfirmDeleteId(null);
-            openViolationReport(selectedReport.course, selectedReport.batch);
+            await openViolationReport(selectedReport.course, selectedReport.batch);
             setDeleteModalOpen(false);
+            setConfirmDeleteId(null);
         } else {
-            // 🛡️ إظهار رسالة المنع (مثلاً: السجل معتمد ومقفل)
             toast.error(data.detail || "فشل حذف السجلات");
             setConfirmDeleteId(null);
         }
     } catch (e) {
         toast.error("فشل الاتصال بالخادم");
     } finally {
-        setLoading(false);
+        setIsDeleting(false); // 🔴 إيقاف حالة التحميل
     }
 };
 
@@ -536,13 +537,32 @@ const confirmDeleteAll = async () => {
                 </div>
             </TableCell>
 
-            <TableCell className="text-center no-print">
+           <TableCell className="text-center no-print">
     <div className="flex flex-wrap justify-center gap-1">
-        {row.all_attachments?.map((file: string, fIdx: number) => (
-            <Button key={fIdx} size="sm" variant="ghost" className="h-6 w-6 p-0 text-blue-600" onClick={() => handleOpenAttachment(file)}>
-                <Paperclip className="w-3.5 h-3.5"/>
-            </Button>
-        ))}
+        {row.all_attachments?.map((file: string, fIdx: number) => {
+            if (!file) return null;
+
+            // 🔍 الفحص الجوهري: هل الرابط يحتوي على كلمة pdf؟
+            const isPDF = file.toLowerCase().includes('.pdf');
+
+            return (
+                <Button 
+                    key={fIdx} 
+                    size="sm" 
+                    variant="ghost" 
+                    // 🎨 تنسيق الألوان: أحمر للـ PDF لتمييزه فوراً
+                    className={`h-7 w-7 p-0 ${isPDF ? 'text-red-600 hover:bg-red-50' : 'text-blue-600 hover:bg-blue-50'}`} 
+                    onClick={() => handleOpenAttachment(file)}
+                    title={isPDF ? "فتح ملف PDF" : "عرض الصورة"}
+                >
+                    {isPDF ? (
+                        <FileText className="w-4 h-4" /> // 📄 أيقونة ملف للـ PDF
+                    ) : (
+                        <Paperclip className="w-4 h-4" /> // 📎 أيقونة مشبك للصور
+                    )}
+                </Button>
+            );
+        })}
     </div>
 </TableCell>
 
@@ -676,11 +696,19 @@ const confirmDeleteAll = async () => {
                     </p>
                     <div className="flex gap-3">
                         <Button 
-                            className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black"
-                            onClick={() => confirmDeleteId === 'all' ? executeDeleteAll() : executeSingleDelete(confirmDeleteId)}
-                        >
-                            نعم، احذف الآن
-                        </Button>
+    className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black"
+    onClick={() => confirmDeleteId === 'all' ? executeDeleteAll() : executeSingleDelete(confirmDeleteId)}
+    disabled={isDeleting} // ⬅️ تعطيل الزر أثناء المسح لمنع الضغط المتكرر
+>
+    {isDeleting ? (
+        <>
+            <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+            جاري الحذف...
+        </>
+    ) : (
+        "نعم، احذف الآن"
+    )}
+</Button>
                         <Button 
                             variant="outline" 
                             className="flex-1 border-slate-300 font-bold"

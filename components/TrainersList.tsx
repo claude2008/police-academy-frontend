@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -31,7 +31,8 @@ export default function TrainersList({ branch, specialization, title }: Trainers
     const [isPhotoDeleteConfirmOpen, setIsPhotoDeleteConfirmOpen] = useState(false);
     // مفتاح الكاش الفريد لهذه الصفحة
     const cacheKey = `${branch}-${specialization}`;
-
+const dobRef = useRef<HTMLInputElement>(null);
+    const appointmentRef = useRef<HTMLInputElement>(null);
     // النوافذ
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false)
@@ -96,98 +97,187 @@ const canManagePhotos = ["owner", "manager", "admin", "assistant_admin"].include
         )
     }, [trainers, search])
 
-    const openAddModal = () => {
-        setEditingId(null)
-        setFormData({ name: "", military_id: "", rank: "", phone: "", email: "", courses: "", dob: "", degree: "", appointment_date: "", sport_specialty: "", job_title: "" })
-        setIsModalOpen(true)
+   const openAddModal = () => {
+    setEditingId(null)
+
+    // 🧠 منطق ذكي: نحدد المسمى بناءً على الفرع الحالي للصفحة
+    let defaultJobTitle = "";
+    
+    if (branch === "تدريب عسكري") {
+        defaultJobTitle = "مدرب عسكري";
+    } else if (branch === "تدريب رياضي") {
+        defaultJobTitle = "مدرب رياضي";
     }
+
+    setFormData({ 
+        name: "", 
+        military_id: "", 
+        rank: "", 
+        phone: "", 
+        email: "", 
+        courses: "", 
+        dob: "", 
+        degree: "", 
+        appointment_date: "", 
+        sport_specialty: "", 
+        // 🟢 هنا التغيير: نضع القيمة الافتراضية بدلاً من الفراغ
+        job_title: defaultJobTitle 
+    })
+    
+    setIsModalOpen(true)
+}
 
     const openEditModal = (trainer: any) => {
-        setEditingId(trainer.id)
-        setFormData({
-            name: trainer.name || "",
-            military_id: trainer.military_id || "",
-            rank: trainer.rank || "",
-            phone: trainer.phone || "",
-            email: trainer.email || "",
-            courses: trainer.courses || "",
-            dob: trainer.dob || "",
-            degree: trainer.degree || "",
-            appointment_date: trainer.appointment_date || "",
-            sport_specialty: trainer.sport_specialty || "",
-            job_title: trainer.job_title || ""
-        })
-        setIsModalOpen(true)
+        console.log("البيانات المستلمة في المودال:", trainer);
+    // 🛡️ دالة تنظيف التاريخ لضمان القبول في متصفحات الجوال والكمبيوتر
+    const formatDateForInput = (dateValue: any) => {
+        if (!dateValue || dateValue === "") return "";
+        // نضمن أخذ أول 10 محارف فقط (YYYY-MM-DD) ونستبعد أي وقت أو مسافات زائدة
+        return String(dateValue).split('T')[0].split(' ')[0].trim();
+    };
+
+    // 1. تحديد المعرف الخاص بالمدرب الجاري تعديله
+    setEditingId(trainer.id);
+
+    // 2. ملء النموذج بكافة البيانات القادمة من "trainer"
+    setFormData({
+        // البيانات الشخصية والعسكرية
+        name: trainer.name || "",
+        military_id: trainer.military_id || "",
+        rank: trainer.rank || "",
+        
+        // بيانات التواصل (تأكد من مطابقة مسمى phone في الداتابيز)
+        phone: trainer.phone || "",
+        email: trainer.email || "",
+        
+        // البيانات المهنية (التي كانت تظهر فارغة أحياناً)
+        job_title: trainer.job_title || "",
+        sport_specialty: trainer.sport_specialty || "",
+        degree: trainer.degree || "", // المؤهل الجامعي
+        courses: trainer.courses || "", // الدورات
+        
+        // 🟢 معالجة التواريخ بدقة متناهية
+        dob: formatDateForInput(trainer.dob), 
+        appointment_date: formatDateForInput(trainer.appointment_date)
+    });
+
+    // 3. فتح النافذة المنبثقة
+    setIsModalOpen(true);
+};
+
+   const handleSave = async () => {
+    if (!formData.name || !formData.military_id) {
+        toast.error("يرجى إدخال الاسم والرقم العسكري");
+        return;
     }
 
-    const handleSave = async () => {
-    if(!formData.name || !formData.military_id) {
-        toast.error("يرجى إدخال الاسم والرقم العسكري"); return;
-    }
-    setIsSaving(true)
-    
-    // 🔑 جلب التوكن من الذاكرة المحلية
+    setIsSaving(true);
     const token = localStorage.getItem("token");
+
+    // 🟢 1. الخطوة السحرية: قراءة التاريخ مباشرة من عنصر الإدخال (تجاوز الـ State المتأخر في iOS)
+    // نستخدم "?.value" للتأكد، وإذا لم نجد الـ Ref نعود للـ formData كاحتياط
+    const rawDob = dobRef.current?.value || formData.dob;
+    const rawAppointment = appointmentRef.current?.value || formData.appointment_date;
 
     try {
         const payload = {
-            ...formData,
+            military_id: formData.military_id.trim(),
+            name: formData.name.trim(),
+            rank: formData.rank,
+            job_title: formData.job_title,
+            sport_specialty: formData.sport_specialty,
+            courses: formData.courses,
+            degree: formData.degree,
+            
+            // 🟢 2. استخدام القيم المباشرة (rawDob / rawAppointment) بدلاً من formData
+            // إذا كانت القيمة موجودة نرسلها، وإلا نرسل null
+            dob: rawDob && rawDob !== "" ? rawDob : null,
+            appointment_date: rawAppointment && rawAppointment !== "" ? rawAppointment : null,
+            
+            phone: formData.phone,
+            email: formData.email,
             branch: branch,
-            specialization: specialization,
-            password: "123", role: "trainer"
-        }
-        
-        let res;
-        const url = editingId 
+            // إذا كان التخصص 'all' يفضل إرساله فارغاً لكي يظهر في الفلاتر العامة
+            specialization: specialization === "all" ? "" : specialization,
+            
+            // الإعدادات عند الإضافة فقط
+            ...(!editingId && { 
+                password: "123", 
+                role: "trainer", 
+                is_active: true 
+            })
+        };
+
+        const url = editingId
             ? `${process.env.NEXT_PUBLIC_API_URL}/users/${editingId}`
             : `${process.env.NEXT_PUBLIC_API_URL}/users/`;
-        
-        res = await fetch(url, {
+
+        const res = await fetch(url, {
             method: editingId ? "PUT" : "POST",
-            headers: { 
+            headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${token}` // ✅ إضافة التوكن
+                "Authorization": `Bearer ${token}`
             },
             body: JSON.stringify(payload)
         });
 
-        if(res.ok) {
-            toast.success(editingId ? "تم التحديث" : "تمت الإضافة");
+        const result = await res.json();
+
+        if (res.ok) {
+            toast.success(editingId ? "تم التحديث بنجاح ✅" : "تمت الإضافة بنجاح ✅");
             setIsModalOpen(false);
-            fetchTrainers(true);
+            
+            // 🔄 التعديل الجوهري: تحديث القائمة فوراً
+            await fetchTrainers(true); 
         } else {
-            const err = await res.json();
-            toast.error(err.detail || "فشل العملية");
+            toast.error(result.detail || "فشل حفظ البيانات");
         }
-    } catch (e) { toast.error("خطأ في الاتصال") }
-    finally { setIsSaving(false) }
-}
+    } catch (e) {
+        toast.error("خطأ في الاتصال بالخادم");
+    } finally {
+        setIsSaving(false);
+    }
+};
 
     const handleDeleteUser = async () => {
     if (!deleteId) return;
     
-    // 🔑 جلب التوكن
+    // 🟢 1. بداية التحميل: نقوم بتفعيل المتغير ليظهر الدوران ويقفل الزر
+    setIsDeleting(true);
+    
     const token = localStorage.getItem("token");
 
     try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${deleteId}`, { 
             method: "DELETE",
             headers: { 
-                "Authorization": `Bearer ${token}` // ✅ إضافة التوكن
+                "Authorization": `Bearer ${token}` 
             }
         });
 
         if (res.ok) { 
-            toast.success("تم الحذف"); 
+            // ✅ نجاح العملية
+            toast.success("تم حذف المدرب بنجاح 🗑️"); 
             setDeleteId(null);
+            
+            // تحديث الكاش والواجهة (نفس كودك الأصلي)
             if (trainersCache[cacheKey]) {
                 trainersCache[cacheKey] = trainersCache[cacheKey].filter(t => t.id !== deleteId);
                 setTrainers([...trainersCache[cacheKey]]);
             } else {
                 fetchTrainers(true);
             }
+        } else {
+            // 🔴 في حال الفشل (مثل 403): نقرأ الرسالة من السيرفر لنعرضها
+            const errorData = await res.json();
+            toast.error(errorData.detail || "فشل الحذف لسبب غير معروف");
         }
-    } catch (e) { toast.error("فشل الحذف"); }
+    } catch (e) { 
+        toast.error("فشل الاتصال بالسيرفر"); 
+    } finally {
+        // 🟢 2. نهاية التحميل: نوقف الدوران سواء نجحت العملية أم فشلت
+        setIsDeleting(false);
+    }
 }
 
    const handleDeleteAll = async () => {
@@ -471,20 +561,57 @@ const handlePhotoDeleteExec = async () => {
                         </div>
                         <div className="space-y-2"><Label>الاسم الكامل</Label><Input value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
                         <div className="space-y-2"><Label>المسمى الوظيفي</Label><Input value={formData.job_title} onChange={e => setFormData({...formData, job_title: e.target.value})} /></div>
-                        {/* تم تغيير grid-cols-1 للهاتف و grid-cols-2 للكمبيوتر */}
-<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div className="space-y-2"><Label className="text-xs md:text-sm">الإختصاص الدقيق</Label><Input className="h-9 md:h-10" value={formData.sport_specialty} onChange={e => setFormData({...formData, sport_specialty: e.target.value})} /></div>
-    <div className="space-y-2"><Label className="text-xs md:text-sm">تاريخ الميلاد</Label><Input type="date" className="h-9 md:h-10 text-right" value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} /></div>
+{/* 📅 تاريخ الميلاد - التصميم المثالي + الأمان العالي */}
+<div className="space-y-2">
+    <Label>تاريخ الميلاد</Label>
+    <input 
+        // 1️⃣ ربطنا الـ Ref للأمان القصوى (لقراءة القيمة مباشرة عند الحفظ)
+        ref={dobRef}
+        
+        type="date"
+        required
+        // 2️⃣ تصميم صديقك الممتاز (ليشبه باقي الحقول)
+        className="flex h-10 w-full rounded-md border border-slate-200 bg-white dark:bg-slate-950 px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-right"
+        
+        // 3️⃣ الحماية من القيم الفارغة
+        value={formData.dob || ""}
+        
+        // 4️⃣ تحديث الـ State للعرض الفوري (للكمبيوتر وغيره)
+        onChange={(e) => setFormData(prev => ({...prev, dob: e.target.value}))}
+        onInput={(e: any) => setFormData(prev => ({...prev, dob: e.target.value}))}
+    />
 </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-    <div className="space-y-2"><Label className="text-xs md:text-sm">المؤهل الجامعي</Label><Input className="h-9 md:h-10" value={formData.degree} onChange={e => setFormData({...formData, degree: e.target.value})} /></div>
-    <div className="space-y-2"><Label className="text-xs md:text-sm">تاريخ التعيين</Label><Input type="date" className="h-9 md:h-10 text-right" value={formData.appointment_date} onChange={e => setFormData({...formData, appointment_date: e.target.value})} /></div>
+
+{/* 📅 تاريخ التعيين */}
+<div className="space-y-2">
+    <Label>تاريخ التعيين</Label>
+    <input 
+        ref={appointmentRef} // 👈 لا تنس الـ Ref هنا أيضاً
+        type="date"
+        required
+        className="flex h-10 w-full rounded-md border border-slate-200 bg-white dark:bg-slate-950 px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 text-right"
+        value={formData.appointment_date || ""}
+        onChange={(e) => setFormData(prev => ({...prev, appointment_date: e.target.value}))}
+        onInput={(e: any) => setFormData(prev => ({...prev, appointment_date: e.target.value}))}
+    />
 </div>
                         <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2"><Label>الهاتف</Label><Input value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
+                            <div className="space-y-2">
+    <Label>الهاتف</Label>
+    <Input 
+        value={formData.phone} 
+        onChange={e => setFormData({...formData, phone: e.target.value})} 
+    />
+</div>
                             <div className="space-y-2"><Label>الإيميل</Label><Input value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
                         </div>
-                        <div className="space-y-2"><Label>الدورات الحاصل عليها</Label><Textarea value={formData.courses} onChange={e => setFormData({...formData, courses: e.target.value})} /></div>
+                        <div className="space-y-2">
+    <Label>الدورات الحاصل عليها</Label>
+    <Textarea 
+        value={formData.courses} 
+        onChange={e => setFormData({...formData, courses: e.target.value})} 
+    />
+</div>
                     </div>
                     <DialogFooter className="mt-6">
     <Button 
@@ -507,7 +634,21 @@ const handlePhotoDeleteExec = async () => {
                     </DialogHeader>
                     <DialogFooter className="flex justify-center gap-2">
                         <Button variant="outline" onClick={() => setDeleteId(null)}>إلغاء</Button>
-                        <Button variant="destructive" onClick={handleDeleteUser}>نعم، حذف</Button>
+                        <Button 
+                variant="destructive" 
+                onClick={handleDeleteUser} 
+                disabled={isDeleting} // قفل الزر
+                className="gap-2"
+            >
+                {isDeleting ? (
+                    <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> {/* أيقونة تدور */}
+                        جاري الحذف...
+                    </>
+                ) : (
+                    "نعم، حذف"
+                )}
+            </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

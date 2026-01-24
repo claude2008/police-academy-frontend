@@ -137,8 +137,8 @@ const navigationStructure: NavItem[] = [
 				name: "فرع التدريب الرياضي",
 				icon: Dumbbell,
 				children: [
-					{ id: "tr-sp-fit", name: "مدربين اللياقة", href: "/trainers/sports/fitness", icon: User },
-					{ id: "tr-sp-com", name: "مدربين الاشتباك", href: "/trainers/sports/combat", icon: Swords },
+					{ id: "tr-sp-fit", name: "ملف مدربين اللياقة", href: "/trainers/sports/fitness", icon: User },
+					{ id: "tr-sp-com", name: "ملف مدربين الاشتباك", href: "/trainers/sports/combat", icon: Swords },
 					{ id: "tr-sp-rep", name: "تقرير شخصي ", href: "/trainers/sports/reports", icon: FileText },
 					{ id: "tr-sp-adm", name: "الملف الإداري", href: "/trainers/admin-file?branch=sports", icon: Activity },
 					{ id: "tr-sp-forms", name: "النماذج الإدارية", href: "/trainers/sports/admin-forms", icon: FileText },
@@ -149,7 +149,7 @@ const navigationStructure: NavItem[] = [
 				name: "فرع التدريب العسكري",
 				icon: Shield,
 				children: [
-					{ id: "tr-mil-list", name: "مدربين التدريب العسكري", href: "/trainers/military/list", icon: User },
+					{ id: "tr-mil-list", name: "ملف المدربين  ", href: "/trainers/military/list", icon: User },
 					{ id: "tr-mil-rep", name: "تقرير شخصي ", href: "/trainers/military/reports", icon: FileText },
 					{ id: "tr-mil-adm", name: "الملف الإداري", href: "/trainers/admin-file?branch=military", icon: Activity },
 				]
@@ -555,22 +555,27 @@ if (item.id === "cs-sp-sol") {
 				<div className="flex h-screen w-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
 						
 						{/* القائمة الجانبية (Desktop) */}
-						<aside className="hidden lg:flex w-64 flex-col bg-[#0f172a] text-white h-screen sticky top-0 shadow-xl border-l border-slate-800 flex-shrink-0 overflow-hidden">
-    {/* الهيدر ثابت */}
+						{/* 🟢 القائمة الجانبية (Desktop Sidebar) - زر الخروج المحدث */}
+<aside className="hidden lg:flex w-64 flex-col bg-[#0f172a] text-white h-screen sticky top-0 shadow-xl border-l border-slate-800 flex-shrink-0 overflow-hidden">
+    {/* ... هيدر القائمة و الـ Nav ... */}
     <div className="p-6 border-b border-slate-800 flex items-center justify-center bg-[#0f172a]">
         <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <GraduationCap className="w-6 h-6" /> معهد الشرطة
         </h2>
     </div>
     
-    {/* القائمة هي التي تتحرك (Scrollable) */}
     <nav className="flex-1 p-2 space-y-1 overflow-y-auto custom-scrollbar">
         {navigationStructure.map(item => renderMenuItem(item))}
     </nav>
     
-    {/* زر الخروج ثابت في الأسفل دائماً */}
+    {/* 👇 التعديل الجوهري هنا 👇 */}
     <div className="p-4 border-t border-slate-800 bg-[#1e293b]">
-        <Button variant="destructive" onClick={handleLogout} className="w-full flex gap-2">
+        <Button 
+            variant="destructive" 
+            // 🟢 التغيير: نفتح نافذة التأكيد بدلاً من استدعاء handleLogout مباشرة
+            onClick={() => setIsLogoutDialogOpen(true)} 
+            className="w-full flex gap-2 font-bold shadow-lg"
+        >
             <LogOut className="w-4 h-4" /> خروج
         </Button>
     </div>
