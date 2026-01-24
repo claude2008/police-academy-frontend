@@ -608,17 +608,21 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
             </div>
 
          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <div className="flex justify-center mb-10 print:hidden w-full px-4">
-                <TabsList className="grid w-full grid-cols-2 max-w-[400px] mb-6 tabs-list print:hidden ml-auto mr-0">
-                    <TabsTrigger value="records">
-                        عرض التقارير المسجلة 
-                        {totalItems > 0 && <span className="mr-2 bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold">{totalItems}</span>}
-                    </TabsTrigger>
-                    <TabsTrigger value="new">
-                        {editingId ? (isPreviewOnly ? "معاينة المستند" : "تعديل المستند") : "تحرير مستند جديد"}
-                    </TabsTrigger>
-                </TabsList>
-            </div>
+    
+    {/* 🟢 التعديل: إخفاء التابات العلوية إذا كنا داخل مجلد دورة (selectedGroup موجود) */}
+    {!selectedGroup && (
+        <div className="flex justify-center mb-10 print:hidden w-full px-4 animate-in slide-in-from-top-2">
+            <TabsList className="grid w-full grid-cols-2 max-w-[400px] mb-6 tabs-list print:hidden ml-auto mr-0">
+                <TabsTrigger value="records">
+                    عرض التقارير المسجلة 
+                    {totalItems > 0 && <span className="mr-2 bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold">{totalItems}</span>}
+                </TabsTrigger>
+                <TabsTrigger value="new">
+                    {editingId ? (isPreviewOnly ? "معاينة المستند" : "تعديل المستند") : "تحرير مستند جديد"}
+                </TabsTrigger>
+            </TabsList>
+        </div>
+    )}
                 <TabsContent value="new">
                     <Card className={`max-w-[210mm] mx-auto min-h-[297mm] bg-white text-black report-container relative shadow-lg print:shadow-none ${editingId ? 'border-2 border-yellow-400' : ''}`}>
                         <CardContent className="p-12 space-y-4 print:p-0 h-full flex flex-col">
@@ -1025,9 +1029,14 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
                             key={idx} 
                             className="cursor-pointer hover:shadow-lg transition-all border-none bg-white rounded-2xl group relative overflow-hidden ring-1 ring-slate-200 hover:ring-[#c5b391]"
                             onClick={() => {
-                                setSelectedGroup({ course: group.course, batch: group.batch });
-                                setViewMode('list');
-                                setCurrentPage(1);
+        // 1. 🟢 تفريغ القائمة القديمة فوراً لمنع ظهور بيانات سابقة بالخطأ
+        setSavedReports([]); 
+        setTotalItems(0);
+
+        // 2. تعيين المجموعة المختارة وبدء التحميل
+        setSelectedGroup({ course: group.course, batch: group.batch });
+        setViewMode('list');
+        setCurrentPage(1);
                             }}
                         >
                             <CardHeader className="pb-3 pt-4">
@@ -1075,12 +1084,17 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
                 />
             </div>
 
-                {savedReports.length === 0 ? (
-                    <div className="text-center py-12 bg-slate-50 rounded-xl border-2 border-dashed">
-                        <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                        <p className="text-slate-500 font-medium">لا توجد مستندات للعرض.</p>
-                    </div>
-                ) : (
+                {loading ? (
+    <div className="flex flex-col items-center justify-center py-20 animate-in fade-in">
+        <Loader2 className="w-10 h-10 text-blue-500 animate-spin mb-4" />
+        <p className="text-slate-500 font-bold">جاري جلب التقارير...</p>
+    </div>
+) : savedReports.length === 0 ? (
+    <div className="text-center py-12 bg-slate-50 rounded-xl border-2 border-dashed">
+        <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+        <p className="text-slate-500 font-medium">لا توجد مستندات للعرض.</p>
+    </div>
+) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-right" dir="rtl">
                         {savedReports.map((report) => (
                             <Card 

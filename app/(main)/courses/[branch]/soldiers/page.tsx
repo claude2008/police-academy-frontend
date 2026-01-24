@@ -217,19 +217,22 @@ const sportsExamsList = useMemo(() => {
     }, [filteredReports, reportsPage, reportsPerPage]);
     
  const fitnessExamsList = useMemo(() => {
-    const filtered = (profileData.military_exams || []).filter((ex: any) => {
-        // فحص المفاتيح العربية للياقة
-        const hasFitnessKeys = 
+    // البيانات تأتي جاهزة من الباك إند، لا داعي للبحث داخل JSON
+    return (profileData.military_exams || []).filter((ex: any) => {
+        
+        // التحقق من وجود درجات لياقة (بالمفاتيح العربية أو الإنجليزية)
+        const hasFitnessData = 
             ex["الجري"] !== undefined || 
             ex["الضغط"] !== undefined || 
-            ex["البطن"] !== undefined;
-        
-        const matchesDate = (!sportsFrom || ex.exam_date >= sportsFrom) && (!sportsTo || ex.exam_date <= sportsTo);
-        return hasFitnessKeys && matchesDate;
-    });
+            ex["البطن"] !== undefined ||
+            ex.run_time !== undefined;
 
-    // 🟢 إضافة منطق الترتيب التنازلي بناءً على التاريخ
-    return [...filtered].sort((a, b) => b.exam_date.localeCompare(a.exam_date));
+        // فلترة التاريخ
+        const matchesDate = (!sportsFrom || ex.exam_date >= sportsFrom) && (!sportsTo || ex.exam_date <= sportsTo);
+        
+        return hasFitnessData && matchesDate;
+
+    }).sort((a: any, b: any) => b.exam_date.localeCompare(a.exam_date));
 }, [profileData.military_exams, sportsFrom, sportsTo]);
 
 // 🟢 2. التحقق من وجود درجة مدرب (بالمفتاح العربي)
@@ -659,8 +662,14 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                                             <h1 className="text-2xl md:text-3xl font-bold text-slate-900 leading-tight">{selectedSoldier.name}</h1>
                                             <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-2 text-slate-500">
                                                 <span className="font-mono font-bold bg-slate-100 px-2 py-0.5 rounded text-sm text-slate-700 border">{selectedSoldier.military_id}</span>
-                                                <span className="hidden md:inline">•</span><span className="text-sm">قطري</span>
-                                                <span className="hidden md:inline">•</span><span className="text-sm">22 سنة</span>
+                                               <span className="hidden md:inline">•</span>
+<span className="text-sm">{selectedSoldier.nationality || "غير محدد"}</span>
+                                                <span className="hidden md:inline">•</span>
+<span className="text-sm">
+    {selectedSoldier.dob 
+        ? `${new Date().getFullYear() - new Date(selectedSoldier.dob).getFullYear()} سنة` 
+        : ""} 
+</span>
                                                 <span className="hidden md:inline">•</span><span className="text-sm">الطول: {selectedSoldier.height || "-"} سم</span>
                                                 <span className="hidden md:inline">•</span><span className="text-sm">الوزن: {selectedSoldier.initial_weight || "-"} كغ</span>
                                             </div>
@@ -689,8 +698,18 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                                 <div className="flex gap-2 text-sm"><span className="font-bold">الرتبة:</span><span>{selectedSoldier.rank || "مستجد"}</span></div>
                             </div>
                             <div className="flex gap-4">
-                                <div className="flex gap-2 text-sm"><span className="font-bold">الجنسية:</span><span>قطري</span></div>
-                                <div className="flex gap-2 text-sm"><span className="font-bold">العمر:</span><span>22 سنة</span></div>
+                                <div className="flex gap-2 text-sm">
+    <span className="font-bold">الجنسية:</span>
+    <span>{selectedSoldier.nationality || "غير محدد"}</span>
+</div>
+                                <div className="flex gap-2 text-sm">
+    <span className="font-bold">العمر:</span>
+    <span>
+        {selectedSoldier.dob 
+            ? `${new Date().getFullYear() - new Date(selectedSoldier.dob).getFullYear()} سنة` 
+            : ""}
+    </span>
+</div>
                             </div>
                             <div className="flex gap-4">
                                 <div className="flex gap-2 text-sm"><span className="font-bold">الطول:</span><span>{selectedSoldier.height || "-"} سم</span></div>
@@ -757,35 +776,71 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
         </TableHeader>
         <TableBody>
             {paginatedFitExams.map((ex: any, idx: number) => (
-                <TableRow key={idx} className="hover:bg-slate-50 transition-colors border-b border-slate-200">
-                    <TableCell className="text-right font-bold border-l truncate">{ex.title?.split(" - ")[0]}</TableCell>
-                    <TableCell className="text-center font-mono text-[10px] border-l">{ex.exam_date}</TableCell>
-                    
-                    <TableCell className="text-center border-l font-black text-amber-700">{ex["الجري"] || "-"}</TableCell>
-                    <TableCell className="text-center border-l print:hidden">{ex["درجة الجري"] || "-"}</TableCell>
-                    <TableCell className="text-center border-l text-[10px] print:hidden">{ex["تقدير الجري"] || "-"}</TableCell>
+    <TableRow key={idx} className="hover:bg-slate-50 transition-colors border-b border-slate-200">
+        <TableCell className="text-right font-bold border-l truncate">
+            {ex.title?.split(" - ")[0]}
+        </TableCell>
+        <TableCell className="text-center font-mono text-[10px] border-l">
+            {ex.exam_date}
+        </TableCell>
+        
+        {/* الجري: نقرأ من ex مباشرة مع دعم المسميات المختلفة */}
+        <TableCell className="text-center border-l font-black text-amber-700">
+            {ex["الجري"] ?? ex["الجرى"] ?? ex.run_time ?? "-"}
+        </TableCell>
+        <TableCell className="text-center border-l print:hidden">
+            {ex["درجة الجري"] ?? ex["درجة الجرى"] ?? ex.run_score ?? "-"}
+        </TableCell>
+        <TableCell className="text-center border-l text-[10px] print:hidden">
+            {ex["تقدير الجري"] ?? ex["تقدير الجرى"] ?? ex.run_grade ?? "-"}
+        </TableCell>
 
-                    <TableCell className="text-center border-l font-black text-blue-700">{ex["الضغط"] || "-"}</TableCell>
-                    <TableCell className="text-center border-l print:hidden">{ex["درجة الضغط"] || "-"}</TableCell>
-                    <TableCell className="text-center border-l text-[10px] print:hidden">{ex["تقدير الضغط"] || "-"}</TableCell>
+        {/* الضغط */}
+        <TableCell className="text-center border-l font-black text-blue-700">
+            {ex["الضغط"] ?? ex.pushups ?? ex.push_count ?? "-"}
+        </TableCell>
+        <TableCell className="text-center border-l print:hidden">
+            {ex["درجة الضغط"] ?? ex.push_score ?? "-"}
+        </TableCell>
+        <TableCell className="text-center border-l text-[10px] print:hidden">
+            {ex["تقدير الضغط"] ?? ex.push_grade ?? "-"}
+        </TableCell>
 
-                    <TableCell className="text-center border-l font-black text-green-700">{ex["البطن"] || "-"}</TableCell>
-                    <TableCell className="text-center border-l print:hidden">{ex["درجة البطن"] || "-"}</TableCell>
-                    <TableCell className="text-center border-l text-[10px] print:hidden">{ex["تقدير البطن"] || "-"}</TableCell>
+        {/* البطن */}
+        <TableCell className="text-center border-l font-black text-green-700">
+            {ex["البطن"] ?? ex.situps ?? ex.sit_count ?? "-"}
+        </TableCell>
+        <TableCell className="text-center border-l print:hidden">
+            {ex["درجة البطن"] ?? ex.sit_score ?? "-"}
+        </TableCell>
+        <TableCell className="text-center border-l text-[10px] print:hidden">
+            {ex["تقدير البطن"] ?? ex.sit_grade ?? "-"}
+        </TableCell>
 
-                    <TableCell className="text-center border-l font-black bg-slate-50 print:hidden">{ex["الدرجة النهائية"] || "-"}</TableCell>
-                    <TableCell className="text-center border-l bg-slate-50">
-                        <span className="font-bold">{ex["التقدير العام"] || "-"}</span>
-                    </TableCell>
-                    <TableCell className="text-center border-l bg-slate-50 print:hidden">
-                        {ex["النتيجة"] || "-"}
-                    </TableCell>
+        {/* النهائيات */}
+        <TableCell className="text-center border-l font-black bg-slate-50 print:hidden">
+            {ex["الدرجة النهائية"] ?? ex["الدرجة_النهائية"] ?? ex.average ?? ex.total_final ?? "-"}
+        </TableCell>
+        <TableCell className="text-center border-l bg-slate-50">
+            <span className="font-bold">
+                {ex["التقدير العام"] ?? ex["التقدير"] ?? ex.grade ?? "-"}
+            </span>
+        </TableCell>
+        <TableCell className="text-center border-l bg-slate-50 print:hidden">
+            {ex["النتيجة"] ?? ex.result ?? ex.final_result ?? "-"}
+        </TableCell>
 
-                    {hasTrainerScore && <TableCell className="text-center border-l font-bold text-purple-700">{ex["درجة المدرب"] || "-"}</TableCell>}
-                    
-                    <TableCell className="text-right text-[10px] text-slate-500 px-4 leading-tight">{ex["ملاحظات"] || "-"}</TableCell>
-                </TableRow>
-            ))}
+        {hasTrainerScore && (
+            <TableCell className="text-center border-l font-bold text-purple-700">
+                {ex["درجة المدرب"] ?? ex.trainer_score ?? "-"}
+            </TableCell>
+        )}
+        
+        <TableCell className="text-right text-[10px] text-slate-500 px-4 leading-tight">
+            {ex["ملاحظات"] ?? ex.notes ?? "-"}
+        </TableCell>
+    </TableRow>
+))}
         </TableBody>
     </Table>
 </div>

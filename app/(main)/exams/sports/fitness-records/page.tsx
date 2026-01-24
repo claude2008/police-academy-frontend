@@ -1,234 +1,114 @@
 "use client"
 
-
-
 import { useState, useEffect, useMemo } from "react"
-
 import { 
-
     Table as TableIcon, Search, Printer, Download, 
-
     Eye, ShieldCheck, CheckCircle2, X, Loader2, RotateCcw, 
-
     ArrowRight, Calendar, Trash2, ChevronRight, ChevronLeft, 
-
     AlertTriangle, ListFilter, Save, Swords, Activity, UserCheck, FileWarning
-
 } from "lucide-react"
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-
 import { Button } from "@/components/ui/button"
-
 import { Input } from "@/components/ui/input"
-
 import { Label } from "@/components/ui/label"
-
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-
 import { Badge } from "@/components/ui/badge"
-
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-
 import { format } from "date-fns"
-
 import { ar } from "date-fns/locale"
-
 import { toast } from "sonner"
-
 import ProtectedRoute from "@/components/ProtectedRoute"
-
 import * as XLSX from 'xlsx';
-
-
 
 const absenceKeywords = ["غياب", "غائب", "إصابة", "لم يختبر", "شطب", "مؤجل", "اعتذار", "طبية", "مستشفى", "ملحق", "عيادة", "مرضية", "مفصول", "اصابة", "استقالة", "إستقالة"];
 
-
-
 export default function FitnessRecordsPage() {
-
     const [activeTab, setActiveTab] = useState("engagement")
-
     const [selectedGroup, setSelectedGroup] = useState<any>(null)
-
     const [userRole, setUserRole] = useState<string>("")
-
     const [records, setRecords] = useState<any[]>([])
-
     const [loading, setLoading] = useState(false)
-
     const [searchQuery, setSearchQuery] = useState("")
-
     const [dateSearch, setDateSearch] = useState("")
-
     const [currentPage, setCurrentPage] = useState(1)
-
     const [itemsPerPage, setItemsPerPage] = useState(12)
-
     const [mainPage, setMainPage] = useState(1)
-
     const [mainItemsPerPage, setMainItemsPerPage] = useState(12)
-
     const [filterCourse, setFilterCourse] = useState("all")
-
     const [filterBatch, setFilterBatch] = useState("all")
-
     const [viewMode, setViewMode] = useState<"field" | "official">("field");
-
     const [allSoldiersInBatch, setAllSoldiersInBatch] = useState<any[]>([]);
-
     const [tempNotes, setTempNotes] = useState<Record<string, string>>({});
-
-
-
     const [innerCurrentPage, setInnerCurrentPage] = useState(1);
-
     const [innerItemsPerPage, setInnerItemsPerPage] = useState(20);
-
     const [showTrainerColumn, setShowTrainerColumn] = useState(true);
-
     const [innerCompany, setInnerCompany] = useState("all")
-
     const [innerPlatoon, setInnerPlatoon] = useState("all")
-
     const [customExamType, setCustomExamType] = useState("") 
-
     const [deleteTarget, setDeleteTarget] = useState<{id: number, title: string, all_ids: number[]} | null>(null);
-
     const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
-
     const [printDestination, setPrintDestination] = useState<"sports" | "control">("sports");
 
-
-
    useEffect(() => {
-
     const user = JSON.parse(localStorage.getItem("user") || "{}")
-
     setUserRole(user.role || "")
-
-    
-
-    // جلب البيانات عند التحميل الأول
-
     fetchRecords();
-
-
-
-    // 🟢 إضافة مستمع لحدث "التركيز" على الصفحة
-
     const handleFocus = () => {
-
         console.log("تمت العودة للصفحة، جاري تحديث البيانات...");
-
         fetchRecords();
-
     };
-
-
-
     window.addEventListener('focus', handleFocus);
-
-
-
-    // تنظيف المستمع عند الخروج من الصفحة لضمان الأداء
-
     return () => {
-
         window.removeEventListener('focus', handleFocus);
-
     };
-
 }, []);
 
 useEffect(() => {
-
     if (selectedGroup) {
-
         // إذا كان الاختبار "اشتباك" اجعل الوضع الافتراضي هو الكشف الرسمي
-
         if (selectedGroup.type === "engagement") {
-
             setViewMode("official");
-
         } else {
-
             // إذا كان "لياقة" اجعل الوضع الافتراضي هو الرصد
-
-            setViewMode("field");
-
+           setViewMode("field");
         }
-
     }
-
 }, [selectedGroup]);
 
-
-
     const fetchRecords = async () => {
-
         setLoading(true);
-
         try {
-
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records`, {
-
-                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-
+               headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
             });
-
             if (res.ok) {
-
                 const rawData = await res.json();
-
                 const processed = rawData.map((r: any) => ({
-
                     ...r,
-
                     students_data: typeof r.students_data === 'string' ? JSON.parse(r.students_data) : r.students_data,
-
                     approvals: typeof r.approvals === 'string' ? JSON.parse(r.approvals) : r.approvals
-
                 }));
-
                 setRecords(processed);
-
-                
-
             }
 
         } catch (e) { toast.error("فشل الاتصال"); } finally { setLoading(false); }
-
     };
 
 const uniqueCourses = useMemo(() => [...new Set(records.map(r => r.course))].filter(Boolean), [records]);
-
     const uniqueBatches = useMemo(() => [...new Set(records.map(r => r.batch))].filter(Boolean), [records]);
-
-
-
-
-    // 🟢 3. تصفية البطاقات وتوحيد العناوين
     const filteredGroupedRecords = useMemo(() => {
         const filtered = records.filter(r => {
             const titleLower = (r.title || "").toLowerCase();
             const subject = r.subject || "";
-
             // 1. استبعاد العسكري الصريح
             const militaryKeywords = ["رماية", "مسدس", "بندقية", "مشاة", "تلميذ", "أسلحة", "اسلحة", "رشاش", "m16", "mp5", "جلوك"];
             if (militaryKeywords.some(k => titleLower.includes(k))) return false;
-
-            // 2. تصنيف السجل (لياقة أم اشتباك)
-            const firstStudent = Array.isArray(r.students_data) && r.students_data.length > 0 ? r.students_data[0] : {};
-            
+          // 2. تصنيف السجل (لياقة أم اشتباك)
+            const firstStudent = Array.isArray(r.students_data) && r.students_data.length > 0 ? r.students_data[0] : {};   
             // الاشتباك: نعرفه من الـ axes_fingerprint أو كلمة اشتباك في العنوان
-            const isEngagement = titleLower.includes("اشتباك") || !!firstStudent.axes_fingerprint || subject.startsWith("engagement");
-            
+            const isEngagement = titleLower.includes("اشتباك") || !!firstStudent.axes_fingerprint || subject.startsWith("engagement");            
             // اللياقة: نعرفها من أعمدة (جري، ضغط، بطن) أو كلمة لياقة/رياضة
             const isFitness = titleLower.includes("لياقة") || titleLower.includes("رياضة") || 
                               (firstStudent["الجري"] !== undefined || firstStudent["الضغط"] !== undefined);
@@ -1945,35 +1825,43 @@ const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
 
                                                     <>
 
-                                                        <TableCell className="border-l border-black bg-slate-50/50">{s["الجري"] || s.run_time || "-"}</TableCell>
+                                                        {/* 🟢 تعديل خلايا اللياقة لضمان ظهور الصفر 0 بدلاً من الشرطة - */}
 
-                                                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["درجة الجري"] || s.run_score || "-"}</TableCell>
+<TableCell className="border-l border-black bg-slate-50/50">
+    {/* نستخدم ?? بدلاً من || لضمان أن الصفر قيمة مقبولة */}
+    {s["الجري"] ?? s.run_time ?? "-"}
+</TableCell>
+<TableCell className="border-l border-black text-[10px] bg-slate-50/50">
+    {s["درجة الجري"] ?? s.run_score ?? "-"}
+</TableCell>
+<TableCell className="border-l border-black text-[10px] bg-slate-50/50">
+    {s["تقدير الجري"] ?? s.run_grade ?? "-"}
+</TableCell>
 
-                                                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["تقدير الجري"] || s.run_grade || "-"}</TableCell>
+<TableCell className="border-l border-black">
+    {s["الضغط"] ?? s.pushups ?? "-"}
+</TableCell>
+<TableCell className="border-l border-black text-[10px]">
+    {s["درجة الضغط"] ?? s.push_score ?? "-"}
+</TableCell>
+<TableCell className="border-l border-black text-[10px]">
+    {s["تقدير الضغط"] ?? s.push_grade ?? "-"}
+</TableCell>
 
+<TableCell className="border-l border-black bg-slate-50/50">
+    {s["البطن"] ?? s.situps ?? "-"}
+</TableCell>
+<TableCell className="border-l border-black text-[10px] bg-slate-50/50">
+    {s["درجة البطن"] ?? s.sit_score ?? "-"}
+</TableCell>
+<TableCell className="border-l border-black text-[10px] bg-slate-50/50">
+    {s["تقدير البطن"] ?? s.sit_grade ?? "-"}
+</TableCell>
 
-
-                                                        <TableCell className="border-l border-black">{s["الضغط"] || s.pushups || "-"}</TableCell>
-
-                                                        <TableCell className="border-l border-black text-[10px]">{s["درجة الضغط"] ?? s.push_score ?? "-"}</TableCell>
-
-                                                        <TableCell className="border-l border-black text-[10px]">{s["تقدير الضغط"] || s.push_grade || "-"}</TableCell>
-
-
-
-                                                        <TableCell className="border-l border-black bg-slate-50/50">{s["البطن"] || s.situps || "-"}</TableCell>
-
-                                                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["درجة البطن"] ?? s.sit_score ?? "-"}</TableCell>
-
-                                                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["تقدير البطن"] || s.sit_grade || "-"}</TableCell>
-
-
-
-                                                        <TableCell className="border-l border-black font-black text-lg">
-
-                                                            {s["الدرجة النهائية"] ?? s.average ?? "-"}
-
-                                                        </TableCell>
+<TableCell className="border-l border-black font-black text-lg">
+    {/* الدرجة النهائية أيضاً يجب أن تظهر 0 إذا كانت النتيجة كذلك */}
+    {s["الدرجة النهائية"] ?? s.average ?? "-"}
+</TableCell>
 
                                                     </>
 

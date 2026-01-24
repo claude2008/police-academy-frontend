@@ -15,7 +15,7 @@ import {
 } from "lucide-react"
 // 1. استيراد مكتبة الرسائل (لحل خطأ toast)
 import { toast } from "sonner"
-
+import NotificationsMenu from "@/components/NotificationsMenu"
 // 2. استيراد مكونات النافذة (لحل أخطاء Dialog و DialogContent و DialogTitle)
 import {
     Dialog,
@@ -621,11 +621,8 @@ if (item.id === "cs-sp-sol") {
 {!isLoading && displayName && (
     <div className="flex items-center gap-4 animate-in fade-in slide-in-from-right-2 duration-500">
         
-        {/* 🔔 أيقونة الإشعارات (للعرض فقط حالياً) */}
-        <div className="relative cursor-pointer hover:bg-slate-100 p-2 rounded-full transition-all group">
-            <Bell className="w-5 h-5 text-slate-500 group-hover:text-blue-600 transition-colors" />
-            {/* دائرة حمراء وهمية لإعطاء انطباع بوجود تنبيهات */}
-            <span className="absolute top-1.5 right-1.5 bg-red-600 w-2 h-2 rounded-full border-2 border-white"></span>
+       <div className="relative z-[120]"> 
+            <NotificationsMenu />
         </div>
 
         {/* نصوص الترحيب */}
