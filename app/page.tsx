@@ -132,12 +132,13 @@ export default function LoginPage() {
           <CardHeader className="text-center flex flex-col items-center pb-2">
             <div className="w-36 h-36 relative mb-6 p-1 bg-white rounded-full shadow-xl overflow-hidden border-4 border-slate-100 dark:border-slate-800 flex items-center justify-center">
               <Image 
-                src="/logo.jpg" 
-                alt="شعار الأكاديمية" 
-                fill 
-                className="object-contain p-2"
-                priority
-              />
+  src="/logo.jpg" 
+  alt="شعار الأكاديمية" 
+  fill 
+  sizes="(max-width: 768px) 100vw, 150px" // 👈 أضف هذا السطر
+  className="object-contain p-2"
+  priority
+/>
             </div>
             <CardTitle className="text-2xl font-bold text-slate-800 dark:text-white">
               معهد الشرطة
@@ -161,6 +162,7 @@ export default function LoginPage() {
               <Input 
                 id="email" 
                 type="email" 
+                suppressHydrationWarning
                 placeholder="user@police.academy" 
                 className="text-right bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
                 value={email}
@@ -176,6 +178,7 @@ export default function LoginPage() {
               <Input 
                 id="password" 
                 type="password" 
+                suppressHydrationWarning
                 className="text-right bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
