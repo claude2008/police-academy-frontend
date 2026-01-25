@@ -45,11 +45,11 @@ const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
     const [allSoldiersInBatch, setAllSoldiersInBatch] = useState<any[]>([]);
     const [tempNotes, setTempNotes] = useState<Record<string, string>>({});
   const [configs, setConfigs] = useState<any[]>([])
-  // 🟢 متغيرات لحل تنازع البيانات المكررة
-const [conflictDialog, setConflictDialog] = useState(false);
-const [conflicts, setConflicts] = useState<any[]>([]); // قائمة الطلاب المكررين
-const [pendingRecord, setPendingRecord] = useState<any>(null); // السجل المؤقت قبل الاعتماد
-const [resolvedStudents, setResolvedStudents] = useState<Map<string, any>>(new Map()); // الطلاب الذين تم دمجهم بنجاح
+const [availableRecords, setAvailableRecords] = useState<any[]>([]);
+const [committeeDialog, setCommitteeDialog] = useState(false);
+const [availableAuthors, setAvailableAuthors] = useState<any[]>([]); // قائمة من رصدوا فعلياً
+const [committeeMapping, setCommitteeMapping] = useState<Record<string, string>>({});
+const [pendingGroup, setPendingGroup] = useState<any>(null);
     const [deleteTarget, setDeleteTarget] = useState<{id: number, title: string, all_ids: number[]} | null>(null);
 
     // كلمات مفتاحية لتحديد حالات الغياب
@@ -150,110 +150,47 @@ const [resolvedStudents, setResolvedStudents] = useState<Map<string, any>>(new M
             fetchBatch();
         }
     }, [selectedRecord, viewMode]);
-     // 🟢 دالة فتح البطاقة ودمج البيانات وكشف التكرار
-  const handleCardClick = (group: any) => {
-        const relatedRecords = records.filter(r => group.all_ids.includes(r.id));
-        const mergedMap = new Map<string, any>();
-        const foundConflicts: any[] = [];
+ const handleCardClick = (group: any) => {
+    // 1. جلب كافة سجلات الدفعة (الخزان الرئيسي)
+    const allBatchRecords = records.filter(r => 
+        r.config_id === group.config_id && 
+        r.course === group.course && 
+        r.batch === group.batch &&
+        r.exam_date === group.exam_date
+    );
 
-        relatedRecords.forEach((record) => {
-            const creatorName = record.creator_name || "غير معروف";
-            const studentsList = Array.isArray(record.students_data) ? record.students_data : [];
+    const platoonKeys = Array.from(new Set(allBatchRecords.map(r => `${r.company}-${r.platoon}`)));
+    
+    // كائن لتخزين الفصائل التي بها مشكلة فقط وسجلاتها
+    let conflictedGroups: Record<string, any[]> = {};
+    let hasAnyConflict = false;
 
-            studentsList.forEach((student: any) => {
-                const milId = String(student.military_id);
-                const studentData = { 
-                    ...student, 
-                    recorded_by: student.recorded_by || creatorName, 
-                    source_record_id: record.id 
-                };
-
-                if (mergedMap.has(milId)) {
-                    const existing = mergedMap.get(milId);
-                    // إذا كانت الدرجات مختلفة، نعتبره تضارب
-                    if (String(existing.total) !== String(studentData.total)) {
-                        foundConflicts.push({
-                            student_name: student.name,
-                            military_id: milId,
-                            version_A: existing,
-                            version_B: studentData
-                        });
-                    }
-                } else {
-                    mergedMap.set(milId, studentData);
-                }
-            });
-        });
-
-        if (foundConflicts.length > 0) {
-            setResolvedStudents(mergedMap);
-            setConflicts(foundConflicts);
-            setPendingRecord(group);
-            setConflictDialog(true);
-        } else {
-            setSelectedRecord({ ...group, students_data: Array.from(mergedMap.values()) });
-        }
-    };
-
- const resolveConflict = async (conflictIndex: number, selectedVersion: 'A' | 'B') => {
-        const conflict = conflicts[conflictIndex];
-        // النسخة التي ضغط المستخدم على زر حذفها (Destructive) هي الخاسرة
-        const winner = selectedVersion === 'A' ? conflict.version_A : conflict.version_B;
-        const loser = selectedVersion === 'A' ? conflict.version_B : conflict.version_A;
-
-        // 1. تحديث الذاكرة المحلية فوراً لفتح الجدول للمستخدم دون تأخير
-        const updatedMap = new Map(resolvedStudents);
-        updatedMap.set(String(conflict.military_id), winner);
-        setResolvedStudents(updatedMap);
-
-        const nextConflicts = conflicts.filter((_, i) => i !== conflictIndex);
-        setConflicts(nextConflicts);
-
-        if (nextConflicts.length === 0) {
-            setConflictDialog(false);
-            setSelectedRecord({ ...pendingRecord, students_data: Array.from(updatedMap.values()) });
-        }
-
-        // 2. 🗑️ الحذف الفعلي من سوبابيز عبر الباك إند
-        const loserRecordOrig = records.find(r => r.id === loser.source_record_id);
+    platoonKeys.forEach(pKey => {
+        const platoonRecs = allBatchRecords.filter(r => `${r.company}-${r.platoon}` === pKey);
+        const roles = platoonRecs.map(r => r.examiner_role).filter(role => role !== 'none' && role !== "");
         
-        if (loserRecordOrig) {
-            try {
-                // جلب القائمة الحالية والتأكد من أنها مصفوفة
-                const currentList = Array.isArray(loserRecordOrig.students_data) 
-                    ? loserRecordOrig.students_data 
-                    : JSON.parse(loserRecordOrig.students_data || "[]");
-
-                // 🟢 تعريف المتغير هنا يحل مشكلة الخطأ الذي ظهر لك
-                const filteredList = currentList.filter(
-                    (s: any) => String(s.military_id) !== String(conflict.military_id)
-                );
-
-                // إرسال التحديث للسيرفر
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records/${loser.source_record_id}`, {
-                    method: "PUT",
-                    headers: { 
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${localStorage.getItem("token")}` 
-                    },
-                    body: JSON.stringify({ students_data: filteredList })
-                });
-
-                if (res.ok) {
-                    // تحديث الحالة الكلية لضمان عدم ظهور التكرار مجدداً عند إعادة فتح البطاقة
-                    setRecords(prev => prev.map(r => 
-                        r.id === loser.source_record_id ? { ...r, students_data: filteredList } : r
-                    ));
-                    toast.success(`تم حذف نسخة ${loser.recorded_by} من قاعدة البيانات ✅`);
-                } else {
-                    console.error("Failed to delete from DB");
-                }
-            } catch (e) {
-                console.error("Conflict Resolution Error:", e);
-                toast.error("حدث خطأ أثناء محاولة تحديث قاعدة البيانات");
-            }
+        // فحص التضارب في هذا الفصيل تحديداً
+        if (roles.length !== new Set(roles).size) {
+            hasAnyConflict = true;
+            conflictedGroups[pKey] = platoonRecs;
         }
-    };
+    });
+
+    // تحديث السجلات المتاحة (الكل للجدول)
+    setAvailableRecords(allBatchRecords);
+
+    if (hasAnyConflict) {
+        // 🚨 إرسال بيانات الفصائل المتعارضة للنافذة
+        setPendingGroup({ ...group, conflictedGroups }); 
+        setCommitteeMapping({}); // تصفير التعيينات لبدء حل النزاع
+        setCommitteeDialog(true);
+        toast.warning("تنبيه: يوجد تضارب في أدوار الرصد لعدة فصائل");
+    } else {
+        // ✅ لا يوجد تضارب
+        setSelectedRecord(group);
+    }
+};
+
 // استخراج قوائم الفلاتر ديناميكياً من السجلات
 const coursesList = useMemo(() => {
     return Array.from(new Set(records.map(r => r.course))).filter(Boolean);
@@ -269,36 +206,122 @@ const batchesList = useMemo(() => {
         return absenceKeywords.some(k => student.notes?.includes(k)) || student.total === null;
     };
 
-    const finalReportData = useMemo(() => {
-        if (!selectedRecord) return [];
-        const fieldData = selectedRecord.students_data;
+ const finalReportData = useMemo(() => {
+    if (!selectedRecord || !availableRecords.length) return [];
 
-        if (viewMode === "field") {
-            return fieldData.filter((s: any) => {
-                const matchCo = innerCompany === "all" || s.company === innerCompany;
-                const matchPl = innerPlatoon === "all" || s.platoon === innerPlatoon;
-                return matchCo && matchPl;
+    const currentConfig = configs.find(c => c.id === selectedRecord.config_id);
+    const isShooting = currentConfig?.subject === "shooting";
+
+    // 1️⃣ بناء قائمة الطلاب الأساسية (دمج كافة الطلاب من كافة السجلات المتاحة)
+    let baseStudentsList = [];
+    if (viewMode === "field") {
+        const allMergedStudents = new Map();
+        availableRecords.forEach(rec => {
+            const sData = Array.isArray(rec.students_data) ? rec.students_data : [];
+            sData.forEach((s: any) => {
+                const milId = String(s.military_id);
+                if (!allMergedStudents.has(milId)) {
+                    allMergedStudents.set(milId, {
+                        military_id: s.military_id,
+                        name: s.name,
+                        rank: s.rank,
+                        company: s.company,
+                        platoon: s.platoon
+                    });
+                }
             });
-        }
-
-        const testedPlatoonKeys = Array.from(new Set(fieldData.map((s: any) => `${s.company}-${s.platoon}`)));
-
-        return allSoldiersInBatch.filter((s: any) => 
-            testedPlatoonKeys.includes(`${s.company}-${s.platoon}`)
-        ).map((soldier: any) => {
-            const match = fieldData.find((r: any) => String(r.military_id) === String(soldier.military_id));
-            if (match) return match;
-            return {
-                ...soldier, total: null,
-                notes: tempNotes[soldier.military_id] || soldier.notes || "",
-                isAbsent: true
-            };
-        }).filter((s: any) => {
-            const matchCo = innerCompany === "all" || s.company === innerCompany;
-            const matchPl = innerPlatoon === "all" || s.platoon === innerPlatoon;
-            return matchCo && matchPl;
         });
-    }, [selectedRecord, viewMode, allSoldiersInBatch, innerCompany, innerPlatoon, tempNotes]);
+        baseStudentsList = Array.from(allMergedStudents.values());
+    } else {
+        // في الوضع الرسمي، نأتي بكل طلاب الدفعة للفصائل التي تم اختبارها فعلياً
+        const testedPlatoonKeys = new Set();
+        availableRecords.forEach(rec => {
+            const sData = Array.isArray(rec.students_data) ? rec.students_data : [];
+            sData.forEach((s: any) => testedPlatoonKeys.add(`${s.company}-${s.platoon}`));
+        });
+        
+        baseStudentsList = allSoldiersInBatch.filter((s: any) => 
+            testedPlatoonKeys.has(`${s.company}-${s.platoon}`)
+        );
+    }
+
+    // 2️⃣ معالجة الدرجات بنظام "البحث عن الدور" لكل طالب على حدة
+   const processedData = baseStudentsList.map((soldier: any) => {
+    const milId = String(soldier.military_id);
+
+    // 1. دالة مساعدة للبحث عن سجل الطالب بناءً على دور المقيّم (للمواد العسكرية)
+    const findStudentByRole = (role: string) => {
+        const record = availableRecords.find(r => r.examiner_role === role && 
+            r.students_data?.some((s: any) => String(s.military_id) === milId));
+        return record?.students_data?.find((s: any) => String(s.military_id) === milId);
+    };
+
+    // 2. البحث عن سجل الطالب في "أي مكان" (مخصص لاختبار الرماية والبحث الحر)
+    const studentShooting = isShooting 
+        ? availableRecords.find(r => r.students_data?.some((s: any) => String(s.military_id) === milId))
+            ?.students_data?.find((s: any) => String(s.military_id) === milId)
+        : null;
+
+    const studentM1 = findStudentByRole('member1');
+    const studentM2 = findStudentByRole('member2');
+    const studentHead = findStudentByRole('head');
+
+    // 3. استخراج الدرجات (مع إضافة درجة الرماية)
+    const s1 = studentM1 ? parseFloat(studentM1.total) : null;
+    const s2 = studentM2 ? parseFloat(studentM2.total) : null;
+    const sH = studentHead ? parseFloat(studentHead.total) : null;
+    const sShoot = studentShooting ? parseFloat(studentShooting.total) : null;
+
+    // 4. حساب المتوسط بناءً على نوع الاختبار
+    // إذا كان رماية: نأخذ درجة سجل الرماية الوحيد
+    // إذا كان مواد أخرى: نحسب متوسط اللجنة (عضو 1، 2، رئيس)
+    const validScores = isShooting 
+        ? (sShoot !== null && !isNaN(sShoot) ? [sShoot] : [])
+        : ([s1, s2, sH].filter(v => v !== null && !isNaN(v as number)) as number[]);
+
+    const average = validScores.length > 0 
+        ? parseFloat((validScores.reduce((a, b) => a + b, 0) / validScores.length).toFixed(2)) 
+        : null;
+
+    // 5. جلب الملاحظات (دمج ملاحظات الرماية مع منطق اللجنة)
+    const anySavedNote = isShooting 
+        ? (studentShooting?.notes || "")
+        : (studentHead?.notes || studentM1?.notes || studentM2?.notes || "");
+
+    // 🟢 منطق الرماية: إرجاع البيانات الشاملة (الأهداف + المجموع)
+    if (isShooting) {
+        const mainStudent = studentShooting || studentHead || studentM1 || studentM2;
+        if (mainStudent) {
+            return {
+                ...soldier,       // معلومات الجندي الأساسية
+                ...mainStudent,   // معلومات الاختبار (الأهداف، السجل الفني)
+                total: average !== null ? average : mainStudent.total,
+                isAbsent: (mainStudent.total === null || mainStudent.total === undefined),
+                notes: tempNotes[milId] || anySavedNote || ""
+            };
+        }
+    }
+
+    // 🟠 منطق المواد العسكرية الأخرى (اللجنة)
+    return {
+        ...soldier,
+        member1_score: s1,
+        member2_score: s2,
+        head_score: sH,
+        total: average,
+        notes: tempNotes[milId] || anySavedNote,
+        isAbsent: validScores.length === 0
+    };
+});
+
+    // 3️⃣ الفلترة النهائية (سرية/فصيل) بناءً على اختيارات المستخدم من شريط الأدوات
+    return processedData.filter((s: any) => {
+        const matchCo = innerCompany === "all" || s.company === innerCompany;
+        const matchPl = innerPlatoon === "all" || s.platoon === innerPlatoon;
+        return matchCo && matchPl;
+    });
+
+}, [selectedRecord, availableRecords, viewMode, allSoldiersInBatch, innerCompany, innerPlatoon, tempNotes, configs]);
 
     const getGradeInfo = (total: any, notes: string) => {
         // 🚀 إذا كانت هناك ملاحظة غياب، نلغي النتيجة والتقدير فوراً
@@ -384,65 +407,123 @@ const batchesList = useMemo(() => {
         } catch (e) { toast.error("خطأ في الاعتماد"); }
     };
 
-   const exportToExcel = () => {
-    if (!selectedRecord || !finalReportData.length) return;
+const exportToExcel = () => {
+    if (!selectedRecord || !availableRecords.length) return;
 
     try {
         const wb = XLSX.utils.book_new();
-        
-        // استخراج جميع أسماء المعايير المحتملة من جميع الطلاب لضمان شمولية الأعمدة
-        // (لأن بعض الطلاب قد يكون لديهم معايير مختلفة أو ناقصة)
-        const allPossibleCriteria = new Set<string>();
-        finalReportData.forEach((s: any) => {
-            if (s.scores && typeof s.scores === 'object') {
-                Object.keys(s.scores).forEach(key => allPossibleCriteria.add(key));
-            }
-        });
-        const sortedCriteria = Array.from(allPossibleCriteria).sort();
+        const currentConfig = configs.find(c => c.id === selectedRecord.config_id);
+        const isShooting = currentConfig?.subject === "shooting";
 
-        // بناء البيانات
-        const dataForExcel = finalReportData.map((s: any, i: number) => {
-            // 1. البيانات الأساسية
-            const row: any = {
-                "م": i + 1,
-                "الرتبة": s.rank || "-",
-                "الرقم العسكري": s.military_id,
-                "الاسم": s.name,
-                "السرية": s.company,
-                "الفصيل": s.platoon
-            };
+        const getShootingClass = (total: any) => {
+            const score = Number(total);
+            if (isNaN(score) || score === 0) return "-";
+            if (score >= 90) return "هداف";
+            if (score >= 80) return "درجة أولى";
+            if (score >= 70) return "درجة ثانية";
+            if (score >= 60) return "درجة ثالثة";
+            return "راسب";
+        };
 
-            // 2. الأعمدة الديناميكية (المعايير)
-            // نمر على كل المعايير المكتشفة ونضع درجة الطالب أو صفر/-
-            sortedCriteria.forEach(critName => {
-                let scoreVal = "-";
-                if (s.scores && s.scores[critName] !== undefined) {
-                    scoreVal = s.scores[critName];
+        // 🟢 الدالة المساعدة المطورة: تأخذ البيانات جاهزة مع اسم المدخل لكل طالب
+        const prepareSheetData = (studentsList: any[]) => {
+            const criteria = new Set<string>();
+            studentsList.forEach((s: any) => {
+                if (s.scores) Object.keys(s.scores).forEach(k => criteria.add(k));
+            });
+            const sortedCrit = Array.from(criteria).sort();
+
+            return studentsList.map((s: any, i: number) => {
+                const isAbs = s.total === null || s.total === undefined;
+                const row: any = {
+                    "م": i + 1,
+                    "الرتبة": s.rank || "-",
+                    "الرقم العسكري": s.military_id,
+                    "الاسم": s.name,
+                    "السرية": s.company,
+                    "الفصيل": s.platoon
+                };
+
+                sortedCrit.forEach(crit => {
+                    row[crit] = s.scores?.[crit] ?? "-";
+                });
+
+                row["المجموع"] = isAbs ? "-" : s.total;
+                if (isShooting) {
+                    row["التصنيف"] = isAbs ? "-" : getShootingClass(s.total);
                 }
-                row[critName] = scoreVal;
+
+                row["الملاحظات"] = s.notes || "";
+                // 🟢 هنا السر: نستخدم اسم المدخل المرفق مع بيانات الطالب
+                row["مدخل البيانات"] = isAbs ? "-" : (s.recordedBy || "-");
+
+                return row;
+            });
+        };
+
+        // 🔵 منطق اللجنة: تجميع كافة السجلات حسب الدور
+        if (availableRecords.length > 1) {
+            const rolesOrder = [
+                { key: 'head', label: 'رئيس اللجنة' },
+                { key: 'member1', label: 'عضو 1' },
+                { key: 'member2', label: 'عضو 2' }
+            ];
+
+            rolesOrder.forEach(role => {
+                // 🟢 تجميع كافة السجلات التي تحمل هذا الدور (من كافة الفصائل)
+                const roleRecords = availableRecords.filter(r => r.examiner_role === role.key);
+                
+                if (roleRecords.length > 0) {
+                    let combinedStudents: any[] = [];
+                    
+                    roleRecords.forEach(rec => {
+                        let sData = [];
+                        try {
+                            sData = typeof rec.students_data === 'string' ? JSON.parse(rec.students_data) : rec.students_data;
+                        } catch (e) { sData = rec.students_data || []; }
+                        
+                        // نرفق اسم المنشئ مع كل طالب في هذا السجل
+                        const studentsWithRecorder = sData.map((s: any) => ({
+                            ...s,
+                            recordedBy: rec.creator_name
+                        }));
+                        combinedStudents = [...combinedStudents, ...studentsWithRecorder];
+                    });
+
+                    // إنشاء الشيت لهذا الدور
+                    const sheetJson = prepareSheetData(combinedStudents);
+                    const ws = XLSX.utils.json_to_sheet(sheetJson);
+                    XLSX.utils.book_append_sheet(wb, ws, role.label);
+                }
             });
 
-            // 3. النتائج النهائية
-            const isAbsent = s.total === null || s.total === undefined;
-            row["المجموع"] = isAbsent ? "-" : s.total;
-            row["التقدير"] = isAbsent ? "-" : getGradeInfo(s.total, s.notes).result;
-            row["الملاحظات"] = s.notes || "";
+            // 🔵 شيت النتيجة النهائية (المدمجة)
+            const finalDataWithRecorder = finalReportData.map((s: any) => ({
+                ...s,
+                recordedBy: "دمج آلي للنظام"
+            }));
+            const summaryWs = XLSX.utils.json_to_sheet(prepareSheetData(finalDataWithRecorder));
+            XLSX.utils.book_append_sheet(wb, summaryWs, "النتيجة النهائية");
 
-            // 4. مدخل البيانات (في وضع الرصد فقط)
-            row["مدخل البيانات"] = s.recorded_by || "";
+        } else {
+            // 🔵 منطق الرصد الفردي
+            const rec = availableRecords[0];
+            const finalDataWithRecorder = finalReportData.map((s: any) => ({
+                ...s,
+                recordedBy: rec.creator_name
+            }));
+            const sheetJson = prepareSheetData(finalDataWithRecorder);
+            const ws = XLSX.utils.json_to_sheet(sheetJson);
+            XLSX.utils.book_append_sheet(wb, ws, "نتائج الاختبار");
+        }
 
-            return row;
-        });
-
-        // إنشاء الشيت والحفظ
-        const ws = XLSX.utils.json_to_sheet(dataForExcel);
-        XLSX.utils.book_append_sheet(wb, ws, "النتائج");
-
+        // 📁 حفظ الملف
         const safeTitle = selectedRecord.title.split(" - ")[0].replace(/[\\/:*?"<>|]/g, "_");
         const fileName = `اختبار_عملي_${safeTitle}_${selectedRecord.course}_${selectedRecord.batch}_${selectedRecord.exam_date}.xlsx`;
         
         XLSX.writeFile(wb, fileName);
-        toast.success("تم التصدير بنجاح");
+        toast.success("تم التصدير بنجاح ✅");
+
     } catch (e) {
         console.error("Export Error:", e);
         toast.error("حدث خطأ أثناء التصدير");
@@ -466,23 +547,14 @@ const batchesList = useMemo(() => {
    // 1. ابحث عن هذا المتغير
 const groupedRecords = useMemo(() => {
     const filtered = records.filter(r => {
-        // 🎯 البحث عن "هوية" الاختبار في جدول المعايير المرجعي
         const config = configs.find(c => c.id === r.config_id);
-        
-        // إذا لم نجد الإعداد (ربما حُذف)، نحاول التكهن بالعنوان كخيار احتياطي أخير جداً
         const realSubject = config ? config.subject : (r.subject || "infantry");
         const realExamType = config ? config.exam_type : r.title.split(" - ")[0];
 
-        // 🛡️ شرط الحماية: استبعاد اللياقة والاشتباك (المصنفة في السيستم كـ engagement)
         if (realSubject.includes("engagement") || realSubject === "fitness") return false;
 
-        // 1. المطابقة مع القسم المختار (shooting, infantry, weapons, student_teacher)
         const matchesSection = selectedSection === "all" || realSubject === selectedSection;
-        
-        // 2. المطابقة مع نوع الاختبار (الاسم الرسمي المبرمج في الـ Config)
         const matchesExamType = selectedExamType === "all" || realExamType === selectedExamType;
-
-        // 3. بقية الفلاتر العادية
         const matchesSearch = r.title.includes(searchQuery);
         const matchesDate = !dateSearch || r.exam_date === dateSearch;
         const matchesCourse = courseFilter === "all" || r.course === courseFilter;
@@ -491,12 +563,12 @@ const groupedRecords = useMemo(() => {
         return matchesSection && matchesExamType && matchesSearch && matchesDate && matchesCourse && matchesBatch;
     });
 
-    // منطق التجميع (Groups) مع حساب العدد الحقيقي للطلاب
     const groups: Record<string, any> = {};
     filtered.forEach(r => {
-        const key = `${r.exam_date}-${r.title}-${r.course}-${r.batch}`;
+        // 🟢 التعديل الجوهري: المفتاح الآن يعتمد على التاريخ + رقم الاختبار + الدورة + الدفعة
+        // هذا يضمن دمج جميع السرايا والفصائل في بطاقة واحدة شاملة
+        const key = `${r.exam_date}-${r.config_id}-${r.course}-${r.batch}`;
         
-        // جلب أرقام الطلاب في السجل الحالي
         const currentStudentIds = Array.isArray(r.students_data) 
             ? r.students_data.map((s: any) => String(s.military_id)) 
             : [];
@@ -505,22 +577,30 @@ const groupedRecords = useMemo(() => {
             groups[key] = { 
                 ...r, 
                 all_ids: [r.id],
-                // 🟢 ننشئ Set لتخزين الأرقام العسكرية الفريدة لضمان عدم التكرار
+                // تخزين المعايير الأساسية للبطاقة
+                config_id: r.config_id,
+                course: r.course,
+                batch: r.batch,
+                exam_date: r.exam_date,
                 unique_students: new Set(currentStudentIds) 
             };
         } else {
-            groups[key].all_ids.push(r.id);
+            // تجميع كافة المعرفات (لكل السرايا والفصائل والمقيّمين) داخل هذه البطاقة
+            if (!groups[key].all_ids.includes(r.id)) {
+                groups[key].all_ids.push(r.id);
+            }
+            
+            // تحديث حالة البطاقة لتكون معتمدة إذا اعتمد أي سجل بداخلها (أو حسب منطقك المفضل)
             if (r.status === 'approved') groups[key].status = 'approved';
             
-            // 🟢 إضافة طلاب السجل المدمج للـ Set
-           currentStudentIds.forEach((id: any) => groups[key].unique_students.add(id));
+            // إضافة الطلاب للـ Set لضمان حساب إجمالي طلاب الدفعة المختبرين بدون تكرار
+            currentStudentIds.forEach((id: any) => groups[key].unique_students.add(id));
         }
     });
 
-    // تحويل الكائن إلى مصفوفة وإضافة حقل total_count النهائي
     return Object.values(groups).map((group: any) => ({
         ...group,
-        total_count: group.unique_students.size // ✅ هذا هو الرقم الذي ستستخدمه في البطاقة
+        total_count: group.unique_students.size
     }));
 }, [records, configs, selectedSection, selectedExamType, searchQuery, dateSearch, courseFilter, batchFilter]);
 
@@ -824,7 +904,7 @@ const saveTrainerScoresToDB = async () => {
                 {/* الجدول */}
                 <div className="border-2 border-transparent rounded-lg overflow-x-auto shadow-sm">
     <Table className="w-full">
-                       <TableHeader className="bg-[#c5b391]">
+                     <TableHeader className="bg-[#c5b391]">
     <TableRow className="border-b-2 border-black text-black">
         <TableHead className="text-center border-l border-black font-bold w-10">#</TableHead>
         <TableHead className="text-center border-l border-black font-bold w-24">الرتبة</TableHead>
@@ -845,9 +925,21 @@ const saveTrainerScoresToDB = async () => {
             ));
         })()}
 
-        {/* 2️⃣ ثانياً: عمود النتيجة/المجموع - تم نقله ليصبح بعد الأهداف مباشرة */}
+        {/* 🟢 أعمدة اللجنة: تظهر فقط إذا كان هناك أكثر من سجل واحد مرتبط (تعدد رصد) */}
+        {availableRecords.length > 1 && (
+            <>
+                <TableHead className="text-center border-l border-black font-bold bg-[#bfa87e] w-20 px-1">عضو 1</TableHead>
+                <TableHead className="text-center border-l border-black font-bold bg-[#bfa87e] w-20 px-1">عضو 2</TableHead>
+                <TableHead className="text-center border-l border-black font-bold bg-[#bfa87e] w-20 px-1">رئيس اللجنة</TableHead>
+            </>
+        )}
+
+        {/* 2️⃣ ثانياً: عمود النتيجة النهائية (يتبدل مسماه بين المتوسط والمجموع تلقائياً) */}
         <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-24">
-            {isShooting ? "النتيجة" : (showTrainerScore ? "المجموع (90%)" : "المجموع")}
+            {availableRecords.length > 1 
+                ? "المتوسط" 
+                : (isShooting ? "النتيجة" : (showTrainerScore ? "المجموع (90%)" : "المجموع"))
+            }
         </TableHead>
 
         {/* 3️⃣ ثالثاً: بقية أعمدة الرماية الثابتة (التصنيف ونسبة الإصابة) */}
@@ -873,89 +965,104 @@ const saveTrainerScoresToDB = async () => {
         <TableHead className="text-right font-bold px-4">ملاحظات</TableHead>
     </TableRow>
 </TableHeader>
-                        <TableBody>
-                            {finalReportData.map((s: any, idx: number) => {
-                                const g = getGradeInfo(s.total, s.notes);
-                                const isAbsent = isStudentAbsent(s);
-                                const isVisibleOnScreen = idx >= (innerCurrentPage - 1) * innerItemsPerPage && idx < innerCurrentPage * innerItemsPerPage;
-                                
-                                return (
-                                    <TableRow 
-    key={`${s.military_id}-${viewMode}`} 
-    className={`border-b border-black font-bold text-center h-10 hover:bg-slate-50 transition-colors 
-    ${isVisibleOnScreen ? 'table-row' : 'hidden print:table-row force-print'}`}
->
-    <TableCell className="border-l border-black">{idx + 1}</TableCell>
-    <TableCell className="border-l border-black">{s.rank}</TableCell>
-    <TableCell className="border-l border-black font-mono">{s.military_id}</TableCell>
-    <TableCell className="text-right border-l border-black px-4 whitespace-nowrap">{s.name}</TableCell>
-    <TableCell className="border-l border-black text-[10px] font-bold">{s.company} / {s.platoon}</TableCell>
+                      <TableBody>
+    {finalReportData.map((s: any, idx: number) => {
+        const g = getGradeInfo(s.total, s.notes);
+        const isAbsent = s.isAbsent; 
+        const isVisibleOnScreen = idx >= (innerCurrentPage - 1) * innerItemsPerPage && idx < innerCurrentPage * innerItemsPerPage;
+        
+        return (
+            <TableRow 
+                key={`${s.military_id}-${viewMode}`} 
+                className={`border-b border-black font-bold text-center h-10 hover:bg-slate-50 transition-colors 
+                ${isVisibleOnScreen ? 'table-row' : 'hidden print:table-row force-print'}`}
+            >
+                <TableCell className="border-l border-black">{idx + 1}</TableCell>
+                <TableCell className="border-l border-black">{s.rank}</TableCell>
+                <TableCell className="border-l border-black font-mono">{s.military_id}</TableCell>
+                <TableCell className="text-right border-l border-black px-4 whitespace-nowrap">{s.name}</TableCell>
+                <TableCell className="border-l border-black text-[10px] font-bold">{s.company} / {s.platoon}</TableCell>
 
-    {/* 1️⃣ أولاً: عرض درجات الأهداف بشكل ديناميكي (تظهر فقط في الرماية) */}
-    {isShooting && (() => {
-        const targets = new Set<string>();
-        selectedRecord.students_data.forEach((student: any) => {
-            if (student.scores) Object.keys(student.scores).forEach(key => targets.add(key));
-        });
-        return Array.from(targets).sort().map(targetName => (
-            <TableCell key={targetName} className="border-l border-black bg-white/50 text-center">
-                {isAbsent ? "-" : (s.scores?.[targetName] || 0)}
-            </TableCell>
-        ));
-    })()}
-
-    {/* 2️⃣ ثانياً: خلية النتيجة (المجموع) - تم نقلها لتصبح بعد الأهداف مباشرة */}
-    <TableCell className="border-l border-black font-black text-lg bg-slate-50">
-        {isAbsent ? "-" : s.total}
-    </TableCell>
-
-    {/* 3️⃣ ثالثاً: بقية خلايا الرماية (التصنيف ونسبة الإصابة) */}
-    {isShooting && (
-        <>
-            <TableCell className="border-l border-black text-blue-800 font-black bg-white">
-                {isAbsent ? "" : getShootingClass(s.total)}
-            </TableCell>
-
-            <TableCell className="border-l border-black font-mono font-bold text-orange-700 bg-white text-center">
-                {isAbsent ? "" : (() => {
-                    const totalHits = Object.values(s.scores || {}).reduce((sum: number, val: any) => {
-                        return sum + (Number(val) || 0);
-                    }, 0);
-                    const accuracyPercentage = totalShots > 0 ? (totalHits / totalShots) * 100 : 0;
-                    return `${accuracyPercentage.toFixed(0)}%`;
+                {/* 1️⃣ أولاً: عرض درجات الأهداف (تظهر فقط في الرماية) */}
+                {isShooting && (() => {
+                    const targets = new Set<string>();
+                    selectedRecord.students_data.forEach((student: any) => {
+                        if (student.scores) Object.keys(student.scores).forEach(key => targets.add(key));
+                    });
+                    return Array.from(targets).sort().map(targetName => (
+                        <TableCell key={targetName} className="border-l border-black bg-white/50 text-center">
+                            {isAbsent ? "-" : (s.scores?.[targetName] || 0)}
+                        </TableCell>
+                    ));
                 })()}
-            </TableCell>
-        </>
-    )}
 
-    {/* خلية درجة المدرب - تجلب القيمة من ملف الإكسل المستورد */}
-    {showTrainerScore && (
-        <TableCell className="border-l border-black font-black text-lg text-blue-700 bg-orange-50/30">
-            {isAbsent ? "-" : (
-                trainerScores[String(s.military_id)] !== undefined 
-                    ? trainerScores[String(s.military_id)] 
-                    : (s.trainer_score || 0)
-            )}
-        </TableCell>
-    )}
+                {/* 🟢 خلايا درجات اللجنة: تظهر فقط إذا كان هناك أكثر من سجل واحد مرتبط */}
+                {availableRecords.length > 1 && (
+                    <>
+                        <TableCell className="border-l border-black bg-slate-50/30 text-center text-blue-700">
+                            {s.member1_score ?? "-"}
+                        </TableCell>
+                        <TableCell className="border-l border-black bg-slate-50/30 text-center text-blue-700">
+                            {s.member2_score ?? "-"}
+                        </TableCell>
+                        <TableCell className="border-l border-black bg-red-50/20 text-center text-red-700">
+                            {s.head_score ?? "-"}
+                        </TableCell>
+                    </>
+                )}
 
-    {!isShooting && (
-        <TableCell className="border-l border-black">
-            {isAbsent ? "-" : g.result}
-        </TableCell>
-    )}
+                {/* 2️⃣ ثانياً: خلية النتيجة النهائية (المتوسط أو المجموع) */}
+                <TableCell className="border-l border-black font-black text-lg bg-slate-100">
+                    {isAbsent ? "-" : s.total}
+                </TableCell>
 
-    <TableCell className="text-right border-l border-black px-2 no-print min-w-[150px]">
-        {renderNoteCell(s)}
-    </TableCell>
+                {/* 3️⃣ ثالثاً: بقية خلايا الرماية (التصنيف ونسبة الإصابة) */}
+                {isShooting && (
+                    <>
+                        <TableCell className="border-l border-black text-blue-800 font-black bg-white">
+                            {isAbsent ? "" : getShootingClass(s.total)}
+                        </TableCell>
 
-    <TableCell className="text-right px-2 hidden print:table-cell text-[10px]">
-        {tempNotes[s.military_id] || s.notes || (isAbsent ? "" : "-")}
-    </TableCell>
-</TableRow>
-                                );
-                            })}
-                        </TableBody>
+                        <TableCell className="border-l border-black font-mono font-bold text-orange-700 bg-white text-center">
+                            {isAbsent ? "" : (() => {
+                                const totalHits = Object.values(s.scores || {}).reduce((sum: number, val: any) => {
+                                    return sum + (Number(val) || 0);
+                                }, 0);
+                                const accuracyPercentage = totalShots > 0 ? (totalHits / totalShots) * 100 : 0;
+                                return `${accuracyPercentage.toFixed(0)}%`;
+                            })()}
+                        </TableCell>
+                    </>
+                )}
+
+                {/* خلية درجة المدرب */}
+                {showTrainerScore && (
+                    <TableCell className="border-l border-black font-black text-lg text-blue-700 bg-orange-50/30">
+                        {isAbsent ? "-" : (
+                            trainerScores[String(s.military_id)] !== undefined 
+                                ? trainerScores[String(s.military_id)] 
+                                : (s.trainer_score || 0)
+                        )}
+                    </TableCell>
+                )}
+
+                {!isShooting && (
+                    <TableCell className="border-l border-black">
+                        {isAbsent ? "-" : g.result}
+                    </TableCell>
+                )}
+
+                <TableCell className="text-right border-l border-black px-2 no-print min-w-[150px]">
+                    {renderNoteCell(s)}
+                </TableCell>
+
+                <TableCell className="text-right px-2 hidden print:table-cell text-[10px]">
+                    {tempNotes[s.military_id] || s.notes || (isAbsent ? "" : "-")}
+                </TableCell>
+            </TableRow>
+        );
+    })}
+</TableBody>
                     </Table>
                 </div>
 
@@ -1154,7 +1261,7 @@ const saveTrainerScoresToDB = async () => {
                     {loading ? <div className="flex justify-center py-20"><Loader2 className="animate-spin w-10 h-10 text-[#c5b391]" /></div> : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" dir="rtl">
                             {paginatedRecords.map((record: any) => (
-                                <Card key={`${record.exam_date}-${record.title}-${record.course}-${record.batch}`} className="cursor-pointer border-r-8 border-[#c5b391] hover:shadow-2xl transition-all group relative overflow-hidden" onClick={() => handleCardClick(record)}>
+                                <Card key={`${record.exam_date}-${record.config_id}-${record.course}-${record.batch}`} className="cursor-pointer border-r-8 border-[#c5b391] hover:shadow-2xl transition-all group relative overflow-hidden" onClick={() => handleCardClick(record)}>
                                     <CardHeader className="pb-2">
                                         <div className="flex justify-between items-start flex-row-reverse mb-2">
                                             <Badge className={record.status === 'approved' ? "bg-green-600 text-white shadow-sm" : "bg-orange-50 text-orange-600 border border-orange-200"}>
@@ -1229,65 +1336,156 @@ const saveTrainerScoresToDB = async () => {
                 </AlertDialogContent>
             </AlertDialog>
        {/* 🟢 نافذة حل تعارض البيانات المكررة المحدثة بأيقونات الحذف */}
-<AlertDialog open={conflictDialog}>
-    <AlertDialogContent dir="rtl" className="max-w-2xl">
-        <AlertDialogHeader className="border-b pb-4">
-            <AlertDialogTitle className="text-red-600 flex items-center gap-2 text-xl font-black">
-                <AlertTriangle className="w-6 h-6" /> تنبيه: تكرار في رصد الدرجات
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-slate-600 font-bold">
-                يوجد درجتان مختلفتان لنفس الطالب. اختر النسخة التي تريد **حذفها نهائياً** من قاعدة البيانات.
-            </AlertDialogDescription>
-        </AlertDialogHeader>
+{/* 🟢 نافذة حل تضارب الأدوار للفصائل - نسخة منضبطة برمجياً */}
+        <AlertDialog open={committeeDialog} onOpenChange={setCommitteeDialog}>
+            <AlertDialogContent dir="rtl" className="max-w-xl rounded-2xl border-2 border-slate-100 shadow-2xl">
+                <AlertDialogHeader className="items-center text-center">
+                    <div className="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center text-orange-600 mb-2 border border-orange-100">
+                        <ShieldCheck className="w-8 h-8" />
+                    </div>
+                    <AlertDialogTitle className="text-xl font-black text-slate-900">إدارة تضارب أدوار اللجنة</AlertDialogTitle>
+                    <AlertDialogDescription className="text-slate-500 font-bold px-2 text-center">
+                        تم رصد تضارب في توزيع الأدوار لبعض الفصائل. يرجى تحديد (عضو 1 و 2) لكل فصيل أدناه.
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
 
-        {conflicts.length > 0 && (
-            <div className="space-y-6 mt-6">
-                <div className="text-center bg-slate-100 p-3 rounded-lg border border-dashed border-slate-300">
-                    <p className="text-lg font-black text-slate-800">{conflicts[0].student_name}</p>
-                    <p className="text-sm font-mono text-blue-600 font-bold">{conflicts[0].military_id}</p>
+              <div className="max-h-[50vh] overflow-y-auto px-1 space-y-6 py-4">
+    {pendingGroup?.conflictedGroups && Object.entries(pendingGroup.conflictedGroups).map(([pKey, recs]: [string, any]) => (
+        <div key={pKey} className="p-4 border-2 border-orange-100 rounded-xl bg-orange-50/30 space-y-3">
+            <h3 className="font-black text-orange-700 flex items-center gap-2 border-b border-orange-200 pb-2 text-sm">
+                <div className="w-2 h-2 bg-orange-500 rounded-full" />
+                السرية / الفصيل: {pKey}
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* 1. عضو لجنة (1) */}
+                <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-500">عضو لجنة (1)</Label>
+                    <Select value={committeeMapping[`${pKey}_member1`] || ""} onValueChange={(v) => setCommitteeMapping(prev => ({...prev, [`${pKey}_member1`]: v}))}>
+                        <SelectTrigger className="h-9 bg-white font-bold text-[11px] border-blue-100"><SelectValue placeholder="اختر..." /></SelectTrigger>
+                        <SelectContent dir="rtl">
+                            <SelectItem value="none">--- تخطي ---</SelectItem>
+                            {recs.map((r: any) => (
+                                <SelectItem 
+                                    key={r.id} 
+                                    value={String(r.id)}
+                                    // 🔒 يعطل إذا كان مختاراً كعضو 2 أو رئيس لنفس الفصيل
+                                    disabled={committeeMapping[`${pKey}_member2`] === String(r.id) || committeeMapping[`${pKey}_head`] === String(r.id)}
+                                >
+                                    {r.creator_name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* النسخة A */}
-                    <div className="group relative border-2 border-slate-200 p-5 rounded-2xl bg-white hover:border-red-400 transition-all shadow-sm">
-                        <Badge className="absolute -top-3 right-4 bg-blue-600">الرصد الأول</Badge>
-                        <p className="text-xs text-slate-400 mb-1">الراصد: {conflicts[0].version_A.recorded_by}</p>
-                        <div className="text-4xl font-black text-slate-700 my-2">{conflicts[0].version_A.total}</div>
-                        
-                        <Button 
-                            variant="destructive" 
-                            className="w-full mt-4 gap-2 font-bold shadow-md active:scale-95 transition-transform"
-                            onClick={() => resolveConflict(0, 'B')} // يعني سنعتمد B ونحذف A
-                        >
-                            <Trash2 className="w-4 h-4" /> حذف هذه النسخة
-                        </Button>
-                    </div>
-
-                    {/* النسخة B */}
-                    <div className="group relative border-2 border-slate-200 p-5 rounded-2xl bg-white hover:border-red-400 transition-all shadow-sm">
-                        <Badge className="absolute -top-3 right-4 bg-orange-600">الرصد الثاني</Badge>
-                        <p className="text-xs text-slate-400 mb-1">الراصد: {conflicts[0].version_B.recorded_by}</p>
-                        <div className="text-4xl font-black text-slate-700 my-2">{conflicts[0].version_B.total}</div>
-
-                        <Button 
-                            variant="destructive" 
-                            className="w-full mt-4 gap-2 font-bold shadow-md active:scale-95 transition-transform"
-                            onClick={() => resolveConflict(0, 'A')} // يعني سنعتمد A ونحذف B
-                        >
-                            <Trash2 className="w-4 h-4" /> حذف هذه النسخة
-                        </Button>
-                    </div>
+                {/* 2. عضو لجنة (2) */}
+                <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-slate-500">عضو لجنة (2)</Label>
+                    <Select value={committeeMapping[`${pKey}_member2`] || ""} onValueChange={(v) => setCommitteeMapping(prev => ({...prev, [`${pKey}_member2`]: v}))}>
+                        <SelectTrigger className="h-9 bg-white font-bold text-[11px] border-blue-100"><SelectValue placeholder="اختر..." /></SelectTrigger>
+                        <SelectContent dir="rtl">
+                            <SelectItem value="none">--- تخطي ---</SelectItem>
+                            {recs.map((r: any) => (
+                                <SelectItem 
+                                    key={r.id} 
+                                    value={String(r.id)}
+                                    // 🔒 يعطل إذا كان مختاراً كعضو 1 أو رئيس لنفس الفصيل
+                                    disabled={committeeMapping[`${pKey}_member1`] === String(r.id) || committeeMapping[`${pKey}_head`] === String(r.id)}
+                                >
+                                    {r.creator_name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
                 </div>
-                
-                <p className="text-center text-[10px] text-slate-400 italic">
-                    * المتبقي للمعالجة: {conflicts.length} طالب
-                </p>
+
+                {/* 3. رئيس اللجنة */}
+                <div className="space-y-1">
+                    <Label className="text-[10px] font-bold text-red-500">رئيس اللجنة</Label>
+                    <Select value={committeeMapping[`${pKey}_head`] || ""} onValueChange={(v) => setCommitteeMapping(prev => ({...prev, [`${pKey}_head`]: v}))}>
+                        <SelectTrigger className="h-9 bg-red-50/50 font-bold text-[11px] border-red-100 text-red-700"><SelectValue placeholder="اختر..." /></SelectTrigger>
+                        <SelectContent dir="rtl">
+                            <SelectItem value="none">--- تخطي ---</SelectItem>
+                            {recs.map((r: any) => (
+                                <SelectItem 
+                                    key={r.id} 
+                                    value={String(r.id)}
+                                    // 🔒 يعطل إذا كان مختاراً كعضو 1 أو عضو 2 لنفس الفصيل
+                                    disabled={committeeMapping[`${pKey}_member1`] === String(r.id) || committeeMapping[`${pKey}_member2`] === String(r.id)}
+                                >
+                                    {r.creator_name}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
             </div>
-        )}
-    </AlertDialogContent>
-</AlertDialog>
         </div>
+    ))}
+</div>
 
-       </ProtectedRoute> 
+                <AlertDialogFooter className="flex-row-reverse gap-3 p-4 bg-slate-50 rounded-b-2xl">
+                    <Button 
+                        className="bg-blue-600 text-white font-bold flex-1 h-11 shadow-lg hover:bg-blue-700 gap-2"
+                        disabled={loading}
+                       onClick={async () => {
+    setLoading(true);
+    try {
+        // 1. تحديث قاعدة البيانات (الباك إند)
+        for (const [key, recordId] of Object.entries(committeeMapping)) {
+            if (recordId === "none") continue;
+            const role = key.split('_')[1]; // استخراج الدور (member1, member2, head)
+            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records/${recordId}/update-role?role=${role}`, {
+                method: "PATCH",
+                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+            });
+        }
+
+        // 🟢 2. الابتكار الجديد: تحديث "ذاكرة المتصفح" لحظياً ليدعم تعدد الفصائل
+        const updatedLocalRecords = availableRecords.map(rec => {
+            const rid = String(rec.id);
+            // نبحث في القاموس: هل هذا السجل تم تعيين دور جديد له؟
+            // نحن نبحث عن القيمة (ID) داخل قاموس committeeMapping
+            const foundEntry = Object.entries(committeeMapping).find(([mapKey, mapVal]) => mapVal === rid);
+            
+            if (foundEntry) {
+                const newRole = foundEntry[0].split('_')[1]; // استخراج الدور الجديد
+                return { ...rec, examiner_role: newRole };
+            }
+            return rec;
+        });
+
+        // 3. حقن البيانات المحدثة في الحالة (State) فوراً
+        setAvailableRecords(updatedLocalRecords); 
+        
+        // 4. مزامنة الأرشيف العام في الخلفية (اختياري لضمان الدقة)
+        await fetchRecords(); 
+        
+        // 5. فتح الجدول وإغلاق النافذة
+        setSelectedRecord(pendingGroup);
+        setCommitteeDialog(false);
+        setCommitteeMapping({}); // تصفير الاختيارات
+        
+        toast.success("تم تحديث كافة الفصائل وظهور النتائج فوراً ✅");
+
+    } catch (e) {
+        console.error("Batch update error:", e);
+        toast.error("حدث خطأ أثناء التحديث الجماعي");
+    } finally {
+        setLoading(false);
+    }
+}}
+                    >
+                        {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "إعتماد وتصحيح الكل"}
+                    </Button>
+                    <AlertDialogCancel className="font-bold flex-1 h-11 rounded-xl" onClick={() => setCommitteeDialog(false)}>
+                        إلغاء
+                    </AlertDialogCancel>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+    </div>
+</ProtectedRoute>
     );
 }

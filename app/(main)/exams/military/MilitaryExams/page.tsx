@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react"
 import { 
   Target, Search, Trash2, Save, User, Loader2, 
-  ShieldCheck, UserPlus, FileText, AlertTriangle, Filter, ChevronDown
+  ShieldCheck, UserPlus, FileText, AlertTriangle, Filter, ChevronDown, Users
 } from "lucide-react"
 import { toast } from "sonner"
 import { Input } from "@/components/ui/input"
@@ -45,7 +45,7 @@ export default function MilitaryExamsPage() {
   // 1. حالات الاختيار الرئيسية (القسم والاختبار)
   const [selectedSectionKey, setSelectedSectionKey] = useState<string>("")
   const [selectedExamId, setSelectedExamId] = useState<string>("")
-  
+  const [selectedRole, setSelectedRole] = useState<string>("")
   // بيانات النظام (تُجلب من الباك إند)
   const [militarySections, setMilitarySections] = useState<any[]>([])
   const [allExamConfigs, setAllExamConfigs] = useState<any[]>([])
@@ -109,6 +109,11 @@ const isShooting = useMemo(() => selectedSectionKey === 'shooting', [selectedSec
   const handleSearch = async () => {
     if (!selectedExamId) return toast.error("يرجى اختيار نوع الاختبار أولاً");
     
+    // 🟢 التعديل: نطلب الصفة فقط إذا لم يكن الاختبار رماية
+    if (!isShooting && !selectedRole) {
+        return toast.error("يرجى تحديد صفتك (عضو/رئيس) قبل البدء");
+    }
+
     const cleanQuery = normalizeNumbers(searchQuery).trim();
     if (!cleanQuery) return;
     if (students.find(s => s.military_id === cleanQuery)) return toast.error("هذا المختبر مضاف بالفعل");
@@ -209,6 +214,7 @@ const isShooting = useMemo(() => selectedSectionKey === 'shooting', [selectedSec
             batch: "mixed_sync",
             company: "متعدد",
             platoon: "متعدد",
+            examiner_role: isShooting ? "none" : selectedRole,
             students_data: students.map((s) => ({
                 military_id: s.military_id,
                 name: s.name,
@@ -251,7 +257,7 @@ const isShooting = useMemo(() => selectedSectionKey === 'shooting', [selectedSec
       {/* 1. منطقة الاختيار العلوية (القسم والاختبار) */}
       <Card className="bg-white dark:bg-slate-900 border-t-4 border-t-[#c5b391] shadow-md">
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             
             {/* اختيار القسم */}
             <div className="space-y-2">
@@ -289,7 +295,23 @@ const isShooting = useMemo(() => selectedSectionKey === 'shooting', [selectedSec
                 </SelectContent>
               </Select>
             </div>
-
+{!isShooting && (
+    <div className="space-y-2">
+        <Label className="text-sm font-bold text-[#c5b391] flex items-center gap-2">
+            <Users className="w-4 h-4" /> صفتك في اللجنة (إلزامي)
+        </Label>
+        <Select value={selectedRole} onValueChange={setSelectedRole}>
+            <SelectTrigger className="h-12 bg-amber-50 border-amber-200 text-amber-800 font-black">
+                <SelectValue placeholder="-- اختر صفتك --" />
+            </SelectTrigger>
+            <SelectContent dir="rtl">
+                <SelectItem value="member1">عضو لجنة (1)</SelectItem>
+                <SelectItem value="member2">عضو لجنة (2)</SelectItem>
+                <SelectItem value="head" className="text-red-700">رئيس اللجنة</SelectItem>
+            </SelectContent>
+        </Select>
+    </div>
+)}
           </div>
         </CardContent>
       </Card>
@@ -332,10 +354,11 @@ const isShooting = useMemo(() => selectedSectionKey === 'shooting', [selectedSec
                     <Button onClick={handleSearch} className="flex-1 md:w-auto bg-[#c5b391] hover:bg-[#b4a280] text-slate-900 font-bold h-11 gap-2">
                         <UserPlus className="w-5 h-5" /> إضافة
                     </Button>
-                    <Button 
-  onClick={() => setIsConfirmSaveOpen(true)} // فتح نافذة التأكيد أولاً
-  disabled={loading || students.length === 0} 
-  className="flex-1 md:w-auto bg-green-700 hover:bg-green-800 text-white font-bold h-11 gap-2 shadow-lg"
+                   <Button 
+    onClick={() => setIsConfirmSaveOpen(true)}
+    // 🟢 التعديل: لا نشترط selectedRole إذا كان isShooting محققاً
+    disabled={loading || students.length === 0 || (!isShooting && !selectedRole)}
+    className="flex-1 md:w-auto bg-green-700 hover:bg-green-800 text-white font-bold h-11 gap-2 shadow-lg"
 >
   {loading ? <Loader2 className="animate-spin w-5 h-5" /> : <Save className="w-5 h-5" />}
   حفظ النتائج

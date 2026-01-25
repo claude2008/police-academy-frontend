@@ -138,6 +138,7 @@ export default function LoginPage() {
   sizes="(max-width: 768px) 100vw, 150px" // 👈 أضف هذا السطر
   className="object-contain p-2"
   priority
+  suppressHydrationWarning
 />
             </div>
             <CardTitle className="text-2xl font-bold text-slate-800 dark:text-white">
@@ -188,14 +189,16 @@ export default function LoginPage() {
           </CardContent>
           
           <CardFooter className="pt-2 pb-8">
-            <Button 
-              className="w-full text-lg py-6 font-semibold shadow-lg transition-all bg-slate-900 hover:bg-slate-800 text-white dark:bg-blue-600 dark:hover:bg-blue-700"
-              onClick={handleLogin}
-              disabled={loading}
-            >
-              {loading ? "جارِ التحقق..." : "تسجيل الدخول"}
-            </Button>
-          </CardFooter>
+  <Button 
+    className="w-full text-lg py-6 font-semibold shadow-lg transition-all bg-slate-900 hover:bg-slate-800 text-white dark:bg-blue-600 dark:hover:bg-blue-700"
+    onClick={handleLogin}
+    disabled={loading}
+    // 🟢 أضف السطر التالي هنا
+    suppressHydrationWarning 
+  >
+    {loading ? "جارِ التحقق..." : "تسجيل الدخول"}
+  </Button>
+</CardFooter>
           <CardDescription className="text-center text-slate-500 dark:text-slate-400">
              إعداد وتطوير : مـحمد خـالد الصدفـي
             </CardDescription>
@@ -226,6 +229,7 @@ export default function LoginPage() {
   onClick={handleForceChange} 
   className="w-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center gap-2"
   disabled={loading} // 🔒 منع الضغط أثناء التحميل
+  suppressHydrationWarning
 >
   {loading ? (
     <>

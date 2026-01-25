@@ -306,14 +306,28 @@ export default function DashboardPage() {
 
         // ب. المدرب
         if (isTrainer) {
-            if (featureId === 'attendance') router.push(`/daily-schedule?branch=${myBranch}`);
-            if (featureId === 'violations') router.push(`/violations?branch=${myBranch}`);
-            if (featureId === 'soldiers') router.push(`/courses/${autoBranch}/soldiers`);
-            if (featureId === 'exams') {
-                setSelectionState({ isOpen: true, step: 'exam_select', feature: 'exams', selectedBranch: myBranch, selectedExamType: null });
-            }
-            return;
+    if (featureId === 'attendance') router.push(`/daily-schedule?branch=${myBranch}`);
+    if (featureId === 'violations') router.push(`/violations?branch=${myBranch}`);
+    if (featureId === 'soldiers') router.push(`/courses/${autoBranch}/soldiers`);
+    
+    if (featureId === 'exams') {
+        // 🟢 التعديل الجوهري هنا:
+        // إذا كان المدرب عسكري، نرسله فوراً لصفحة الاختبارات العسكرية دون فتح النافذة
+        if (role === 'military_trainer') {
+            router.push('/exams/military/MilitaryExams');
+        } else {
+            // المدرب الرياضي تفتح له النافذة ليختار (لياقة أم اشتباك)
+            setSelectionState({ 
+                isOpen: true, 
+                step: 'exam_select', 
+                feature: 'exams', 
+                selectedBranch: myBranch, 
+                selectedExamType: null 
+            });
         }
+    }
+    return;
+}
 
         // ج. المشرف/الضابط
         if (isSupervisorOrOfficer) {
