@@ -5,7 +5,7 @@ import {
     Table as TableIcon, Search, Printer, Download, 
     Eye, ShieldCheck, CheckCircle2, X, Loader2, RotateCcw, 
     ArrowRight, Calendar, Trash2, ChevronRight, ChevronLeft, 
-    AlertTriangle, ListFilter, Save, Swords, Activity, UserCheck, FileWarning
+    AlertTriangle, ListFilter, Save, Swords, Activity, UserCheck, FileWarning,Layers
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ import { ar } from "date-fns/locale"
 import { toast } from "sonner"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import * as XLSX from 'xlsx';
+import { useRouter, useSearchParams } from "next/navigation"
 
 const absenceKeywords = ["غياب", "غائب", "إصابة", "لم يختبر", "شطب", "مؤجل", "اعتذار", "طبية", "مستشفى", "ملحق", "عيادة", "مرضية", "مفصول", "اصابة", "استقالة", "إستقالة"];
 
@@ -50,7 +51,10 @@ export default function FitnessRecordsPage() {
     const [deleteTarget, setDeleteTarget] = useState<{id: number, title: string, all_ids: number[]} | null>(null);
     const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
     const [printDestination, setPrintDestination] = useState<"sports" | "control">("sports");
-
+    const router = useRouter()
+const searchParams = useSearchParams() // 👈 إضافة هذا
+const targetRecordId = searchParams.get('record_id') // 👈 استخراج المعرف
+  const [activeGroup, setActiveGroup] = useState<{ course: string; batch: string } | null>(null);
    useEffect(() => {
     const user = JSON.parse(localStorage.getItem("user") || "{}")
     setUserRole(user.role || "")
@@ -221,104 +225,166 @@ const uniqueCourses = useMemo(() => [...new Set(records.map(r => r.course))].fil
     }, [selectedGroup, viewMode]);
 
 
+const courseBatchGroups = useMemo(() => {
+    const groups: Record<string, any> = {};
+    
+    records.forEach(r => {
+        // ... (نفس كود الفلترة الأولية كما هو) ...
+        const titleLower = (r.title || "").toLowerCase();
+        const subject = r.subject || "";
+        const isEngagement = titleLower.includes("اشتباك") || subject.startsWith("engagement_");
+        const militaryKeywords = ["اشتباك", "رماية", "مسدس", "بندقية", "مشاة", "تلميذ"];
+        const isMilitary = militaryKeywords.some(k => titleLower.includes(k)) && !isEngagement;
+        const isFitness = !isMilitary && !isEngagement;
 
-    const groupedRecords = useMemo(() => {
+        let matchesTab = false;
+        if (activeTab === "fitness") matchesTab = isFitness;
+        else matchesTab = isEngagement;
 
-        const filtered = records.filter(r => {
+        if (!matchesTab) return;
 
-            const titleLower = r.title.toLowerCase();
+        // تجميع حسب الدورة والدفعة
+        const key = `${r.course}-${r.batch}`;
+        if (!groups[key]) {
+            groups[key] = {
+                course: r.course,
+                batch: r.batch,
+                examsUniqueKeys: new Set(), 
+            };
+        }
+        
+        // 🟢 الحل الجذري لمشكلة العد:
+        let uniqueKey;
+        if (activeTab === "engagement") {
+            // في الاشتباك: نعتمد على (التاريخ) فقط لدمج الجزئين (فني + سيناريو)
+            // أو نقوم بتنظيف العنوان من الأقواس
+            uniqueKey = `${r.exam_date}-engagement-unified`;
+        } else {
+            // في اللياقة: نعتمد على العنوان بالكامل لأن الاختبارات قد تختلف
+            uniqueKey = `${r.exam_date}-${r.title}`;
+        }
 
-            const subject = r.subject || "";
+        groups[key].examsUniqueKeys.add(uniqueKey);
+    });
 
-            const isEngagement = titleLower.includes("اشتباك") || subject.startsWith("engagement_");
+    return Object.values(groups).map(g => ({
+        ...g,
+        examCount: g.examsUniqueKeys.size,
+    })).filter(g => {
+        const matchCourse = filterCourse === "all" || g.course === filterCourse;
+        const matchBatch = filterBatch === "all" || g.batch === filterBatch;
+        return matchCourse && matchBatch;
+    });
+}, [records, activeTab, filterCourse, filterBatch]);
+  const groupedRecords = useMemo(() => {
+    // 🚨 شرط الحماية: إذا لم نكن داخل دورة، لا نحسب شيئاً
+    if (!activeGroup) return [];
 
-            const militaryKeywords = ["اشتباك", "رماية", "مسدس", "بندقية", "مشاة", "تلميذ"];
+    const filtered = records.filter(r => {
+        // 🟢 قيد إضافي: يجب أن يطابق الدورة والدفعة المختارة
+        const isSameGroup = r.course === activeGroup.course && r.batch === activeGroup.batch;
+        if (!isSameGroup) return false;
 
-            const isMilitary = militaryKeywords.some(k => titleLower.includes(k)) || subject.startsWith("engagement_");
+        const titleLower = r.title.toLowerCase();
+        const subject = r.subject || "";
+        const isEngagement = titleLower.includes("اشتباك") || subject.startsWith("engagement_");
+        const militaryKeywords = ["اشتباك", "رماية", "مسدس", "بندقية", "مشاة", "تلميذ"];
+        const isMilitary = militaryKeywords.some(k => titleLower.includes(k)) || subject.startsWith("engagement_");
+        const isFitness = !isMilitary; 
 
-            const isFitness = !isMilitary; 
+        let matchesTab = false;
+        if (activeTab === "fitness") matchesTab = isFitness;
+        else matchesTab = isEngagement;
 
+        return matchesTab && (!searchQuery || r.title.includes(searchQuery)) && (!dateSearch || r.exam_date === dateSearch);
+    });
 
+    // ... (باقي كود التجميع كما هو بدون تغيير) ...
+    const groups: Record<string, any> = {};
+    filtered.forEach(r => {
+        const sData = Array.isArray(r.students_data) ? r.students_data : [];
+        const axesFingerprint = sData[0]?.axes_fingerprint || `legacy-${r.config_id}`;
+        const groupKey = activeTab === "fitness" 
+            ? `${r.exam_date}-${r.course}-${r.batch}-${r.title}`
+            : `${r.exam_date}-${r.course}-${r.batch}-${axesFingerprint}`;
 
-            let matchesTab = false;
+        if (!groups[groupKey]) {
+            const displayTitle = activeTab === "engagement" 
+                ? `اختبار اشتباك - ${r.exam_date} - ${r.course} (${r.batch})` 
+                : r.title;
 
-            if (activeTab === "fitness") {
+            groups[groupKey] = { 
+                key: groupKey, 
+                title: displayTitle, 
+                exam_date: r.exam_date, 
+                course: r.course, 
+                batch: r.batch, 
+                sub_records: [r], 
+                status: r.status, 
+                type: activeTab 
+            };
+        } else {
+            groups[groupKey].sub_records.push(r);
+            if (r.status === 'approved') groups[groupKey].status = 'approved';
+        }
+    });
 
-                matchesTab = isFitness;
-
-            } else {
-
-                matchesTab = isEngagement;
-
-            }
-
-
-
-            return matchesTab && (!searchQuery || r.title.includes(searchQuery)) && (!dateSearch || r.exam_date === dateSearch);
-
-        });
-
-
-
-        const groups: Record<string, any> = {};
-        filtered.forEach(r => {
-            const sData = Array.isArray(r.students_data) ? r.students_data : [];
-            const axesFingerprint = sData[0]?.axes_fingerprint || `legacy-${r.config_id}`;
-            const groupKey = activeTab === "fitness" 
-                ? `${r.exam_date}-${r.course}-${r.batch}-${r.title}`
-                : `${r.exam_date}-${r.course}-${r.batch}-${axesFingerprint}`;
-
-            if (!groups[groupKey]) {
-                // 🟢 هنا السر: إذا كان اشتباك نصنع العنوان الموحد، وإذا كان لياقة نترك العنوان كما هو
-                const displayTitle = activeTab === "engagement" 
-                    ? `اختبار اشتباك - ${r.exam_date} - ${r.course} (${r.batch})` 
-                    : r.title;
-
-                groups[groupKey] = { 
-                    key: groupKey, 
-                    title: displayTitle, 
-                    exam_date: r.exam_date, 
-                    course: r.course, 
-                    batch: r.batch, 
-                    sub_records: [r], 
-                    status: r.status, 
-                    type: activeTab 
-                };
-            } else {
-                groups[groupKey].sub_records.push(r);
-                if (r.status === 'approved') groups[groupKey].status = 'approved';
-                
-                // 🟢 تأكيد إضافي لتوحيد العنوان في حالة الدمج (للاشتباك فقط)
-                if (activeTab === "engagement") {
-                    groups[groupKey].title = `اختبار اشتباك - ${r.exam_date} - ${r.course} (${r.batch})`;
-                }
-            }
-        });
-
-
-
-        return Object.values(groups).map((group: any) => {
-
-            const uniqueSoldiers = new Set();
-
-            group.sub_records.forEach((record: any) => {
-
-                record.students_data.forEach((s: any) => {
-
-                    const id = s.military_id || s["الرقم العسكري"];
-
-                    if (id) uniqueSoldiers.add(id);
-
-                });
-
+    return Object.values(groups).map((group: any) => {
+        const uniqueSoldiers = new Set();
+        group.sub_records.forEach((record: any) => {
+            record.students_data.forEach((s: any) => {
+                const id = s.military_id || s["الرقم العسكري"];
+                if (id) uniqueSoldiers.add(id);
             });
-
-            return { ...group, student_count_ref: uniqueSoldiers.size };
-
         });
+        return { ...group, student_count_ref: uniqueSoldiers.size };
+    });
+}, [records, searchQuery, dateSearch, activeTab, activeGroup]); // 🟢 أضفنا activeGroup
+// 🔔 موظف الاستقبال الذكي لصفحة الرياضة
+useEffect(() => {
+    if (targetRecordId && records.length > 0) {
+        const recordIdNum = parseInt(targetRecordId);
+        const foundRecord = records.find(r => r.id === recordIdNum);
 
-    }, [records, searchQuery, dateSearch, activeTab]);
+        if (foundRecord) {
+            console.log("🎯 تم رصد إشعار رياضي، جاري توجيه المستخدم...");
 
+            // 1. تحديد التبويب الصحيح (لياقة أم اشتباك)
+            const titleLower = (foundRecord.title || "").toLowerCase();
+            const isEngagement = titleLower.includes("اشتباك") || (foundRecord.subject && foundRecord.subject.includes("engagement"));
+            setActiveTab(isEngagement ? "engagement" : "fitness");
+
+            // 2. تفعيل "المستوى الأول" (فتح بطاقة الدورة)
+            setActiveGroup({ course: foundRecord.course, batch: foundRecord.batch });
+
+            // 3. تفعيل "المستوى الثاني" (فتح الكشف)
+            // بما أن صفحة الرياضة تستخدم نظام المجموعات المدمجة، نبحث عن المجموعة التي تحتوي على هذا السجل
+            const targetGroup = groupedRecords.find(g => 
+                g.sub_records.some((sub: any) => sub.id === recordIdNum)
+            );
+
+            if (targetGroup) {
+                setSelectedGroup(targetGroup);
+            } else {
+                // إذا لم نجد المجموعة المدمجة بعد (بسبب تأخر المعالجة)، نفتح السجل الفردي كحل احتياطي
+                setSelectedGroup({
+                    title: foundRecord.title,
+                    exam_date: foundRecord.exam_date,
+                    course: foundRecord.course,
+                    batch: foundRecord.batch,
+                    sub_records: [foundRecord],
+                    type: isEngagement ? "engagement" : "fitness"
+                });
+            }
+
+            // 4. تنظيف الرابط
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+            
+            toast.success(`تم فتح: ${foundRecord.title}`);
+        }
+    }
+}, [records, targetRecordId, groupedRecords]); // 🔄 يراقب groupedRecords لضمان العثور على المجموعة المدمجة
 
 
    const processedGroupData = useMemo(() => {
@@ -1437,7 +1503,13 @@ const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
 
                                         <SelectTrigger className="w-full md:w-24 h-7 border-none text-xs font-bold"><SelectValue /></SelectTrigger>
 
-                                        <SelectContent><SelectItem value="all">الكل</SelectItem>{Array.from(new Set(processedGroupData.students.map((s:any)=>s.company || s["السرية"]))).filter(Boolean).map(c=><SelectItem key={c as string} value={c as string}>{c as string}</SelectItem>)}</SelectContent>
+                                        <SelectContent>
+    <SelectItem value="all">الكل</SelectItem>
+    {/* 🟢 أضفنا ?. لضمان عدم الانهيار */}
+    {Array.from(new Set(processedGroupData?.students?.map((s:any)=>s.company || s["السرية"])))
+        .filter(Boolean)
+        .map(c=><SelectItem key={c as string} value={c as string}>{c as string}</SelectItem>)}
+</SelectContent>
 
                                     </Select>
 
@@ -1451,7 +1523,13 @@ const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
 
                                         <SelectTrigger className="w-full md:w-24 h-7 border-none text-xs font-bold"><SelectValue /></SelectTrigger>
 
-                                        <SelectContent><SelectItem value="all">الكل</SelectItem>{Array.from(new Set(processedGroupData.students.map((s:any)=>s.platoon || s["الفصيل"]))).filter(Boolean).map(p=><SelectItem key={p as string} value={p as string}>{p as string}</SelectItem>)}</SelectContent>
+                                        <SelectContent>
+    <SelectItem value="all">الكل</SelectItem>
+    {/* 🟢 نفس الحماية هنا */}
+    {Array.from(new Set(processedGroupData?.students?.map((s:any)=>s.platoon || s["الفصيل"])))
+        .filter(Boolean)
+        .map(p=><SelectItem key={p as string} value={p as string}>{p as string}</SelectItem>)}
+</SelectContent>
 
                                     </Select>
 
@@ -2307,7 +2385,20 @@ const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
 
 
 
-    <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setTrainerScores({}); setMainPage(1); }}>
+   <Tabs 
+    value={activeTab} 
+    onValueChange={(v) => { 
+        setActiveTab(v); 
+        setTrainerScores({}); 
+        setMainPage(1); 
+        
+        // 🟢 الحل السحري هنا: تصفير كل الاختيارات لتعود للرئيسية
+        setActiveGroup(null);   // إغلاق الدورة المختارة
+        setSelectedGroup(null); // إغلاق أي اختبار مفتوح
+        setCustomExamType("");  // تنظيف حقل البحث المخصص
+        setInnerCurrentPage(1); // إعادة الترقيم للبداية
+    }}
+>
 
         <TabsList className="bg-slate-200 p-1 rounded-xl w-full max-w-md mx-auto mb-8 flex h-10 shadow-md">
 
@@ -2319,171 +2410,146 @@ const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
 
         
 
-        <TabsContent value={activeTab}>
-
-            {loading ? <div className="flex justify-center py-20" ><Loader2 className="animate-spin w-10 h-10 text-orange-500" /></div> : (
-
-                <>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" dir="rtl">
-
-                        {paginatedCards.length === 0 ? (
-
-                            <div className="col-span-full text-center py-20 bg-slate-50 rounded-2xl border-dashed border-2">
-
-                                <FileWarning className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-
-                                <p className="text-slate-500 font-bold">لا توجد سجلات تطابق البحث حالياً</p>
-
-                            </div>
-
-                        ) : (
-
-                            // 🟢 نستخدم paginatedCards هنا بدلاً من filteredGroupedRecords
-
-                            paginatedCards.map((group: any) => (
-
-                                <Card 
-
-                                    key={group.key} 
-
-                                    className={`cursor-pointer border-r-8 hover:shadow-2xl transition-all group relative overflow-hidden  ${
-
-                                        activeTab === 'fitness' ? 'border-green-500' : 'border-orange-500'
-
-                                    }`} 
-
-                                    onClick={() => { setSelectedGroup(group); setCustomExamType(""); setInnerCurrentPage(1); }}
-
-                                >
-
-                                                    <CardHeader className="pb-2">
-
-                                                        <div className="flex justify-between items-start flex-row-reverse mb-2" >
-
-                                                            <Badge className={group.status === 'approved' ? "bg-green-600" : "bg-orange-100 text-orange-700"}>
-
-                                                                {group.status === 'approved' ? "مُعتمد" : "قيد المراجعة"}
-
-                                                            </Badge>
-
-                                                            <span className="text-[10px] font-black text-slate-400 bg-white px-2 py-1 rounded border shadow-sm">
-
-                                                                {group.exam_date}
-
-                                                            </span>
-
-                                                        </div>
-
-                                                        <CardTitle className="text-md font-bold flex items-center gap-2" >
-
-                                                            {activeTab === 'fitness' ? <Activity className="w-4 h-4 text-green-600" /> : <Swords className="w-4 h-4 text-orange-600" />} 
-
-                                                            {group.title}
-
-                                                        </CardTitle>
-
-                                                        <p className="text-[10px] text-slate-500 font-bold mt-1">{group.course} - {group.batch}</p>
-
-                                                    </CardHeader>
-
-                                                    <CardContent className="pt-4 border-t flex justify-between items-center flex-row-reverse bg-slate-50/30">
-
-                                                        <span className={`text-xs font-black px-3 py-1 rounded-full border ${
-
-                                                            activeTab === 'fitness' ? 'text-green-700 bg-green-50 border-green-100' : 'text-blue-700 bg-blue-50 border-blue-100'
-
-                                                        }`}>
-
-                                                            {group.student_count_ref} طالب
-
-                                                        </span>
-
-                                                        {["owner", "admin", "manager"].includes(userRole) && (
-
-                                                            <Button variant="ghost" size="icon" className="text-red-300 hover:text-red-600 h-8 w-8 hover:bg-red-50" 
-
-                                                                onClick={(e)=>{
-
-                                                                    e.stopPropagation(); 
-
-                                                                    setDeleteTarget({
-
-                                                                        id: group.sub_records[0].id, 
-
-                                                                        title: group.title, 
-
-                                                                        all_ids: group.sub_records.map((r:any)=>r.id)
-
-                                                                    })
-
-                                                                }}
-
-                                                            >
-
-                                                                <Trash2 className="w-4 h-4" />
-
-                                                            </Button>
-
-                                                        )}
-
-                                                    </CardContent>
-
-                                                </Card>
-
-                                            ))
-
-                                        )}
-
-                                    </div>
-
-                                    {filteredGroupedRecords.length > 0 && (
-
-                        <div className="no-print flex flex-col md:flex-row items-center justify-between gap-4 mt-10 p-4 bg-white rounded-xl border shadow-sm">
-
-                            <div className="flex items-center gap-2">
-
-                                <Label className="text-xs font-bold text-slate-500">عرض بطاقات:</Label>
-
-                                <Select value={String(mainItemsPerPage)} onValueChange={(v) => {setMainItemsPerPage(Number(v)); setMainPage(1);}}>
-
-                                    <SelectTrigger className="w-24 h-8 text-xs font-bold"><SelectValue /></SelectTrigger>
-
-                                    <SelectContent>
-
-                                        <SelectItem value="12">12 بطاقات</SelectItem>
-
-                                        <SelectItem value="24">24 بطاقة</SelectItem>
-
-                                        <SelectItem value="50">50 بطاقة</SelectItem>
-
-                                    </SelectContent>
-
-                                </Select>
-
-                                <span className="text-[10px] text-slate-400 font-bold mr-2">إجمالي الاختبارات: {filteredGroupedRecords.length}</span>
-
-                            </div>
-
-                            <div className="flex items-center gap-3">
-
-                                <Button variant="outline" size="sm" disabled={mainPage === 1} onClick={() => setMainPage(p => p - 1)} className="font-bold h-8 px-4">السابق</Button>
-
-                                <div className="text-xs font-black bg-slate-50 px-4 py-1 rounded-lg border text-slate-700">صفحة {mainPage} من {totalMainPages}</div>
-
-                                <Button variant="outline" size="sm" disabled={mainPage >= totalMainPages} onClick={() => setMainPage(p => p + 1)} className="font-bold h-8 px-4">التالي</Button>
-
-                            </div>
-
+       <TabsContent value={activeTab}>
+    {loading ? (
+        <div className="flex justify-center py-20"><Loader2 className="animate-spin w-10 h-10 text-orange-500" /></div>
+    ) : (
+        <>
+            {/* 1️⃣ المستوى الأول: بطاقات الدورات */}
+            {!activeGroup && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in zoom-in-95" dir="rtl">
+                    {courseBatchGroups.length === 0 ? (
+                        <div className="col-span-full text-center py-20 bg-slate-50 rounded-2xl border-dashed border-2">
+                            <FileWarning className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+                            <p className="text-slate-500 font-bold">لا توجد دورات مسجلة في هذا القسم</p>
                         </div>
+                    ) : (
+                        courseBatchGroups.map((group: any) => (
+                            <Card 
+    key={`${group.course}-${group.batch}`} 
+    className={`group cursor-pointer border-none hover:shadow-2xl transition-all duration-500 bg-white relative overflow-hidden h-[230px] flex flex-col shadow-md rounded-[2rem] ${activeTab === 'fitness' ? 'border-[3px] border-green-600' : 'border-[3px] border-orange-600'}`}
+    onClick={() => setActiveGroup(group)}
+>
+                                {/* خلفية حسب التاب */}
+                                <div className={`absolute top-0 right-0 w-32 h-32 rounded-full -mr-16 -mt-16 transition-colors duration-500 ${activeTab === 'fitness' ? 'bg-green-50 group-hover:bg-green-100' : 'bg-orange-50 group-hover:bg-orange-100'}`} />
+    
+    <CardHeader className="relative z-10 pb-0">
+        <div className="flex justify-between items-start">
+            <div className={`p-3 text-white rounded-2xl shadow-lg transition-transform duration-500 group-hover:scale-110 ${activeTab === 'fitness' ? 'bg-green-600 shadow-green-200' : 'bg-orange-600 shadow-orange-200'}`}>
+                {activeTab === 'fitness' ? <Activity className="w-6 h-6" /> : <Swords className="w-6 h-6" />}
+            </div>
+            <div className="flex flex-col items-end gap-1">
+                <Badge variant="secondary" className="bg-slate-100 text-slate-500 font-bold border-none px-3 py-1 rounded-full text-[10px]">
+                    أرشيف {activeTab === 'fitness' ? 'اللياقة' : 'الاشتباك'}
+                </Badge>
+                <span className={`text-[10px] font-black px-1 ${activeTab === 'fitness' ? 'text-green-600' : 'text-orange-600'}`}>
+                    عدد الاختبارات ({group.examCount})
+                </span>
+            </div>
+        </div>
+    </CardHeader>
 
+    <CardContent className="relative z-10 flex-1 flex flex-col justify-center pt-4 text-center">
+        <h3 className={`text-xl font-black text-slate-800 transition-colors line-clamp-1 ${activeTab === 'fitness' ? 'group-hover:text-green-700' : 'group-hover:text-orange-700'}`}>
+            {group.course}
+        </h3>
+        <div className="flex items-center justify-center gap-2 mt-2 text-slate-500">
+            <Layers className="w-4 h-4 opacity-50" />
+            <span className="text-sm font-bold tracking-wide">{group.batch}</span>
+        </div>
+    </CardContent>
+
+{/* 📊 تذييل البطاقة - عريض وواضح */}
+<div className={`mt-auto w-full flex justify-between items-center text-white px-6 py-6 ${ // 🟢 زدنا الـ py-6 ليكون عريضاً
+    activeTab === 'fitness' 
+        ? 'bg-gradient-to-l from-green-600 to-green-500' 
+        : 'bg-gradient-to-l from-orange-600 to-orange-500'
+}`}>
+    <div className="flex flex-col text-right justify-center">
+        <span className="text-[12px] font-bold opacity-90 uppercase tracking-tighter mb-1">
+            الحالة
+        </span>
+        {/* 🟢 leading-relaxed تمنع قص الحروف من الأسفل + pb-1 مسافة أمان */}
+        <span className="text-xl font-black tracking-wide whitespace-nowrap leading-relaxed pb-1">
+            جاهز للعرض
+        </span>
+    </div>
+    
+    <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md group-hover:bg-white/40 transition-all shadow-sm">
+        <ArrowRight className="w-6 h-6 text-white" />
+    </div>
+</div>
+</Card>
+                        ))
                     )}
-
-                </>
-
+                </div>
             )}
 
-        </TabsContent>
+            {/* 2️⃣ المستوى الثاني: الاختبارات داخل الدورة */}
+            {activeGroup && (
+                <div className="space-y-6" dir="rtl">
+                    <Button 
+                        variant="outline" 
+                        onClick={() => { setActiveGroup(null); setCustomExamType(""); }}
+                        className={`mb-4 gap-2 font-bold border-2 ${activeTab === 'fitness' ? 'text-green-700 border-green-200 bg-green-50' : 'text-orange-700 border-orange-200 bg-orange-50'}`}
+                    >
+                        <ChevronRight className="w-4 h-4" /> العودة للدورات
+                    </Button>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-left-4" dir="rtl">
+                        {paginatedCards.map((group: any) => (
+                            <Card 
+                                key={group.key} 
+                                className={`cursor-pointer border-r-8 hover:shadow-2xl transition-all group relative overflow-hidden ${
+                                    activeTab === 'fitness' ? 'border-green-500' : 'border-orange-500'
+                                }`} 
+                                onClick={() => { setSelectedGroup(group); setCustomExamType(""); setInnerCurrentPage(1); }}
+                            >
+                                <CardHeader className="pb-2">
+                                    <div className="flex justify-between items-start flex-row-reverse mb-2" >
+                                        <Badge className={group.status === 'approved' ? "bg-green-600" : "bg-orange-100 text-orange-700"}>
+                                            {group.status === 'approved' ? "مُعتمد" : "قيد المراجعة"}
+                                        </Badge>
+                                        <span className="text-[10px] font-black text-slate-400 bg-white px-2 py-1 rounded border shadow-sm">
+                                            {group.exam_date}
+                                        </span>
+                                    </div>
+                                    <CardTitle className="text-md font-bold flex items-center gap-2" >
+                                        {activeTab === 'fitness' ? <Activity className="w-4 h-4 text-green-600" /> : <Swords className="w-4 h-4 text-orange-600" />} 
+                                        {group.title}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-4 border-t flex justify-between items-center flex-row-reverse bg-slate-50/30">
+                                    <span className={`text-xs font-black px-3 py-1 rounded-full border ${
+                                        activeTab === 'fitness' ? 'text-green-700 bg-green-50 border-green-100' : 'text-blue-700 bg-blue-50 border-blue-100'
+                                    }`}>
+                                        {group.student_count_ref} طالب
+                                    </span>
+                                    {["owner", "admin", "manager"].includes(userRole) && (
+                                        <Button variant="ghost" size="icon" className="text-red-300 hover:text-red-600 h-8 w-8 hover:bg-red-50" 
+                                            onClick={(e)=>{
+                                                e.stopPropagation(); 
+                                                setDeleteTarget({
+                                                    id: group.sub_records[0].id, 
+                                                    title: group.title, 
+                                                    all_ids: group.sub_records.map((r:any)=>r.id)
+                                                })
+                                            }}
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </Button>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                    {/* شريط الترقيم الخاص بالبطاقات هنا */}
+                    {/* (يمكنك نسخ كود الترقيم القديم ووضعه هنا إذا أردت) */}
+                </div>
+            )}
+        </>
+    )}
+</TabsContent>
 
     </Tabs>
 

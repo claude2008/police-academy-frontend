@@ -19,6 +19,7 @@ import { toast } from "sonner"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import * as XLSX from 'xlsx';
 import { Badge } from "@/components/ui/badge";
+import { useRouter, useSearchParams } from "next/navigation"
 // أضف هذا السطر في الأعلى
 import { 
     Dialog, 
@@ -46,6 +47,12 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<any>(null);
     // أضف هذه في أعلى المكون مع بقية الـ states
 const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 const [selectedStudentForDelete, setSelectedStudentForDelete] = useState<any>(null);
+const searchParams = useSearchParams();
+    // 🟢 استخراج المعلمات (البداية، النهاية، الدورة، الدفعة)
+    const targetStart = searchParams.get('start_date');
+    const targetEnd = searchParams.get('end_date');
+    const targetCourse = searchParams.get('course');
+    const targetBatch = searchParams.get('batch');
 const [isDeleting, setIsDeleting] = useState(false);
     const [customTitles, setCustomTitles] = useState({
     supervisor: "مشرف التدريب",
@@ -217,7 +224,42 @@ const handleApprove = async (level: string, customTitle: string) => {
         const start = (currentPage - 1) * itemsPerPage;
         return filteredReports.slice(start, start + itemsPerPage);
     }, [filteredReports, currentPage, itemsPerPage]);
+// 🔔 موظف الاستقبال لفتح سجل المخالفات مباشرة من الإشعارات
+useEffect(() => {
+    const handleDeepLink = async () => {
+        // نتحقق من وجود المعلمات (التاريخ والدورة على الأقل)
+        if (targetStart && targetEnd && targetCourse && dailySummaries.length > 0) {
+            
+            // 1. ضبط النطاق التاريخي أولاً (إذا كان مختلفاً)
+            if (startDate !== targetStart || endDate !== targetEnd) {
+                setStartDate(targetStart);
+                setEndDate(targetEnd);
+                return; // سنتوقف وننتظر إعادة التحميل التي ستحدث بسبب تغير التواريخ
+            }
 
+            // 2. البحث عن بطاقة الدورة المطلوبة في الملخصات
+            const found = dailySummaries.find(s => 
+                s.course === targetCourse && 
+                (targetBatch ? s.batch === targetBatch : true)
+            );
+
+            if (found) {
+                console.log(`🎯 تم رصد إشعار مخالفة لـ ${targetCourse}، جاري الفتح...`);
+                
+                // 3. استدعاء دالة فتح التقرير تلقائياً
+                await openViolationReport(found.course, found.batch);
+
+                // 4. تنظيف الرابط لمنع التكرار عند التحديث
+                const newUrl = window.location.pathname;
+                window.history.replaceState({}, '', newUrl);
+
+                toast.success(`عرض مخالفات: ${found.course}`);
+            }
+        }
+    };
+
+    handleDeepLink();
+}, [targetStart, targetEnd, targetCourse, targetBatch, dailySummaries, startDate, endDate]);
    const exportToExcel = () => {
     // 🟢 تحديث استخراج البيانات لتقرأ من violationTickets الجديدة
     const data = groupedRows.map((r, i) => ({

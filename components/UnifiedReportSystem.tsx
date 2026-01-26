@@ -12,6 +12,7 @@ import { Printer, Save, FileText, Trash2, Calendar, FileType, RefreshCcw, Search
 import { toast } from "sonner"
 import { format, isValid } from "date-fns"
 import { ar } from "date-fns/locale"
+import { useRouter, useSearchParams } from "next/navigation" // 🟢 إضافة useSearchParams
 import {
     AlertDialog,
     AlertDialogAction,
@@ -86,7 +87,8 @@ const [folderFilterBatch, setFolderFilterBatch] = useState("all");
     const [userId, setUserId] = useState<number | null>(null);
     const [isApprovalModalOpen, setIsApprovalModalOpen] = useState(false);
     const [selectedReport, setSelectedReport] = useState<ReportAPI | null>(null);
-
+const searchParams = useSearchParams();
+const targetReportId = searchParams.get('report_id'); // 👈 استخراج معرف التقرير من الرابط
     // بيانات النموذج
     const [reportType, setReportType] = useState("إفـــــــــادة")
     const [date, setDate] = useState(format(new Date(), "yyyy/MM/dd"))
@@ -269,7 +271,48 @@ useEffect(() => {
         if (rec2.name && !rec2.signature) setRec2(prev => ({ ...prev, signature: rec2.name }))
     }, [rec2.name])
 
-    
+  // 🔔 موظف استقبال التقارير الذكي
+useEffect(() => {
+    const handleDeepLink = async () => {
+        if (targetReportId) {
+            console.log("🎯 رصد رابط عميق لتقرير، جاري المعالجة...");
+            
+            try {
+                const token = localStorage.getItem("token");
+                // 1. جلب بيانات هذا التقرير تحديداً من الباك إند
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reports/single/${targetReportId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (res.ok) {
+                    const report = await res.json();
+
+                    // 2. التوجه لتبويب السجلات
+                    setActiveTab("records");
+
+                    // 3. إذا كان تقرير دورة، يجب فتح المجلد الصحيح أولاً
+                    if (category === "courses") {
+                        setSelectedGroup({ course: report.course || "عام", batch: report.batch || "عام" });
+                        setViewMode('list');
+                    }
+
+                    // 4. فتح التقرير للمعاينة فوراً
+                    loadReportForEdit(report, true);
+
+                    // 5. تنظيف الرابط لمنع التكرار
+                    const newUrl = window.location.pathname;
+                    window.history.replaceState({}, '', newUrl);
+
+                    toast.success(`تم فتح المستند: ${report.subject}`);
+                }
+            } catch (e) {
+                console.error("Deep link error", e);
+            }
+        }
+    };
+
+    handleDeepLink();
+}, [targetReportId, category]); // 🔄 يراقب المعرف ونوع القسم
    const fetchReports = async () => {
     setLoading(true);
     try {

@@ -4,7 +4,10 @@ import { useState, useEffect, useMemo } from "react"
 import { 
     Table as TableIcon, Search, Printer, Download, 
     Eye, ShieldCheck, CheckCircle2, X, Loader2, RotateCcw, 
-    ArrowRight, Calendar, Trash2, ChevronRight, ChevronLeft, AlertTriangle, ListFilter, Save
+    ArrowRight, Calendar, Trash2, ChevronRight, ChevronLeft, 
+    AlertTriangle, ListFilter, Save,
+    // 🟢 الأيقونات المفقودة التي سببت الخطأ:
+    GraduationCap, Layers, FileCheck 
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -17,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { format } from "date-fns"
 import { ar } from "date-fns/locale"
+import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import * as XLSX from 'xlsx';
@@ -51,7 +55,10 @@ const [availableAuthors, setAvailableAuthors] = useState<any[]>([]); // قائم
 const [committeeMapping, setCommitteeMapping] = useState<Record<string, string>>({});
 const [pendingGroup, setPendingGroup] = useState<any>(null);
     const [deleteTarget, setDeleteTarget] = useState<{id: number, title: string, all_ids: number[]} | null>(null);
-
+    const [activeGroup, setActiveGroup] = useState<{ course: string; batch: string } | null>(null);
+    const router = useRouter()
+const searchParams = useSearchParams() // 👈 إضافة هذا
+    const targetRecordId = searchParams.get('record_id')
     // كلمات مفتاحية لتحديد حالات الغياب
     useEffect(() => {
         if (selectedRecord) {
@@ -79,7 +86,28 @@ const [pendingGroup, setPendingGroup] = useState<any>(null);
 
         fetchInitialData();
     }, [])
+// 🔔 موظف الاستقبال الذكي - النسخة المصححة والمؤمنة
+useEffect(() => {
+    if (targetRecordId && records.length > 0) {
+        const recordIdNum = parseInt(targetRecordId);
+        const found = records.find(r => r.id === recordIdNum);
+        
+        if (found) {
+            // 1. تفعيل المستوى الأول
+            setActiveGroup({ course: found.course, batch: found.batch });
 
+            // 2. 🟢 التصحيح: نمرر السجل الكامل 'found' وليس كائناً من صنعنا
+            // لضمان وجود students_data وكل المعلومات المطلوبة للفلاتر
+            handleCardClick(found);
+
+            // 3. تنظيف الرابط
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+            
+            toast.success(`تم فتح: ${found.title}`);
+        }
+    }
+}, [records, targetRecordId]);
     const fetchRecords = async () => {
     setLoading(true); // 1. البدء في إظهار علامة التحميل
     try {
@@ -544,29 +572,85 @@ const exportToExcel = () => {
 
         return "infantry"; // الافتراضي للمواد العسكرية الأخرى (مشاة، أسلحة..)
     };
+const courseBatchGroups = useMemo(() => {
+    const groups: Record<string, any> = {};
+    
+    records.forEach(r => {
+        // 1. 🛡️ تطبيق نفس الفلاتر المستخدمة في العرض الداخلي لضمان تطابق الأرقام
+        const config = configs.find(c => c.id === r.config_id);
+        const realSubject = config ? config.subject : (r.subject || "infantry");
+        
+        // 🚫 استبعاد اختبارات الرياضة والاشتباك من العد (لأن هذا أرشيف عسكري)
+        if (realSubject.includes("engagement") || 
+            realSubject === "fitness" || 
+            realSubject.includes("اشتباك") || 
+            (r.title && r.title.includes("اشتباك"))) {
+            return; 
+        }
+
+        // احترام فلاتر البحث العلوية (القسم والنوع)
+        const realExamType = config ? config.exam_type : r.title.split(" - ")[0];
+        const matchesSection = selectedSection === "all" || realSubject === selectedSection;
+        const matchesExamType = selectedExamType === "all" || realExamType === selectedExamType;
+        
+        if (!matchesSection || !matchesExamType) return;
+
+        // 2. تجميع المفاتيح
+        const key = `${r.course}-${r.batch}`;
+        
+        if (!groups[key]) {
+            groups[key] = {
+                course: r.course,
+                batch: r.batch,
+                examsUniqueKeys: new Set(), 
+            };
+        }
+
+        // 🟢 الاعتماد على (التاريخ + العنوان النظيف) لدمج لجان الاختبار الواحد
+        const cleanTitle = r.title ? r.title.split("-")[0].trim() : "بدون عنوان";
+        const testIdentifier = `${r.exam_date}_${cleanTitle}`;
+
+        groups[key].examsUniqueKeys.add(testIdentifier);
+    });
+
+    return Object.values(groups).map((g: any) => ({
+        ...g,
+        examCount: g.examsUniqueKeys.size,
+    })).filter(g => {
+        const matchCourse = courseFilter === "all" || g.course === courseFilter;
+        const matchBatch = batchFilter === "all" || g.batch === batchFilter;
+        return matchCourse && matchBatch;
+    });
+}, [records, configs, selectedSection, selectedExamType, courseFilter, batchFilter]);
    // 1. ابحث عن هذا المتغير
 const groupedRecords = useMemo(() => {
+    // 🚨 شرط الحماية: إذا لم يتم اختيار دورة/دفعة من البطاقات الكبيرة، نرجع مصفوفة فارغة
+    if (!activeGroup) return [];
+
     const filtered = records.filter(r => {
+        // 🟢 القيد الأول: الفلترة الصارمة حسب الدورة والدفعة المختارة من البطاقة
+        const isSameGroup = r.course === activeGroup.course && r.batch === activeGroup.batch;
+        if (!isSameGroup) return false;
+
         const config = configs.find(c => c.id === r.config_id);
         const realSubject = config ? config.subject : (r.subject || "infantry");
         const realExamType = config ? config.exam_type : r.title.split(" - ")[0];
 
+        // استبعاد الرياضة والاشتباك
         if (realSubject.includes("engagement") || realSubject === "fitness") return false;
 
+        // احترام فلاتر البحث والسكشن المختارة داخل المجموعة
         const matchesSection = selectedSection === "all" || realSubject === selectedSection;
         const matchesExamType = selectedExamType === "all" || realExamType === selectedExamType;
         const matchesSearch = r.title.includes(searchQuery);
         const matchesDate = !dateSearch || r.exam_date === dateSearch;
-        const matchesCourse = courseFilter === "all" || r.course === courseFilter;
-        const matchesBatch = batchFilter === "all" || r.batch === batchFilter;
 
-        return matchesSection && matchesExamType && matchesSearch && matchesDate && matchesCourse && matchesBatch;
+        return matchesSection && matchesExamType && matchesSearch && matchesDate;
     });
 
     const groups: Record<string, any> = {};
     filtered.forEach(r => {
-        // 🟢 التعديل الجوهري: المفتاح الآن يعتمد على التاريخ + رقم الاختبار + الدورة + الدفعة
-        // هذا يضمن دمج جميع السرايا والفصائل في بطاقة واحدة شاملة
+        // المفتاح الفريد لدمج الفصائل والمقيمين في بطاقة واحدة شاملة
         const key = `${r.exam_date}-${r.config_id}-${r.course}-${r.batch}`;
         
         const currentStudentIds = Array.isArray(r.students_data) 
@@ -577,7 +661,6 @@ const groupedRecords = useMemo(() => {
             groups[key] = { 
                 ...r, 
                 all_ids: [r.id],
-                // تخزين المعايير الأساسية للبطاقة
                 config_id: r.config_id,
                 course: r.course,
                 batch: r.batch,
@@ -585,25 +668,26 @@ const groupedRecords = useMemo(() => {
                 unique_students: new Set(currentStudentIds) 
             };
         } else {
-            // تجميع كافة المعرفات (لكل السرايا والفصائل والمقيّمين) داخل هذه البطاقة
+            // تجميع معرفات السجلات (IDs) لتمكين الحذف الجماعي أو الفتح الجماعي
             if (!groups[key].all_ids.includes(r.id)) {
                 groups[key].all_ids.push(r.id);
             }
             
-            // تحديث حالة البطاقة لتكون معتمدة إذا اعتمد أي سجل بداخلها (أو حسب منطقك المفضل)
+            // تحديث حالة الاعتماد (إذا كان أحدهم معتمداً، البطاقة تظهر معتمدة)
             if (r.status === 'approved') groups[key].status = 'approved';
             
-            // إضافة الطلاب للـ Set لضمان حساب إجمالي طلاب الدفعة المختبرين بدون تكرار
+            // إضافة الطلاب للمجموعة الفريدة لضمان دقة العدد الإجمالي
             currentStudentIds.forEach((id: any) => groups[key].unique_students.add(id));
         }
     });
 
+    // تحويل الكائن إلى مصفوفة وإرفاق العدد النهائي للطلاب
     return Object.values(groups).map((group: any) => ({
         ...group,
         total_count: group.unique_students.size
     }));
-}, [records, configs, selectedSection, selectedExamType, searchQuery, dateSearch, courseFilter, batchFilter]);
-
+// 🟢 إضافة activeGroup لمصفوفة الاعتماديات لضمان التحديث عند الضغط على أي بطاقة دورة
+}, [records, configs, selectedSection, selectedExamType, searchQuery, dateSearch, activeGroup]);
     const paginatedRecords = useMemo(() => {
         const startIndex = (currentPage - 1) * itemsPerPage;
         return groupedRecords.slice(startIndex, startIndex + itemsPerPage);
@@ -765,7 +849,7 @@ const saveTrainerScoresToDB = async () => {
                 <SelectTrigger className="w-full md:w-24 h-7 border-none text-xs font-bold focus:ring-0"><SelectValue /></SelectTrigger>
                 <SelectContent>
                     <SelectItem value="all">الكل</SelectItem>
-                    {Array.from(new Set(selectedRecord.students_data.map((s:any)=>s.company))).filter(Boolean).map(c=><SelectItem key={c as string} value={c as string}>{c as string}</SelectItem>)}
+                    {Array.from(new Set(selectedRecord?.students_data?.map((s:any)=>s.company))).filter(Boolean).map(c=><SelectItem key={c as string} value={c as string}>{c as string}</SelectItem>)}
                 </SelectContent>
             </Select>
         </div>
@@ -777,7 +861,7 @@ const saveTrainerScoresToDB = async () => {
                 <SelectTrigger className="w-full md:w-24 h-7 border-none text-xs font-bold focus:ring-0"><SelectValue /></SelectTrigger>
                 <SelectContent>
                     <SelectItem value="all">الكل</SelectItem>
-                    {Array.from(new Set(selectedRecord.students_data.map((s:any)=>s.platoon))).filter(Boolean).map(p=><SelectItem key={p as string} value={p as string}>{p as string}</SelectItem>)}
+                    {Array.from(new Set(selectedRecord?.students_data?.map((s:any)=>s.platoon))).filter(Boolean).map(p=><SelectItem key={p as string} value={p as string}>{p as string}</SelectItem>)}
                 </SelectContent>
             </Select>
         </div>
@@ -1258,35 +1342,124 @@ const saveTrainerScoresToDB = async () => {
 </div>
             </div>
 <div className="mt-8">
-                    {loading ? <div className="flex justify-center py-20"><Loader2 className="animate-spin w-10 h-10 text-[#c5b391]" /></div> : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" dir="rtl">
-                            {paginatedRecords.map((record: any) => (
-                                <Card key={`${record.exam_date}-${record.config_id}-${record.course}-${record.batch}`} className="cursor-pointer border-r-8 border-[#c5b391] hover:shadow-2xl transition-all group relative overflow-hidden" onClick={() => handleCardClick(record)}>
-                                    <CardHeader className="pb-2">
-                                        <div className="flex justify-between items-start flex-row-reverse mb-2">
-                                            <Badge className={record.status === 'approved' ? "bg-green-600 text-white shadow-sm" : "bg-orange-50 text-orange-600 border border-orange-200"}>
-                                                {record.status === 'approved' ? "مُعتمد" : "قيد المراجعة"}
-                                            </Badge>
-                                            <span className="text-[10px] font-black text-slate-400 bg-white px-2 py-1 rounded border shadow-sm">{record.exam_date}</span>
-                                        </div>
-                                        <CardTitle className="text-md font-bold leading-relaxed">اختبار: {record.title.split(" - ")[0]}</CardTitle>
-                                        <p className="text-[10px] text-slate-500 font-bold mt-1">{record.course} - {record.batch}</p>
-                                    </CardHeader>
-                                    <CardContent className="pt-4 border-t flex justify-between items-center flex-row-reverse bg-slate-50/30">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-xs font-black text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">{record.total_count} طالب</span>
-                                            <Eye className="w-4 h-4 text-slate-300 group-hover:text-blue-600" />
-                                        </div>
-                                        {["owner", "admin", "manager"].includes(userRole) && (
-                                            <Button variant="ghost" size="icon" className="text-red-300 hover:text-red-600 h-8 w-8 hover:bg-red-50 transition-colors" onClick={(e)=>{e.stopPropagation(); setDeleteTarget({id: record.id, title: record.title, all_ids: record.all_ids})}}>
-                                                <Trash2 className="w-4 h-4" />
-                                            </Button>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                            ))}
+    {loading ? (
+        <div className="flex justify-center py-20"><Loader2 className="animate-spin w-10 h-10 text-[#c5b391]" /></div>
+    ) : (
+        <>
+           {/* 1️⃣ حالة عرض المجموعات (الدورات) */}
+{!activeGroup && (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 animate-in fade-in zoom-in-95">
+        {courseBatchGroups.map((group: any) => (
+            <Card 
+                key={`${group.course}-${group.batch}`} 
+                className="group cursor-pointer border-none hover:shadow-2xl transition-all duration-500 bg-white relative overflow-hidden h-[220px] flex flex-col shadow-md rounded-[2rem]"
+                onClick={() => setActiveGroup(group)}
+            >
+                {/* 🎨 الخلفية الديكورية */}
+                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-full -mr-16 -mt-16 group-hover:bg-blue-100 transition-colors duration-500" />
+                
+                <CardHeader className="relative z-10 pb-0">
+                    <div className="flex justify-between items-start">
+                        <div className="p-3 bg-blue-600 text-white rounded-2xl shadow-lg shadow-blue-200 group-hover:scale-110 transition-transform duration-500">
+                            <GraduationCap className="w-6 h-6" />
                         </div>
-                    )}
+
+                        {/* 🟢 الإضافة المطلوبة: الجملة تحت أرشيف رسمي مباشرة */}
+                        <div className="flex flex-col items-end gap-1">
+                            <Badge variant="secondary" className="bg-slate-100 text-slate-500 font-bold border-none px-3 py-1 rounded-full text-[10px]">
+                                أرشيف رسمي
+                            </Badge>
+                            {/* 👈 هنا يظهر الرقم الحقيقي (1) للاختبار المكون من لجنة */}
+                            <span className="text-[10px] font-black text-blue-600 px-1">
+                                عدد الاختبارات المسجلة ({group.examCount})
+                            </span>
+                        </div>
+                    </div>
+                </CardHeader>
+
+                <CardContent className="relative z-10 flex-1 flex flex-col justify-center pt-4">
+                    <h3 className="text-xl font-black text-slate-800 group-hover:text-blue-700 transition-colors line-clamp-1">
+                        {group.course}
+                    </h3>
+                    <div className="flex items-center gap-2 mt-2 text-slate-500">
+                        <Layers className="w-4 h-4 opacity-50" />
+                        <span className="text-sm font-bold tracking-wide">{group.batch}</span>
+                    </div>
+                </CardContent>
+
+                {/* 📊 تذييل البطاقة */}
+                <div className="mt-auto bg-gradient-to-l from-blue-600 to-blue-500 p-4 flex justify-between items-center text-white">
+                    <div className="flex flex-col">
+                        <span className="text-[9px] font-bold opacity-80 uppercase tracking-tighter">السجلات المحفوظة</span>
+                        <div className="flex items-center gap-2">
+                            <FileCheck className="w-4 h-4" />
+                            <span className="text-lg font-black">{group.examCount} إختبار</span>
+                        </div>
+                    </div>
+                    <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md group-hover:bg-white/40 transition-all">
+                        <ArrowRight className="w-5 h-5 text-white" />
+                    </div>
+                </div>
+            </Card>
+        ))}
+    </div>
+)}
+
+            {/* 2️⃣ حالة عرض الاختبارات داخل المجموعة المختارة */}
+            {activeGroup && (
+                <div className="space-y-6">
+                    {/* زر العودة للمجموعات */}
+                    <Button 
+                        variant="outline" 
+                        onClick={() => setActiveGroup(null)}
+                        className="mb-4 gap-2 font-bold text-blue-700 border-blue-200 bg-blue-50 hover:bg-blue-100"
+                    >
+                        <ChevronRight className="w-4 h-4" /> العودة لكافة الدورات
+                    </Button>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in slide-in-from-left-4">
+                        {paginatedRecords.map((record: any) => (
+                            <Card key={`${record.exam_date}-${record.config_id}`} className="cursor-pointer border-r-8 border-[#c5b391] hover:shadow-2xl transition-all group" onClick={() => handleCardClick(record)}>
+                                <CardHeader className="pb-2">
+                                    <div className="flex justify-between items-start flex-row-reverse mb-2">
+                                        <Badge className={record.status === 'approved' ? "bg-green-600 text-white" : "bg-orange-50 text-orange-600 border border-orange-200"}>
+                                            {record.status === 'approved' ? "مُعتمد" : "قيد المراجعة"}
+                                        </Badge>
+                                        <span className="text-[10px] font-black text-slate-400 bg-white px-2 py-1 rounded border shadow-sm">{record.exam_date}</span>
+                                    </div>
+                                    <CardTitle className="text-md font-bold leading-relaxed">اختبار: {record.title.split(" - ")[0]}</CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-4 border-t flex justify-between items-center flex-row-reverse bg-slate-50/30">
+    <div className="flex items-center gap-3">
+        {/* 🟢 هنا يظل إجمالي الطلاب ظاهراً لأنه خاص بهذا الاختبار تحديداً */}
+        <span className="text-xs font-black text-blue-700 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
+            {record.total_count} طالب
+        </span>
+        <Eye className="w-4 h-4 text-slate-300 group-hover:text-blue-600" />
+    </div>
+
+    {/* زر الحذف يظهر للمسؤولين فقط */}
+    {["owner", "admin", "manager"].includes(userRole) && (
+        <Button 
+            variant="ghost" 
+            size="icon" 
+            className="text-red-300 hover:text-red-600 transition-colors" 
+            onClick={(e) => {
+                e.stopPropagation(); 
+                setDeleteTarget({id: record.id, title: record.title, all_ids: record.all_ids})
+            }}
+        >
+            <Trash2 className="w-4 h-4" />
+        </Button>
+    )}
+</CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </>
+    )}
 </div>
             {!loading && groupedRecords.length > 0 && (
     <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 bg-white border rounded-xl mt-8 shadow-sm no-print">

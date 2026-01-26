@@ -101,43 +101,72 @@ const [showReportFilter, setShowReportFilter] = useState(false);
     }, [profileData.weights, weightFrom, weightTo]);
 
    // 🟢 تعديل فلتر "الاختبارات العسكرية" لاستبعاد اللياقة
+// 🟢 تعديل محرك دمج الاختبارات العسكرية في البروفايل
 const milExamsList = useMemo(() => {
-    return (profileData.military_exams || []).filter((ex: any) => {
-        // 1. استبعاد اختبارات اللياقة (بالاعتماد على وجود مفاتيح الجري/الضغط)
+    const rawExams = (profileData.military_exams || []).filter((ex: any) => {
+        // 1. استبعاد اختبارات اللياقة
         const isFitness = ex["الجري"] !== undefined || ex["الضغط"] !== undefined || ex["البطن"] !== undefined;
         if (isFitness) return false;
 
-        // 2. تحديد قسم الاختبار (Subject)
-        // نحاول جلب القسم من الحقل الصريح، وإذا لم يوجد نكهن به من العنوان
         const examSubject = ex.subject || ex.config?.subject || "";
         const title = (ex.title || "").toLowerCase();
 
-        // 3. تطبيق فلتر الاختيار (الكل، مشاة، رماية، إلخ)
+        // 2. تطبيق فلتر الاختيار (الكل، مشاة، رماية)
         let matchesSubject = true;
         if (milSubjectFilter !== "all") {
-            // أ - التحقق من المفتاح البرمجي (مثلاً shooting أو infantry)
             const matchByKey = examSubject === milSubjectFilter;
-            
-            // ب - التحقق بالكلمات المفتاحية (دعم إضافي للسجلات التي قد لا تملك subject صريح)
             let matchByTitle = false;
             if (milSubjectFilter === "shooting") {
                 matchByTitle = title.includes("رماية") || title.includes("مسدس") || title.includes("بندقية");
             } else if (milSubjectFilter === "infantry") {
                 matchByTitle = title.includes("مشاة") || title.includes("عصا");
             } else {
-                // للأقسام الأخرى، نعتمد على مسمى القسم في الإعدادات
                 const sectionName = milSectionsList.find(s => s.key === milSubjectFilter)?.name || "";
                 matchByTitle = title.includes(sectionName);
             }
-
             matchesSubject = matchByKey || matchByTitle;
         }
 
-        // 4. فلتر التاريخ
         const matchesDate = (!milFrom || ex.exam_date >= milFrom) && (!milTo || ex.exam_date <= milTo);
-        
         return matchesSubject && matchesDate;
     });
+
+    // 🚀 الجزء السحري: دمج السجلات المكررة (عضو 1 + عضو 2 + رئيس) في سطر واحد
+    const mergedExams: Record<string, any> = {};
+
+    rawExams.forEach((ex: any) => {
+        // نستخدم مفتاحاً فريداً يتكون من (عنوان الاختبار + التاريخ) لدمجهم
+        const key = `${ex.title}-${ex.exam_date}`;
+
+        if (!mergedExams[key]) {
+            // إذا كان أول سجل يمر علينا لهذا الاختبار
+            mergedExams[key] = {
+                ...ex,
+                all_totals: ex.total !== null ? [parseFloat(ex.total)] : [],
+                all_notes: ex.notes && ex.notes !== "-" ? [ex.notes] : []
+            };
+        } else {
+            // إذا وجدنا سجلاً سابقاً لنفس الاختبار (تكملة اللجنة)
+            if (ex.total !== null) mergedExams[key].all_totals.push(parseFloat(ex.total));
+            if (ex.notes && ex.notes !== "-" && !mergedExams[key].all_notes.includes(ex.notes)) {
+                mergedExams[key].all_notes.push(ex.notes);
+            }
+        }
+    });
+
+    // تحويل الكائن إلى مصفوفة وحساب المتوسط النهائي
+    return Object.values(mergedExams).map((group: any) => {
+        const avg = group.all_totals.length > 0 
+            ? group.all_totals.reduce((a: number, b: number) => a + b, 0) / group.all_totals.length 
+            : null;
+
+        return {
+            ...group,
+            total: avg !== null ? parseFloat(avg.toFixed(2)) : null,
+            notes: group.all_notes.length > 0 ? group.all_notes.join(" | ") : "-"
+        };
+    }).sort((a: any, b: any) => b.exam_date.localeCompare(a.exam_date));
+
 }, [profileData.military_exams, milFrom, milTo, milSubjectFilter, milSectionsList]);
 
     const filteredReports = useMemo(() => {

@@ -12,9 +12,12 @@ import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { motion, AnimatePresence } from "framer-motion"
+
 export default function NotificationsMenu() {
   const [notifications, setNotifications] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
+  // 🟢 إضافة حالة للتحكم في فتح وإغلاق القائمة يدوياً
+  const [open, setOpen] = useState(false)
   const router = useRouter()
 
   const fetchNotifications = async () => {
@@ -35,20 +38,19 @@ export default function NotificationsMenu() {
 
   useEffect(() => {
     fetchNotifications()
-    // تحديث تلقائي كل دقيقتين لضمان مزامنة الإشعارات الجديدة
     const interval = setInterval(fetchNotifications, 120000) 
     return () => clearInterval(interval)
   }, [])
 
-  // 🔵 دالة تمييز الإشعار كمقروء (الآن مرتبطة بجدول الخصوصية الجديد)
   const handleNotificationClick = async (notif: any) => {
+    // 1. 🟢 إغلاق القائمة فوراً لتعطي شعوراً بالاستجابة السريعة
+    setOpen(false)
+
     if (!notif.is_read) {
-      // 1. تحديث الحالة محلياً فوراً ليشعر المستخدم بالسرعة
       setNotifications(prev => 
         prev.map(n => n.id === notif.id ? { ...n, is_read: true } : n)
       )
       
-      // 2. إبلاغ الباك إند ليحفظ القراءة لهذا المستخدم بالذات في الجدول الجديد
       try {
         await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/notifications/mark-read/${notif.id}`, {
           method: 'POST',
@@ -59,26 +61,23 @@ export default function NotificationsMenu() {
       }
     }
     
-    // 3. الانتقال للرابط المطلوب
+    // 2. الانتقال للرابط (الذي يجب أن يحتوي على record_id من الباك إند)
     router.push(notif.link)
   }
- // 🔴 أضف هذه الدالة تحت handleNotificationClick
-const handleDismiss = async (e: React.MouseEvent, notifId: string) => {
-  e.stopPropagation(); // ✋ ضروري جداً لمنع فتح رابط الإشعار عند الضغط على X
-  
-  // 1. إخفاء محلي فوري
-  setNotifications(prev => prev.filter(n => n.id !== notifId));
-  
-  // 2. إرسال أمر الحذف للباك إند
-  try {
-    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/notifications/dismiss/${notifId}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    });
-  } catch (e) {
-    console.error("فشل حذف الإشعار");
-  }
-};
+
+  const handleDismiss = async (e: React.MouseEvent, notifId: string) => {
+    e.stopPropagation(); 
+    setNotifications(prev => prev.filter(n => n.id !== notifId));
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/notifications/dismiss/${notifId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+    } catch (e) {
+      console.error("فشل حذف الإشعار");
+    }
+  };
+
   const getCategoryConfig = (category: string) => {
     switch (category) {
       case 'status': return { icon: <Activity className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-50", border: "border-r-blue-500" };
@@ -89,7 +88,6 @@ const handleDismiss = async (e: React.MouseEvent, notifId: string) => {
     }
   }
 
-  // حساب الإشعارات غير المقروءة (الخاصة بالمستخدم الحالي فقط)
   const unreadAll = notifications.filter(n => !n.is_read).length
   const filterUnreadBy = (cat: string) => notifications.filter(n => n.category === cat && !n.is_read).length
   const filterAllBy = (cat: string) => notifications.filter(n => n.category === cat)
@@ -113,7 +111,7 @@ const handleDismiss = async (e: React.MouseEvent, notifId: string) => {
           return (
             <motion.div 
               key={notif.id} 
-              layout // يضمن صعود العناصر السفلية بسلاسة عند حذف عنصر
+              layout 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, x: 50, scale: 0.95 }}
@@ -146,7 +144,6 @@ const handleDismiss = async (e: React.MouseEvent, notifId: string) => {
                       {notif.time_ago}
                     </span>
                     
-                    {/* ❌ زر الحذف الصغير */}
                     <button 
                       onClick={(e) => handleDismiss(e, notif.id)}
                       className="p-1 hover:bg-red-100 hover:text-red-600 rounded-md text-slate-300 transition-colors"
@@ -169,12 +166,12 @@ const handleDismiss = async (e: React.MouseEvent, notifId: string) => {
 )
 
   return (
-    <Popover>
+    // 🟢 ربط الحالة open بالبوب أوفر
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <div className="relative cursor-pointer group">
            <Button variant="ghost" size="icon" className="relative hover:bg-slate-100 rounded-full h-10 w-10">
             <Bell className="w-6 h-6 text-slate-500 group-hover:text-blue-600 transition-colors" />
-            {/* 🔴 الرقم فوق الأيقونة (الإشعارات الجديدة غير المقروءة) */}
             {unreadAll > 0 && (
               <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white border-2 border-white shadow-md animate-in zoom-in duration-300">
                 {unreadAll > 9 ? '9+' : unreadAll}
@@ -185,7 +182,6 @@ const handleDismiss = async (e: React.MouseEvent, notifId: string) => {
       </PopoverTrigger>
       
       <PopoverContent className="w-[380px] p-0 rounded-3xl shadow-2xl border-slate-200 overflow-hidden bg-white z-[9999]" align="start">
-        {/* الهيدر العلوي */}
         <div className="bg-[#0f172a] p-4 text-white flex justify-between items-center">
           <div className="flex items-center gap-2">
             <div className="bg-blue-600 p-1.5 rounded-lg shadow-lg shadow-blue-900/20">
@@ -201,7 +197,6 @@ const handleDismiss = async (e: React.MouseEvent, notifId: string) => {
           </Button>
         </div>
 
-        {/* نظام التبويبات مع العدادات الذكية */}
         <Tabs defaultValue="all" className="w-full" dir="rtl">
           <TabsList className="w-full justify-start rounded-none bg-slate-50 border-b p-0 h-12 gap-0 overflow-x-auto no-scrollbar">
             <TabsTrigger value="all" className="flex-1 text-[10px] font-black data-[state=active]:bg-white data-[state=active]:text-blue-600 rounded-none border-b-2 border-transparent data-[state=active]:border-blue-600 h-full transition-all">
@@ -228,7 +223,6 @@ const handleDismiss = async (e: React.MouseEvent, notifId: string) => {
           <TabsContent value="reps" className="m-0 focus-visible:ring-0">{renderNotificationList(filterAllBy('reports'))}</TabsContent>
         </Tabs>
         
-        {/* الفوتير السفلي */}
         <div className="p-3 bg-slate-50 border-t flex justify-center items-center">
             <button 
               onClick={() => {

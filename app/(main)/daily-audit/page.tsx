@@ -19,7 +19,7 @@ import { toast } from "sonner"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import * as XLSX from 'xlsx';
 import { Badge } from "@/components/ui/badge";
-
+import { useRouter, useSearchParams } from "next/navigation"
 const STATUS_TYPES = [
     { id: "medical", label: "طبية" },
     { id: "clinic", label: "عيادة" },
@@ -51,7 +51,11 @@ export default function DailyAuditPage() {
     const [dailySummaries, setDailySummaries] = useState<any[]>([]);
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
-
+const searchParams = useSearchParams();
+    // 🟢 استخراج المعلمات من الرابط (التاريخ، الدورة، الدفعة)
+    const targetDate = searchParams.get('date');
+    const targetCourse = searchParams.get('course');
+    const targetBatch = searchParams.get('batch');
     const [options, setOptions] = useState({ courses: [], batches: [] });
 
    useEffect(() => {
@@ -97,7 +101,42 @@ export default function DailyAuditPage() {
         setLoading(false); 
     }
 };
+// 🔔 موظف الاستقبال لفتح التكميل مباشرة من الإشعارات
+useEffect(() => {
+    const handleDeepLink = async () => {
+        // نتحقق من وجود المعلمات الأساسية (تاريخ ودورة)
+        if (targetDate && targetCourse && dailySummaries.length > 0) {
+            
+            // 1. ضبط التاريخ أولاً (لكي تتوافق البيانات)
+            if (date !== targetDate) {
+                setDate(targetDate);
+                return; // سنتوقف هنا وننتظر الـ useEffect التالي الذي سيُشغل عند تغير التاريخ
+            }
 
+            // 2. البحث عن الدورة في الملخصات للتأكد من وجودها
+            const found = dailySummaries.find(s => 
+                s.course === targetCourse && 
+                (targetBatch ? s.batch === targetBatch : true)
+            );
+
+            if (found) {
+                console.log(`🎯 تم رصد إشعار تكميل لـ ${targetCourse}، جاري الفتح...`);
+                
+                // 3. استدعاء دالة فتح التقرير تلقائياً
+                await openReport(found.course, found.batch);
+
+                // 4. تنظيف الرابط لمنع التكرار
+                const newUrl = window.location.pathname;
+                window.history.replaceState({}, '', newUrl);
+
+                toast.success(`عرض تقرير: ${found.course}`);
+            }
+        }
+    };
+
+    handleDeepLink();
+}, [targetDate, targetCourse, targetBatch, dailySummaries, date]); 
+// 🔄 يراقب التغيرات لضمان الفتح حتى لو تأخر تحميل البيانات من السيرفر
     const openReport = async (course: string, batch: string) => {
         setLoading(true);
         try {
