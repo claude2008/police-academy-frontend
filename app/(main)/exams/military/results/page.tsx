@@ -981,7 +981,7 @@ const saveTrainerScoresToDB = async () => {
                         </div>
                     </div>
                     <h1 className="text-lg md:text-xl font-black py-4 underline underline-offset-8 uppercase leading-relaxed">
-                        اختبار عملي: {selectedRecord.title.split(" - ")[0]} - دورة: {selectedRecord.course} / دفعة: {selectedRecord.batch}
+                        اختبار عملي: {selectedRecord.title.split(" - ")[0]} - دورة: {selectedRecord.course} / : {selectedRecord.batch}
                     </h1>
                 </div>
 

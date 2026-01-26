@@ -668,7 +668,7 @@ const confirmPhotoDelete = async () => {
                                     {course.name}
                                 </h3>
                                 <p className="text-[#c5b391] font-bold text-sm mb-3">
-                                    {course.batch ? `الدفعة ${course.batch}` : "بدون دفعة"}
+                                    {course.batch ? `- ${course.batch}` : "بدون دفعة"}
                                 </p>
                                 
                                 {/* حالة الدورة (Badge) */}

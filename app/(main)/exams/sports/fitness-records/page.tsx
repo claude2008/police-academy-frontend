@@ -1723,7 +1723,7 @@ const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
 
                             <h1 className="text-lg md:text-xl font-black py-4 underline underline-offset-8 uppercase leading-relaxed">
 
-                                {selectedGroup.type === "fitness" ? "اختبار اللياقة البدنية" : "اختبار اشتباك"} {customExamType && `(${customExamType})`} - دورة: {selectedGroup.course} / دفعة: {selectedGroup.batch}
+                                {selectedGroup.type === "fitness" ? "اختبار اللياقة البدنية" : "اختبار اشتباك"} {customExamType && `(${customExamType})`} - دورة: {selectedGroup.course} / : {selectedGroup.batch}
 
                             </h1>
 
