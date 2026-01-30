@@ -124,7 +124,6 @@ const maxTotalScore = useMemo(() => {
  const handleSearch = async () => {
     const cleanQuery = normalizeNumbers(searchQuery).trim();
     
-    // 🔴 التعديل: التحقق من أن حقل البحث ليس فارغاً
     if (!cleanQuery) {
         return toast.error("يرجى إدخال الرقم العسكري أو اسم المجند أولاً");
     }
@@ -133,15 +132,26 @@ const maxTotalScore = useMemo(() => {
 
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?search=${cleanQuery}`, {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/search?query=${cleanQuery}`, {
         headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
       });
+      
       const data = await res.json();
-      if (data.data?.[0]) {
-        setSelectedSoldier(data.data[0]); setTempScores({}); setTempNotes(""); setIsModalOpen(true);
-      } else { toast.error("لم يتم العثور على جندي"); }
+
+      // 🟢 التعديل الجذري هنا:
+      // دالة البحث تعيد مصفوفة مباشرة [ ], لذا نفحص المصفوفة نفسها
+      if (Array.isArray(data) && data.length > 0) {
+        setSelectedSoldier(data[0]); 
+        setTempScores({}); 
+        setTempNotes(""); 
+        setIsModalOpen(true);
+      } else { 
+        toast.error("لم يتم العثور على جندي بهذا الرقم"); 
+      }
+    } catch (e) {
+        toast.error("حدث خطأ في الاتصال بالسيرفر");
     } finally { setLoading(false); }
-  };
+};
 
   const confirmAddition = () => {
     if (!activeConfig || !selectedSoldier) return;

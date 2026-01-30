@@ -95,19 +95,58 @@ export default function WeightsPage() {
 
   // 3. جلب خيارات الفلترة
   useEffect(() => {
-    const fetchFilters = async () => {
-        try {
-            const params = new URLSearchParams()
-            if (filterCourse !== 'all') params.append('course', filterCourse)
-            if (filterBatch !== 'all') params.append('batch', filterBatch)
-            if (filterCompany !== 'all') params.append('company', filterCompany)
-            
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${params.toString()}`)
-            if (res.ok) setFilterOptions(await res.json())
-        } catch (e) { console.error("Filter error") }
-    }
-    fetchFilters()
-  }, [filterCourse, filterBatch, filterCompany])
+        const fetchFilters = async () => {
+            try {
+                const params = new URLSearchParams()
+                if (filterCourse !== 'all') params.append('course', filterCourse)
+                if (filterBatch !== 'all') params.append('batch', filterBatch)
+                if (filterCompany !== 'all') params.append('company', filterCompany)
+                
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${params.toString()}`)
+                
+                if (res.ok) {
+                    let data = await res.json();
+
+                    // 🟢 [تطبيق قيود النطاق الذكية]
+                    const userStr = localStorage.getItem("user");
+                    if (userStr) {
+                        const user = JSON.parse(userStr);
+                        const scope = user?.extra_permissions?.scope;
+
+                        if (user.role !== 'owner' && scope?.is_restricted) {
+                            const allowedCourses = scope.courses || [];
+                            const allowedCompanies = scope.companies || [];
+                            const allowedPlatoons = scope.platoons || [];
+
+                            // 1. فلترة الدورات
+                            data.courses = data.courses.filter((courseName: string) => {
+                                return allowedCourses.some((ac: any) => ac.startsWith(courseName));
+                            });
+
+                            // 2. فلترة السرايا والفصائل بناءً على الدورة والدفعة المختارة
+                            if (filterCourse !== "all" && filterBatch !== "all") {
+                                const currentKeyPrefix = `${filterCourse}||${filterBatch}->`;
+                                
+                                data.companies = data.companies.filter((companyName: string) => {
+                                    return allowedCompanies.includes(`${currentKeyPrefix}${companyName}`);
+                                });
+
+                                data.platoons = data.platoons.filter((platoonName: string) => {
+                                    return allowedPlatoons.includes(`${currentKeyPrefix}${platoonName}`);
+                                });
+                            } else {
+                                // إفراغ السرايا والفصائل إذا لم يتم اختيار المسار الأساسي
+                                data.companies = [];
+                                data.platoons = [];
+                            }
+                        }
+                    }
+                    setFilterOptions(data)
+                }
+            } catch (e) { console.error("Filter error") }
+        }
+        fetchFilters()
+    }, [filterCourse, filterBatch, filterCompany])
   const isPathComplete = useMemo(() => {
     // 1. الدورة أساسية دائماً
     if (filterCourse === "all" || !filterCourse) return false;
@@ -137,8 +176,12 @@ useEffect(() => {
   // 4. دالة جلب البيانات من السيرفر
  const fetchData = async () => {
       setLoading(true)
-      // 🔑 جلب التوكن من الذاكرة المحلية لتأمين الطلب
+      // 🔑 جلب التوكن وبيانات المستخدم الحالي لتطبيق القيود
       const token = localStorage.getItem("token");
+      const userStr = localStorage.getItem("user");
+      const user = JSON.parse(userStr || "{}");
+      const scope = user?.extra_permissions?.scope;
+
       const headers = { 
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json"
@@ -153,28 +196,38 @@ useEffect(() => {
           if (filterPlatoon !== 'all') params.append('platoon', filterPlatoon)
           
           const soldiersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${params.toString()}`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } // 🛡️ إضافة التوكن
-});
+              headers: { 'Authorization': `Bearer ${token}` } // 🛡️ التوكن الموحد
+          });
           const soldiersJson = await soldiersRes.json()
           
-          // تجهيز قائمة الجنود
-         const mappedSoldiers = (soldiersJson.data || []).map((s: any) => ({
-    id: s.id,
-    militaryId: s.military_id,
-    name: s.name,
-    image_url: s.image_url, // 🟢 أضف هذا السطر هنا ليتم تخزين رابط الصورة
-    course: s.course,
-    batch: s.batch,
-    company: s.company,
-    platoon: s.platoon,
-    height: s.height,
-    initialWeight: s.initial_weight
-}));
+          // 🟢 [تطبيق قيود النطاق الذكية على قائمة الجنود المستلمة]
+          let rawSoldiers = soldiersJson.data || [];
+          if (user.role !== 'owner' && scope?.is_restricted) {
+              const allowedCourses = scope.courses || [];
+              rawSoldiers = rawSoldiers.filter((s: any) => {
+                  const key = `${s.course}${s.batch ? `||${s.batch}` : ''}`;
+                  return allowedCourses.includes(key);
+              });
+          }
+
+          // تجهيز قائمة الجنود النهائية للعرض
+          const mappedSoldiers = rawSoldiers.map((s: any) => ({
+              id: s.id,
+              militaryId: s.military_id,
+              name: s.name,
+              image_url: s.image_url, // 🟢 الحفاظ على رابط الصورة السحابي
+              course: s.course,
+              batch: s.batch,
+              company: s.company,
+              platoon: s.platoon,
+              height: s.height,
+              initialWeight: s.initial_weight
+          }));
 
           // ب) جلب كل الأوزان (مع إرسال التوكن للأمان)
           const weightsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weights/`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` } // 🛡️ إضافة التوكن
-});
+              headers: { 'Authorization': `Bearer ${token}` } // 🛡️ التوكن الموحد
+          });
           const weightsJson = await weightsRes.json()
 
           // ج) تجميع الجلسات (بناءً على الجنود الظاهرين فقط!) 🛡️

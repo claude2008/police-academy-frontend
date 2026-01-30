@@ -99,20 +99,61 @@ export default function WeeklyGradesPage() {
     useEffect(() => { setIsClient(true) }, []);
 
     // --- Effects ---
-    useEffect(() => {
+   useEffect(() => {
         const fetchFilters = async () => {
             try {
                 const params = new URLSearchParams()
                 if (filterCourse !== 'all') params.append('course', filterCourse)
                 if (filterBatch !== 'all') params.append('batch', filterBatch)
                 if (filterCompany !== 'all') params.append('company', filterCompany)
+                
                 const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${params.toString()}`)
-                if (res.ok) setFilterOptions(await res.json())
-            } catch (e) { console.error("Filter error") }
+                
+                if (res.ok) {
+                    let data = await res.json();
+
+                    // 🟢 [تطبيق قيود النطاق الذكية]
+                    const user = JSON.parse(localStorage.getItem("user") || "{}");
+                    const scope = user?.extra_permissions?.scope;
+
+                    if (user.role !== 'owner' && scope?.is_restricted) {
+                        const allowedCourses = scope.courses || [];
+                        const allowedCompanies = scope.companies || [];
+                        const allowedPlatoons = scope.platoons || [];
+
+                        // 1. فلترة الدورات المسموحة
+                        data.courses = data.courses.filter((courseName: string) => {
+                            return allowedCourses.some((ac: any) => ac.startsWith(courseName));
+                        });
+
+                        // 2. فلترة السرايا والفصائل بناءً على الدورة والدفعة المختارة حالياً
+                        if (filterCourse !== "all" && filterBatch !== "all") {
+                            const currentKeyPrefix = `${filterCourse}||${filterBatch}->`;
+                            
+                            // فلترة السرايا
+                            data.companies = data.companies.filter((companyName: string) => {
+                                return allowedCompanies.includes(`${currentKeyPrefix}${companyName}`);
+                            });
+
+                            // فلترة الفصائل
+                            data.platoons = data.platoons.filter((platoonName: string) => {
+                                return allowedPlatoons.includes(`${currentKeyPrefix}${platoonName}`);
+                            });
+                        } else {
+                            // إذا لم يتم اختيار دورة/دفعة، نفرغ السرايا والفصائل للأمان
+                            data.companies = [];
+                            data.platoons = [];
+                        }
+                    }
+
+                    setFilterOptions(data);
+                }
+            } catch (e) { 
+                console.error("Filter error", e); 
+            }
         }
         if (isClient) fetchFilters()
-    }, [filterCourse, filterBatch, filterCompany, isClient])
-
+    }, [filterCourse, filterBatch, filterCompany, isClient]);
     useEffect(() => {
         if (!isClient) return;
         

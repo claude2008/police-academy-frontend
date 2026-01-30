@@ -8,7 +8,7 @@ import {
   Dumbbell, FileText, Zap, Database, Search, 
   Layers, ArrowLeft, ShieldCheck, Award, Star,
   Shirt, Download, MoreHorizontal, UserCog,
-  Table, Scale,Swords // ✅ تم إضافة الأيقونات الناقصة هنا
+  Table, Scale,Swords,Plus // ✅ تم إضافة الأيقونات الناقصة هنا
 } from "lucide-react"
 import { motion, Variants } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card" 
@@ -224,7 +224,7 @@ export default function DashboardPage() {
   // 🚀 المحرك الذكي (The Smart Engine)
   // =========================================================
  const handleFeatureClick = (featureId: any) => {
-    // 1. القراءة المباشرة من الذاكرة (لحل مشكلة البيانات القديمة)
+    // 1. القراءة المباشرة من الذاكرة لضمان أحدث البيانات
     const storedUser = localStorage.getItem("user");
     
     if (!storedUser) {
@@ -234,26 +234,25 @@ export default function DashboardPage() {
     }
 
     const currentUser = JSON.parse(storedUser);
-    
-    // تحديث الحالة في الواجهة لتبقى متناسقة
     if (!user) setUser(currentUser);
 
-    // 🟢 استخدام البيانات الطازجة (currentUser) بدلاً من القديمة
     const role = currentUser.role || "";
-    
     const isTrainer = ["military_trainer", "sports_trainer"].includes(role);
     const isSupervisorOrOfficer = ["military_supervisor", "sports_supervisor", "military_officer", "sports_officer", "assistant_admin"].includes(role);
     const isSuperAdmin = ["owner", "manager", "admin"].includes(role);
 
-    // 🟢 معالجة زر "أخرى"
-    if (featureId === 'others') {
-        
-        // ❌ المنع الجديد: ضابط ومشرف العسكري
-        if (["military_supervisor", "military_officer"].includes(role)) {
-            return; 
-        }
+    // تحديد الفرع تلقائياً بناءً على الرتبة
+    let autoBranch: 'military' | 'sports' | null = null;
+    if (role.includes("military")) autoBranch = 'military';
+    if (role.includes("sports")) autoBranch = 'sports';
+    if (role === 'assistant_admin') autoBranch = 'sports';
 
-        // 1. الموظفين (رياضي + مساعد مسؤول)
+    // ---------------------------------------------------------
+    // 1. معالجة زر "أخرى" (البيانات الإدارية)
+    // ---------------------------------------------------------
+    if (featureId === 'others') {
+        if (["military_supervisor", "military_officer"].includes(role)) return; 
+
         if (["sports_trainer", "sports_supervisor", "sports_officer", "assistant_admin"].includes(role)) {
             setSelectionState({
                 isOpen: true,
@@ -265,7 +264,6 @@ export default function DashboardPage() {
             return;
         }
 
-        // 2. الإدارة العليا
         if (isSuperAdmin) {
             setSelectionState({
                 isOpen: true,
@@ -276,23 +274,55 @@ export default function DashboardPage() {
             });
             return;
         }
-        
         return; 
     }
 
-    // تحديد الفرع تلقائياً بناءً على البيانات الجديدة
-    let autoBranch: 'military' | 'sports' | null = null;
-    if (role.includes("military")) autoBranch = 'military';
-    if (role.includes("sports")) autoBranch = 'sports';
-    if (role === 'assistant_admin') autoBranch = 'sports';
+    // ---------------------------------------------------------
+    // 2. معالجة (التكميل اليومي) و (المخالفات) - المنطق الجديد
+    // ---------------------------------------------------------
+    if (featureId === 'attendance' || featureId === 'violations') {
+        
+        // أ. المدرب: يذهب فوراً للتسجيل (بدون نافذة خيارات)
+        if (isTrainer) {
+            const path = featureId === 'attendance' 
+                ? `/daily-schedule?branch=${autoBranch}` 
+                : `/violations`;
+            router.push(path);
+            return;
+        }
+
+        // ب. المشرف / الضابط / مساعد المسؤول: تفتح نافذة "الإجراء" فوراً بفرعه المحدد
+        if (isSupervisorOrOfficer) {
+            setSelectionState({
+                isOpen: true,
+                step: 'action_select',
+                feature: featureId,
+                selectedBranch: autoBranch || 'military',
+                selectedExamType: null
+            });
+            return;
+        }
+
+        // ج. الإدارة العليا: تختار الفرع أولاً
+        if (isSuperAdmin) {
+            setSelectionState({
+                isOpen: true,
+                step: 'branch_select',
+                feature: featureId,
+                selectedBranch: null,
+                selectedExamType: null
+            });
+            return;
+        }
+    }
 
     // ---------------------------------------------------------
-    // 🛑 السيناريو الأول: الموظفين (مدرب، مشرف، ضابط، مساعد)
+    // 3. معالجة بقية المميزات (الاختبارات، التقارير، الملف الشخصي)
     // ---------------------------------------------------------
     if (isTrainer || isSupervisorOrOfficer) {
         const myBranch = autoBranch || 'military'; 
 
-        // أ. زر التقارير
+        // التقارير
         if (featureId === 'reports') {
             setSelectionState({
                 isOpen: true,
@@ -304,61 +334,40 @@ export default function DashboardPage() {
             return;
         }
 
-        // ب. المدرب
-        if (isTrainer) {
-    if (featureId === 'attendance') router.push(`/daily-schedule?branch=${myBranch}`);
-    if (featureId === 'violations') router.push(`/violations?branch=${myBranch}`);
-    if (featureId === 'soldiers') router.push(`/courses/${autoBranch}/soldiers`);
-    
-    if (featureId === 'exams') {
-        // 🟢 التعديل الجوهري هنا:
-        // إذا كان المدرب عسكري، نرسله فوراً لصفحة الاختبارات العسكرية دون فتح النافذة
-        if (role === 'military_trainer') {
-            router.push('/exams/military/MilitaryExams');
-        } else {
-            // المدرب الرياضي تفتح له النافذة ليختار (لياقة أم اشتباك)
+        // الاختبارات
+        if (featureId === 'exams') {
+            if (role === 'military_trainer') {
+                router.push('/exams/military/MilitaryExams');
+            } else {
+                setSelectionState({ 
+                    isOpen: true, 
+                    step: 'exam_select', 
+                    feature: 'exams', 
+                    selectedBranch: myBranch, 
+                    selectedExamType: null 
+                });
+            }
+            return;
+        }
+
+        // الملف الشخصي (المجندين)
+        if (featureId === 'soldiers') {
+            if (role.includes("_supervisor")) {
+                router.push(`/courses/${myBranch}/soldiers`);
+                return;
+            }
             setSelectionState({ 
                 isOpen: true, 
-                step: 'exam_select', 
-                feature: 'exams', 
+                step: 'action_select', 
+                feature: 'soldiers', 
                 selectedBranch: myBranch, 
                 selectedExamType: null 
-            });
-        }
-    }
-    return;
-}
-
-        // ج. المشرف/الضابط
-        if (isSupervisorOrOfficer) {
-            
-            // 🟢 التعديل للمشرف (Supervisor) فقط
-            if (featureId === 'soldiers' && role.includes("_supervisor")) {
-                router.push(`/courses/${autoBranch || 'military'}/soldiers`);
-                return;
-            }
-
-            // الضابط ومساعد المسؤول
-            if (featureId === 'soldiers') {
-                setSelectionState({ isOpen: true, step: 'action_select', feature: featureId, selectedBranch: autoBranch || 'military', selectedExamType: null });
-                return;
-            }
-
-            // باقي الأزرار
-            setSelectionState({
-                isOpen: true,
-                step: featureId === 'exams' ? 'exam_select' : 'action_select',
-                feature: featureId,
-                selectedBranch: autoBranch || 'military',
-                selectedExamType: null
             });
             return;
         }
     }
 
-    // ---------------------------------------------------------
-    // 🛑 السيناريو الثاني: الإدارة العليا (Owner, Manager, Admin)
-    // ---------------------------------------------------------
+    // 4. الإدارة العليا لبقية الأزرار
     if (isSuperAdmin) {
         setSelectionState({
             isOpen: true,
@@ -368,7 +377,7 @@ export default function DashboardPage() {
             selectedExamType: null
         });
     }
-  };
+};
 
   const handleBranchSelect = (branch: 'military' | 'sports') => {
       // إذا كان الزر هو الملف الشخصي أو أخرى، ننتقل للإجراء
@@ -385,20 +394,22 @@ export default function DashboardPage() {
   };
 
   const executeAction = (actionType: string) => {
-      const { feature, selectedBranch } = selectionState;
-      if (!selectedBranch) return;
+    const { feature, selectedBranch } = selectionState;
+    if (!selectedBranch) return;
 
-      // 📅 التكميل
-      if (feature === 'attendance') {
-          if (actionType === 'new') router.push(`/daily-schedule?branch=${selectedBranch}`);
-          if (actionType === 'audit') router.push(`/daily-audit?branch=${selectedBranch}`);
-      }
+    // 📅 التكميل
+    if (feature === 'attendance') {
+        if (actionType === 'new') router.push(`/daily-schedule?branch=${selectedBranch}`);
+        if (actionType === 'audit') router.push(`/courses/audit`); // صفحة التدقيق المركزية
+        if (actionType === 'history') router.push(`/daily-audit?branch=${selectedBranch}`); // السجل التاريخي
+    }
 
-      // 🛑 المخالفات
-      if (feature === 'violations') {
-          if (actionType === 'new') router.push(`/violations`);
-          if (actionType === 'history') router.push(`/violations/history`);
-      }
+    // 🛑 المخالفات
+    if (feature === 'violations') {
+        if (actionType === 'new') router.push(`/violations`);
+        if (actionType === 'audit') router.push(`/courses/audit`); // صفحة التدقيق تشمل المخالفات الآن
+        if (actionType === 'history') router.push(`/violations/history`); // السجل التاريخي للمخالفات
+    }
 
       // 📊 التقارير
       if (feature === 'reports') {
@@ -589,21 +600,42 @@ if (feature === 'others') {
                            )}
 
                            {/* 2. اختيار الإجراء - التكميل */}
-                           {selectionState.step === 'action_select' && selectionState.feature === 'attendance' && (
-                               <>
-                                   <button onClick={() => executeAction('new')} className="w-full p-4 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><ClipboardList className="w-5 h-5"/> تسجيل حالات جديدة</button>
-                                   <button onClick={() => executeAction('audit')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><ShieldCheck className="w-5 h-5"/> سجل التكميل </button>
-                               </>
-                           )}
+                           {/* ابحث عن قسم التكميل والمخالفات داخل الـ Dialog واستبدله بهذا التصميم الثلاثي */}
 
-                           {/* المخالفات */}
-                           {selectionState.step === 'action_select' && selectionState.feature === 'violations' && (
-                               <>
-                                   <button onClick={() => executeAction('new')} className="w-full p-4 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><ShieldAlert className="w-5 h-5"/> تسجيل مخالفة جديدة</button>
-                                   <button onClick={() => executeAction('history')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><FileText className="w-5 h-5"/> سجل المخالفات</button>
-                               </>
-                           )}
+{/* 📅 خيارات التكميل اليومي */}
+{selectionState.step === 'action_select' && selectionState.feature === 'attendance' && (
+    <div className="grid grid-cols-1 gap-3">
+        <button onClick={() => executeAction('new')} className="w-full p-4 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-blue-100">
+            <Plus className="w-5 h-5"/> تسجيل حالات جديدة
+        </button>
+        
+        {/* زر التدقيق يظهر فقط للمسؤولين والقيادات */}
+        <button onClick={() => executeAction('audit')} className="w-full p-4 bg-green-50 hover:bg-green-100 text-green-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-green-100 shadow-sm">
+            <ShieldCheck className="w-5 h-5"/> التدقيق والاعتماد اليومي
+        </button>
 
+        <button onClick={() => executeAction('history')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-slate-100">
+            <Table className="w-5 h-5"/> سجل التكميل المعتمد
+        </button>
+    </div>
+)}
+
+{/* 🛑 خيارات المخالفات */}
+{selectionState.step === 'action_select' && selectionState.feature === 'violations' && (
+    <div className="grid grid-cols-1 gap-3">
+        <button onClick={() => executeAction('new')} className="w-full p-4 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-red-100">
+            <ShieldAlert className="w-5 h-5"/> تسجيل مخالفة جديدة
+        </button>
+
+        <button onClick={() => executeAction('audit')} className="w-full p-4 bg-green-50 hover:bg-green-100 text-green-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-green-100 shadow-sm">
+            <ShieldCheck className="w-5 h-5"/> التدقيق واعتماد المخالفات
+        </button>
+
+        <button onClick={() => executeAction('history')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-slate-100">
+            <FileText className="w-5 h-5"/> سجل المخالفات العام
+        </button>
+    </div>
+)}
                            {/* التقارير */}
                            {selectionState.step === 'action_select' && selectionState.feature === 'reports' && (
                                <>

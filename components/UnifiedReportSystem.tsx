@@ -135,12 +135,27 @@ const [isPreviewOnly, setIsPreviewOnly] = useState(false)
     };
   const fetchGroupsSummary = async () => {
     try {
-        // نرسل الـ branch القادم من الـ props (سواء sports أو military)
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reports/groups-summary?branch=${branch}`, {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
         });
         if (res.ok) {
-            setReportGroups(await res.json());
+            let data = await res.json();
+
+            // 🔑 جلب صلاحيات المستخدم
+            const user = JSON.parse(localStorage.getItem("user") || "{}");
+            const scope = user?.extra_permissions?.scope;
+
+            // 🛡️ إذا كان المستخدم مقيداً، نفلتر المجلدات (البطاقات) فوراً
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedCourses = scope.courses || [];
+                data = data.filter((group: any) => {
+                    // صنع المفتاح: "اسم الدورة||الدفعة" للمطابقة مع Scope
+                    const groupKey = `${group.course}||${group.batch}`;
+                    return allowedCourses.includes(groupKey);
+                });
+            }
+
+            setReportGroups(data);
         }
     } catch (e) {
         console.error("Error fetching groups", e);
@@ -317,33 +332,33 @@ useEffect(() => {
     setLoading(true);
     try {
         const skip = (currentPage - 1) * itemsPerPage;
-        
-        // تجهيز المعاملات المرسلة للسيرفر
         const params = new URLSearchParams({
             category: category,
             branch: branch,
             skip: skip.toString(),
             limit: itemsPerPage.toString(),
             search: searchQuery,
-            
-            // 🟢 التعديل الجديد: إرسال اسم الدورة والدفعة المختارة من البطاقة
-            // إذا لم يتم اختيار بطاقة (selectedGroup = null)، نرسل 'all' لعرض الكل
             course: selectedGroup?.course || 'all',
             batch: selectedGroup?.batch || 'all',
-
-            // بيانات المستخدم (التي كانت موجودة سابقاً)
-            current_user_id: userId ? userId.toString() : '',
-            current_user_role: userRole || 'guest',
         });
 
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/reports/?${params.toString()}`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-});
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
         
         if (res.ok) {
             const json = await res.json();
-            setSavedReports(json.data);
-            setTotalItems(json.total);
+            let reportsList = json.data || [];
+
+            const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+            // 🛡️ حماية المدرب: يرى ما كتبه بيده فقط
+            if (TRAINER_ROLES.includes(user.role)) {
+                reportsList = reportsList.filter((r: any) => r.writer_id === user.id);
+            }
+
+            setSavedReports(reportsList);
+            setTotalItems(json.total || reportsList.length);
         }
     } catch (e) {
         toast.error("فشل جلب البيانات");
@@ -656,14 +671,14 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
     {!selectedGroup && (
         <div className="flex justify-center mb-10 print:hidden w-full px-4 animate-in slide-in-from-top-2">
             <TabsList className="grid w-full grid-cols-2 max-w-[400px] mb-6 tabs-list print:hidden ml-auto mr-0">
-                <TabsTrigger value="records">
-                    عرض التقارير المسجلة 
-                    {totalItems > 0 && <span className="mr-2 bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs font-bold">{totalItems}</span>}
-                </TabsTrigger>
-                <TabsTrigger value="new">
-                    {editingId ? (isPreviewOnly ? "معاينة المستند" : "تعديل المستند") : "تحرير مستند جديد"}
-                </TabsTrigger>
-            </TabsList>
+    <TabsTrigger value="records">
+        عرض التقارير المسجلة 
+        {/* 🟢 تم إزالة الرقم من هنا نهائياً بناءً على طلبك */}
+    </TabsTrigger>
+    <TabsTrigger value="new">
+        {editingId ? (isPreviewOnly ? "معاينة المستند" : "تعديل المستند") : "تحرير مستند جديد"}
+    </TabsTrigger>
+</TabsList>
         </div>
     )}
                 <TabsContent value="new">
@@ -1020,30 +1035,31 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
                 </div>
 
                 {/* قائمة الدورة */}
-                <Select value={folderFilterCourse} onValueChange={setFolderFilterCourse}>
-                    <SelectTrigger className="w-[160px] h-8 text-xs bg-white border-[#c5b391]/30 font-bold">
-                        <SelectValue placeholder="اختيار الدورة" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">كل الدورات</SelectItem>
-                        {Array.from(new Set(reportGroups.map(g => g.course))).map(c => (
-                            <SelectItem key={c} value={c}>{c}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+<Select value={folderFilterCourse} onValueChange={setFolderFilterCourse}>
+    <SelectTrigger className="w-[160px] h-8 text-xs bg-white border-[#c5b391]/30 font-bold">
+        <SelectValue placeholder="اختيار الدورة" />
+    </SelectTrigger>
+    <SelectContent>
+        <SelectItem value="all">كل الدورات</SelectItem>
+        {/* 🟢 نعتمد على reportGroups المفلترة سابقاً */}
+        {Array.from(new Set(reportGroups.map(g => g.course))).map(c => (
+            <SelectItem key={c} value={c}>{c}</SelectItem>
+        ))}
+    </SelectContent>
+</Select>
 
-                {/* قائمة الدفعة */}
-                <Select value={folderFilterBatch} onValueChange={setFolderFilterBatch}>
-                    <SelectTrigger className="w-[140px] h-8 text-xs bg-white border-[#c5b391]/30 font-bold">
-                        <SelectValue placeholder="اختيار الدفعة" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">كل الدفعات</SelectItem>
-                        {Array.from(new Set(reportGroups.map(g => g.batch))).map(b => (
-                            <SelectItem key={b} value={b}>{b}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+{/* قائمة الدفعة */}
+<Select value={folderFilterBatch} onValueChange={setFolderFilterBatch}>
+    <SelectTrigger className="w-[140px] h-8 text-xs bg-white border-[#c5b391]/30 font-bold">
+        <SelectValue placeholder="اختيار الدفعة" />
+    </SelectTrigger>
+    <SelectContent>
+        <SelectItem value="all">كل الدفعات</SelectItem>
+        {Array.from(new Set(reportGroups.map(g => g.batch))).map(b => (
+            <SelectItem key={b} value={b}>{b}</SelectItem>
+        ))}
+    </SelectContent>
+</Select>
 
                 {/* زر تصفير سريع يظهر عند الحاجة */}
                 {(folderFilterCourse !== 'all' || folderFilterBatch !== 'all') && (

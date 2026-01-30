@@ -117,36 +117,78 @@ const canDeletePhoto = useMemo(() => {
     fetchCourses();
   }, [])
 
-  // جلب قائمة الدورات (للبطاقات)
   const fetchCourses = async () => {
       try {
           const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/courses/summary`, {
-             headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+              headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
           });
 
           if (res.ok) {
-              const data = await res.json();
+              let data = await res.json();
+              
+              // 🟢 [تطبيق قيود النطاق]
+              const user = JSON.parse(localStorage.getItem("user") || "{}");
+              const scope = user?.extra_permissions?.scope;
+
+              if (user.role !== 'owner' && scope?.is_restricted) {
+                  const allowedCourses = scope.courses || [];
+                  data = data.filter((c: any) => {
+                      const key = `${c.name}${c.batch ? `||${c.batch}` : ''}`;
+                      return allowedCourses.includes(key);
+                  });
+              }
               setCoursesList(data);
           }
       } catch (e) { console.error("Error fetching courses") }
   }
 
-  // جلب الفلاتر (للجدول)
-  const fetchFilters = async () => {
-      try {
-          const params = new URLSearchParams()
-          if (filterCourse !== 'all') params.append('course', filterCourse)
-          if (filterBatch !== 'all') params.append('batch', filterBatch)
-          if (filterCompany !== 'all') params.append('company', filterCompany)
+ const fetchFilters = async () => {
+    try {
+        const params = new URLSearchParams();
+        if (filterCourse !== 'all') params.append('course', filterCourse);
+        if (filterBatch !== 'all') params.append('batch', filterBatch);
+        if (filterCompany !== 'all') params.append('company', filterCompany);
 
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${params.toString()}`)
-          if (res.ok) {
-              const data = await res.json()
-              setFilterOptions(data)
-          }
-      } catch (e) { console.error("Filter fetch error") }
-  }
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${params.toString()}`);
 
+        if (res.ok) {
+            let data = await res.json();
+
+            const user = JSON.parse(localStorage.getItem("user") || "{}");
+            const scope = user?.extra_permissions?.scope;
+
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedCourses = scope.courses || [];
+                const allowedCompanies = scope.companies || [];
+                const allowedPlatoons = scope.platoons || [];
+
+                // 1. فلترة الدورات (كما فعلنا سابقاً)
+                data.courses = data.courses.filter((courseName: string) => {
+                    return allowedCourses.some((ac: any) => ac.startsWith(courseName));
+                });
+
+                // 2. فلترة السرايا بناءً على الدورة المختارة حالياً
+                // المفتاح في الـ Scope هو: "الدورة||الدفعة->السرية"
+                if (filterCourse !== "all" && filterBatch !== "all") {
+                    const currentKeyPrefix = `${filterCourse}||${filterBatch}->`;
+                    
+                    data.companies = data.companies.filter((companyName: string) => {
+                        return allowedCompanies.includes(`${currentKeyPrefix}${companyName}`);
+                    });
+
+                    // 3. فلترة الفصائل بناءً على الدورة المختارة حالياً
+                    data.platoons = data.platoons.filter((platoonName: string) => {
+                        return allowedPlatoons.includes(`${currentKeyPrefix}${platoonName}`);
+                    });
+                }
+            }
+
+            setFilterOptions(data);
+        }
+    } catch (e) { 
+        console.error("Filter fetch error", e); 
+    }
+};
   useEffect(() => {
       fetchFilters();
   }, [filterCourse, filterBatch, filterCompany]);
@@ -173,15 +215,48 @@ const canDeletePhoto = useMemo(() => {
           };
           const queryString = buildQuery(params);
           const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${queryString}`)
-          if (res.ok) {
-              const responseData = await res.json()
-              if (responseData.data) {
-                setSoldiers(responseData.data)
-                setTotalCount(responseData.total)
-              } else {
-                setSoldiers(responseData)
-              }
-          }
+         if (res.ok) {
+      const responseData = await res.json();
+      let rawData = responseData.data || responseData;
+      
+// 🟢 [تطبيق قيود النطاق الكاملة على نتائج الجدول]
+const user = JSON.parse(localStorage.getItem("user") || "{}");
+const scope = user?.extra_permissions?.scope;
+
+if (user.role !== 'owner' && scope?.is_restricted) {
+    const allowedCourses: string[] = scope.courses || [];
+    const allowedCompanies: string[] = scope.companies || [];
+    const allowedPlatoons: string[] = scope.platoons || [];
+
+    rawData = rawData.filter((s: any) => {
+        const courseKey = `${s.course}${s.batch ? `||${s.batch}` : ''}`;
+        
+        const isCourseAllowed = allowedCourses.includes(courseKey);
+        if (!isCourseAllowed) return false;
+
+        const companyKey = `${courseKey}->${s.company}`;
+        // 🛡️ إضافة النوع (string) لـ c هنا لحل الخطأ الأول
+        const hasCompanyScopeForThisCourse = allowedCompanies.some((c: string) => c.startsWith(courseKey + "->"));
+        
+        if (hasCompanyScopeForThisCourse) {
+            if (!allowedCompanies.includes(companyKey)) return false;
+        }
+
+        const platoonKey = `${courseKey}->${s.platoon}`;
+        // 🛡️ إضافة النوع (string) لـ p هنا لحل الخطأ الثاني
+        const hasPlatoonScopeForThisCourse = allowedPlatoons.some((p: string) => p.startsWith(courseKey + "->"));
+        
+        if (hasPlatoonScopeForThisCourse) {
+            if (!allowedPlatoons.includes(platoonKey)) return false;
+        }
+
+        return true;
+    });
+}
+
+setSoldiers(rawData);
+setTotalCount(responseData.total || rawData.length);
+  }
       } catch (error) { toast.error("فشل الاتصال بالسيرفر") } 
       finally { setLoading(false) }
   }

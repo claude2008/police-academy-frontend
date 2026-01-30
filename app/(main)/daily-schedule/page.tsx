@@ -8,7 +8,7 @@ import {
   CalendarDays, Search, Clock, AlertTriangle, 
   Loader2, ChevronRight, ChevronLeft, Stethoscope, Tent, 
   FileText, UserMinus, HelpCircle, PlusCircle, Trash2, CheckCircle2, User,
-  Camera, Paperclip, X, Info, FileCheck, Check
+  Camera, Paperclip, X, Info, FileCheck, Check ,Lock
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,6 +39,7 @@ const STATUS_OPTIONS = [
   // 🟢 إضافة needsTime هنا
   { id: "late_parade", label: "تأخير تكميل", color: "bg-orange-100 text-orange-700 border-orange-200", icon: Clock, needsTime: true, propagate: false },
   { id: "late_class", label: "تأخير حصة", color: "bg-orange-100 text-orange-700 border-orange-200", icon: Clock, needsTime: true, propagate: false },
+  { id: "hospital", label: "مستشفى", color: "bg-blue-100 text-blue-700 border-blue-200", icon: Stethoscope, needsDuration: true, propagate: true },
   // 🟢 إضافة needsNote و needsDuration هنا
   { id: "other", label: "أخرى", color: "bg-gray-200 text-gray-800 border-gray-300", icon: HelpCircle, needsNote: true, needsDuration: true, propagate: true },
 ]
@@ -67,65 +68,99 @@ export default function DailySchedulePage() {
   const [attachmentStudent, setAttachmentStudent] = useState<any>(null);
   const [isCompressing, setIsCompressing] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+const [lockedSessions, setLockedSessions] = useState<string[]>([]);
+ useEffect(() => {
+  const fetchOptions = async () => {
+    try {
+        const token = localStorage.getItem("token");
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        const scope = user?.extra_permissions?.scope;
+        const isRestricted = user.role !== 'owner' && scope?.is_restricted;
+        const userCourses = scope?.courses || [];
 
-  useEffect(() => {
-    const fetchOptions = async () => {
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`);
-            if (res.ok) setFilterOptions(await res.json());
-            const tRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates`, {
-                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-            });
-            if (tRes.ok) setTemplates(await tRes.json());
-        } catch (e) { console.error(e) }
-    };
-    fetchOptions();
-  }, []);
+        if (isRestricted && userCourses.length === 0) {
+            setFilterOptions({ courses: [], batches: [] });
+            setTemplates([]);
+            return;
+        }
 
-const activeSchedule = useMemo(() => {
-  // 1. البحث عن القالب المناسب (مع دعم الدورات بدون دفعة)
-  const template = templates.find(t => {
-    const courseMatch = t.course_key === selectedCourse || t.courseId === selectedCourse;
+        const [fRes, tRes] = await Promise.all([
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`),
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            })
+        ]);
+
+        if (fRes.ok) {
+            let data = await fRes.json();
+            if (isRestricted) {
+                const allowedNames = userCourses.map((key: string) => key.split('||')[0]);
+                data.courses = (data.courses || []).filter((c: string) => allowedNames.includes(c));
+                data.batches = (data.batches || []).filter((b: string) => 
+                    userCourses.some((key: string) => key.endsWith(`||${b}`))
+                );
+            }
+            setFilterOptions(data);
+        }
+
+       if (tRes.ok) {
+    let templateData = await tRes.json();
     
-    // التحقق الذكي من الدفعة (يدعم null و "all")
-    const batchMatch = (t.batch_key === selectedBatch || t.batchId === selectedBatch) || 
-                       (selectedBatch === "all" && (!t.batch_key || t.batch_key === "" || t.batch_key === "none"));
-    
-    return courseMatch && batchMatch && t.isActive;
-  });
+    if (isRestricted) {
+        templateData = templateData.filter((t: any) => {
+            // 🟢 الإصلاح: تجربة كل المسميات الممكنة للحقول
+            const cKey = t.course_key || t.courseId || t.course_name;
+            const bKey = t.batch_key || t.batchId || t.batch_name;
+            
+            if (!cKey) return false; // إذا لم يجد اسم الدورة أصلاً، نرفض القالب
 
-  // إذا لم نجد قالباً مطابقاً أو نشطاً، نرجع مصفوفة فارغة
-  if (!template) return [];
-
-  // 2. معالجة بيانات الجدول (فك التشفير إذا كان نصاً)
-  let scheduleData = [];
-  try {
-    const rawData = template.schedule_data || template.schedule;
-    if (typeof rawData === 'string') {
-      scheduleData = JSON.parse(rawData);
-    } else {
-      scheduleData = rawData || [];
+            const templateKey = bKey ? `${cKey}||${bKey}` : cKey;
+            
+            const isMatch = userCourses.includes(templateKey) || 
+                           userCourses.some((uc: string) => uc.startsWith(cKey + "||"));
+            
+            return isMatch;
+        });
     }
-  } catch (e) {
-    console.error("خطأ في معالجة بيانات البرنامج التدريبي:", e);
-    return [];
-  }
+    setTemplates(templateData);
+}
 
-  // التأكد أن البيانات عبارة عن مصفوفة
-  if (!Array.isArray(scheduleData)) return [];
+    } catch (e) { console.error("Error in fetchOptions:", e); }
+};
+    fetchOptions();
+  }, [date]); // أضفنا date لضمان التحديث عند تغيير التاريخ
+const activeSchedule = useMemo(() => {
+    const template = templates.find(t => {
+        // 🟢 الإصلاح: قراءة مرنة للمسميات
+        const tCourse = t.course_key || t.courseId || t.course_name;
+        const tBatch = t.batch_key || t.batchId || t.batch_name;
+        
+        const courseMatch = tCourse === selectedCourse;
+        
+        // معالجة الدفعة
+        const currentBatch = (selectedBatch === "all" || selectedBatch === "" || selectedBatch === "none") ? null : selectedBatch;
+        const batchMatch = (tBatch === currentBatch) || (selectedBatch === "all" && (!tBatch || tBatch === "none"));
+        
+        const activeFlag = t.is_active !== undefined ? t.is_active : t.isActive;
 
-  // 3. تحديد اليوم المطلوب باللغة العربية
-  const rawDayName = format(new Date(date), "EEEE", { locale: ar });
-  
-  // 4. البحث عن اليوم داخل القالب (الذي قد يكون تقلص بعد حذف الصفوف)
-  const dayEntry = scheduleData.find((d: any) => d.dayName === rawDayName || d.day === rawDayName);
-  
-  // 5. إرجاع الحصص (التي قد يكون عددها تغير بعد حذف الأعمدة)
-  // نتحقق من وجود sessions وأنها مصفوفة فعلاً
-  return dayEntry && Array.isArray(dayEntry.sessions) ? dayEntry.sessions : [];
+        return courseMatch && batchMatch && activeFlag === true;
+    });
 
+    if (!template) return [];
+
+    let scheduleData = [];
+    try {
+        const rawData = template.schedule_data || template.schedule;
+        scheduleData = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+    } catch (e) { return []; }
+
+    if (!Array.isArray(scheduleData)) return [];
+
+    const rawDayName = format(new Date(date), "EEEE", { locale: ar });
+    const dayEntry = scheduleData.find((d: any) => d.dayName === rawDayName || d.day === rawDayName);
+    
+    return dayEntry?.sessions || [];
 }, [date, selectedCourse, selectedBatch, templates]);
-
   // ✅ الكود الجديد: يطلب الدورة كشرط أساسي، والدفعة اختيارية
 useEffect(() => { 
     if (selectedCourse) { 
@@ -133,22 +168,59 @@ useEffect(() => {
     } 
 }, [selectedCourse, selectedBatch, selectedCompany, date]);
 
-  const fetchSoldiers = async () => {
+const fetchSoldiers = async () => {
     setLoading(true);
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const scope = user?.extra_permissions?.scope;
+
     try {
-        const params = new URLSearchParams({ course: selectedCourse, batch: selectedBatch, limit: "1000" });
-        
-        // 🔴 قمنا بحذف هذا السطر لكي يجلب النظام كل السرايا في الذاكرة أولاً
-        // if (selectedCompany !== "all") params.append("company", selectedCompany);
+        const params = new URLSearchParams({ 
+            course: selectedCourse, 
+            batch: selectedBatch, 
+            limit: "1000" 
+        });
 
         const [sRes, dRes] = await Promise.all([
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${params.toString()}`),
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/day-data?date=${date}`, { headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } })
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/day-data?date=${date}&course=${selectedCourse}&batch=${selectedBatch}`, { 
+                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } 
+            })
         ]);
-        if (sRes.ok) setSoldiers((await sRes.json()).data || []);
-        if (dRes.ok) setAttendanceData(await dRes.json());
-    } catch (e) { toast.error("فشل التحديث") } finally { setLoading(false) }
-  };
+
+        // 1. معالجة بيانات الجنود (كما هي مع التأمين)
+        if (sRes.ok) {
+            let soldiersData = (await sRes.json()).data || [];
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedCoursesKeys = scope.courses || [];
+                soldiersData = soldiersData.filter((s: any) => 
+                    allowedCoursesKeys.includes(`${s.course}||${s.batch}`)
+                );
+            }
+            setSoldiers(soldiersData);
+        }
+
+        // 2. 🟢 التعديل الجوهري: معالجة بيانات الحصص والأقفال
+        if (dRes.ok) {
+            const responseData = await dRes.json();
+            
+            /* ملاحظة: سنقوم بتحديث الباك إند ليرسل كائن يحتوي على:
+               { data: {...}, approved_sessions: ["0", "1"] }
+            */
+            
+            // تحديث بيانات الحضور (المربعات الملونة)
+            setAttendanceData(responseData.data || responseData); 
+
+            // تحديث قائمة الحصص المعتمدة (الأقفال)
+            setLockedSessions(responseData.approved_sessions || []);
+        }
+
+    } catch (e) { 
+        toast.error("فشل التحديث"); 
+        console.error(e);
+    } finally { 
+        setLoading(false); 
+    }
+};
 
   const platoonsList = useMemo(() => {
       const list = new Set(soldiers.filter(s => selectedCompany === "all" || s.company === selectedCompany).map(s => s.platoon));
@@ -350,24 +422,37 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
         const token = localStorage.getItem("token");
         let url = `${process.env.NEXT_PUBLIC_API_URL}/session/delete/attendance/${activeEntry.id}`;
         
-        // سيناريو حذف السلسلة كاملة
         if (mode === 'group_full' && activeEntry.group_id) {
             url = `${process.env.NEXT_PUBLIC_API_URL}/session/delete-group/${activeEntry.group_id}`;
         } 
-        // سيناريو إنهاء الحالة من اليوم (حذف المتبقي)
         else if (mode === 'group_from_today' && activeEntry.group_id) {
             url = `${process.env.NEXT_PUBLIC_API_URL}/session/terminate-group/${activeEntry.group_id}?from_date=${date}`;
         }
 
-        const res = await fetch(url, { method: "DELETE", headers: { "Authorization": `Bearer ${token}` } });
+        const res = await fetch(url, { 
+            method: "DELETE", 
+            headers: { "Authorization": `Bearer ${token}` } 
+        });
+
+        const responseData = await res.json();
 
         if (res.ok) {
             toast.success("تم تنفيذ الإجراء بنجاح");
             fetchSoldiers();
-            setModalOpen(false);
+            setModalOpen(false); // إغلاق النافذة عند النجاح
+        } else {
+            // 🛑 هنا نلتقط رسالة المنع القادمة من الباك إند (403 Forbidden)
+            if (res.status === 403) {
+                toast.error(responseData.detail || "لا يمكن حذف سلسلة تحتوي على حصص معتمدة");
+            } else {
+                toast.error(responseData.detail || "حدث خطأ أثناء العملية");
+            }
+            // 🟢 إغلاق النافذة وتصفير وضع الحذف حتى لو فشل بسبب الاعتماد
+            setModalOpen(false); 
+            setConfirmDeleteId(null);
         }
     } catch (e) {
-        toast.error("حدث خطأ في العملية");
+        toast.error("حدث خطأ في الاتصال بالسيرفر");
     } finally {
         setLoading(false);
         setConfirmDeleteId(null);
@@ -375,7 +460,7 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
 };
   return (
     <ProtectedRoute allowedRoles={["owner","manager","admin","assistant_admin","sports_officer","sports_supervisor", "sports_trainer","military_officer","military_supervisor", "military_trainer"]}>
-      <div className="p-2 md:p-4 pb-32 space-y-4 max-w-[1800px] mx-auto bg-slate-50/50 min-h-screen" dir="rtl">
+      <div className="p-2 md:p-4 pb-10 md:pb-32 space-y-4 max-w-[1800px] mx-auto bg-slate-50/50 min-h-screen" dir="rtl">
         
         <Card className="border-t-4 border-[#c5b391] shadow-sm">
             <CardHeader className="py-3 flex flex-row justify-between items-center bg-white rounded-t-lg">
@@ -387,10 +472,23 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
                 </div>
             </CardHeader>
             <CardContent className="grid grid-cols-2 md:grid-cols-6 gap-2 p-3">
-                <Select value={selectedCourse} onValueChange={(v)=>{setSelectedCourse(v); setSelectedBatch("all");}}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="الدورة" /></SelectTrigger>
-                  <SelectContent>{filterOptions.courses.map((c:any)=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                </Select>
+               <Select value={selectedCourse} onValueChange={(v)=>{setSelectedCourse(v); setSelectedBatch("all");}}>
+  <SelectTrigger className="h-9 text-xs font-bold bg-white">
+    <SelectValue placeholder={filterOptions.courses.length === 0 ? "لا توجد صلاحيات" : "اختر الدورة"} />
+  </SelectTrigger>
+  <SelectContent>
+    {/* 🟢 لا تسمح للمتصفح بعرض أي خيار إذا كانت القائمة فارغة برمجياً */}
+    {filterOptions.courses && filterOptions.courses.length > 0 ? (
+      filterOptions.courses.map((c: any) => (
+        <SelectItem key={c} value={c}>{c}</SelectItem>
+      ))
+    ) : (
+      <SelectItem value="none" disabled className="text-center text-red-500 italic">
+        ليس لديك صلاحية على أي دورة
+      </SelectItem>
+    )}
+  </SelectContent>
+</Select>
 
                 {/* 🟢 التعديل الثاني: قائمة الدفعات تظهر فقط ما يخص الدورة المختارة */}
                 <Select value={selectedBatch} onValueChange={setSelectedBatch} disabled={!selectedCourse}>
@@ -501,40 +599,46 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
             </TableCell>
 
             {/* 🟢 الجزء الأهم: عرض الحصص بناءً على المفتاح الذكي */}
-           {activeSchedule.map((session: any, sIdx: number) => {
+          {activeSchedule.map((session: any, sIdx: number) => {
     const sessionId = session.id || String(sIdx);
     const key = `${soldier.id}-${sessionId}`;
     const slotKey = `${soldier.id}-slot-${sIdx}`;
-
+    
     const record = attendanceData[key]?.attendance || attendanceData[slotKey]?.attendance;
     const status = STATUS_OPTIONS.find(o => o.id === record?.status);
+
+    // 🟢 إضافة فحص القفل هنا
+    const isLocked = lockedSessions.includes(String(sIdx));
 
     return (
         <TableCell 
             key={sIdx} 
-            className="border p-1 cursor-pointer hover:bg-slate-100" 
-           onClick={() => { 
-    setActiveEntry({ 
-        soldier, 
-        session, 
-        sessionId: String(sIdx), 
-        ...record,
-        // إذا كانت هناك حالة، نأخذ تاريخ بدايتها المحفوظ، وإلا نأخذ تاريخ اليوم الظاهر
-        start_date: record?.start_date || date 
-    }); 
-    setModalOpen(true); 
-}}
+            // 🟢 تغيير الخلفية إذا كانت مغلقة
+            className={`border p-1 cursor-pointer transition-colors ${isLocked ? 'bg-slate-50/50' : 'hover:bg-slate-100'}`}
+            onClick={() => { 
+                setActiveEntry({ 
+                    soldier, 
+                    session, 
+                    sessionId: String(sIdx), 
+                    ...record,
+                    start_date: record?.start_date || date,
+                    isLocked: isLocked // 🟢 نمرر حالة القفل للنافذة
+                }); 
+                setModalOpen(true); 
+            }}
         >
-            {status ? (
-                <div className={`${status.color} rounded px-1 py-0.5 text-[9px] font-black border border-current/20 shadow-sm text-center truncate max-w-[100px] mx-auto`}>
-                    {/* 🟢 التعديل: إذا كانت الحالة "أخرى" والملاحظة موجودة، نعرض الملاحظة */}
-                    {record.status === "other" && record.note ? record.note : status.label}
-                    {record.duration > 1 && ` (${record.duration}ي)`}
-                </div>
-            ) : (
-                /* 🟢 التعديل: جعل علامة + أغمق (تغيير من slate-100 إلى slate-300) */
-                <PlusCircle className="w-3.5 h-3.5 mx-auto text-slate-300 opacity-70" />
-            )}
+            <div className="relative flex items-center justify-center">
+                {status ? (
+                    <div className={`${status.color} rounded px-1 py-0.5 text-[9px] font-black border border-current/20 shadow-sm text-center truncate max-w-[100px] mx-auto flex items-center gap-1`}>
+                        {/* 🟢 إظهار أيقونة قفل صغيرة إذا كانت معتمدة */}
+                        {isLocked && <Lock className="w-2 h-2 text-current opacity-60" />}
+                        {record.status === "other" && record.note ? record.note : status.label}
+                    </div>
+                ) : (
+                    // 🟢 إذا كانت الحصة معتمدة وهي فارغة، نظهر القفل بدل علامة +
+                    isLocked ? <Lock className="w-3 h-3 text-slate-300 opacity-40" /> : <PlusCircle className="w-3.5 h-3.5 text-slate-300 opacity-70" />
+                )}
+            </div>
         </TableCell>
     );
 })}
@@ -694,37 +798,89 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
                 <Button 
                     variant="destructive" 
                     className="flex-1 h-11 font-bold gap-2"
-                    onClick={deleteStatus}
+                    onClick={() => {
+  // إذا كانت الحصة مقفلة، لا تفتح النافذة وأظهر تنبيه
+  if (activeEntry?.isLocked) {
+      toast.error("عفواً، لا يمكن حذف سجل معتمد");
+  } else {
+      setConfirmDeleteId(activeEntry.id); // هذا يفتح نافذة خيارات الحذف عندك
+  }
+}}
                     disabled={loading}
                 >
                     <Trash2 className="w-4 h-4" /> حذف الحالة
                 </Button>
             )}
             
+            {/* إذا كانت الحصة معتمدة والطالب ليس له سجل سابق (إضافة جديدة) -> عطل الزر */}
+{activeEntry?.isLocked && !activeEntry?.id ? (
+    <div className="flex-[2] flex items-center justify-center bg-slate-100 text-slate-400 rounded-lg font-bold text-xs h-11 border border-dashed">
+        الإضافة غير متاحة (معتمد)
+    </div>
+) : (
+    /* في حالة التعديل أو الحصص غير المعتمدة يظهر الزر العادي */
+    <Button 
+        onClick={saveStatus} 
+        className={`flex-[2] font-bold h-11 ${activeEntry?.isLocked ? 'bg-orange-600 hover:bg-orange-700 text-white' : 'bg-[#c5b391] text-black'}`}
+        disabled={loading}
+    >
+        {loading ? <Loader2 className="animate-spin w-5 h-5"/> : activeEntry?.isLocked ? "حفظ التعديل" : "حفظ وتعميم"}
+    </Button>
+)}
+
+           {/* 🔴 نافذة تأكيد حذف الحالة (تصميمك الأصلي مع إضافة مؤشرات التحميل) */}
+{confirmDeleteId === activeEntry?.id && (
+    <div className="absolute inset-0 bg-white z-[100] flex flex-col items-center justify-center p-6 rounded-lg border-2 border-red-500 shadow-2xl animate-in fade-in zoom-in-95">
+        <AlertTriangle className="w-10 h-10 text-red-500 mb-2" />
+        <h3 className="font-black text-lg mb-1">إدارة الحالات المترابطة</h3>
+        <DialogDescription className="text-xs text-slate-500 mb-4 text-center">
+            هذه الحصة جزء من سلسلة إجازة/طبية. حدد الإجراء المطلوب:
+        </DialogDescription>
+        
+        <div className="flex flex-col gap-2 w-full max-w-xs">
+            {/* 1. حذف الحصة الحالية */}
             <Button 
-                onClick={saveStatus} 
-                className="flex-[2] bg-[#c5b391] text-black font-bold h-11 hover:bg-[#b5a381]" 
-                disabled={loading}
+                variant="outline" 
+                className="h-10 text-xs border-slate-200 gap-2" 
+                onClick={() => executeDeleteStatus('single')}
+                disabled={loading} // 🟢 يمنع الضغط أثناء التحميل
             >
-                {loading ? <Loader2 className="animate-spin w-5 h-5"/> : "حفظ وتعميم"}
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "حذف هذه الحصة فقط"}
             </Button>
 
-            {/* نافذة تأكيد حذف الحالة - تظل مغطية للمحتوى داخل التذييل عند تفعيلها */}
-            {confirmDeleteId === activeEntry?.id && (
-                <div className="absolute inset-0 bg-white z-[100] flex flex-col items-center justify-center p-6 rounded-lg border-2 border-red-500 shadow-2xl">
-                    <AlertTriangle className="w-10 h-10 text-red-500 mb-2" />
-                    <h3 className="font-black text-lg mb-1">إدارة الحالات المترابطة</h3>
-                    <DialogDescription className="text-xs text-slate-500 mb-4 text-center">
-                        هذه الحصة جزء من سلسلة إجازة/طبية. حدد الإجراء المطلوب:
-                    </DialogDescription>
-                    <div className="flex flex-col gap-2 w-full max-w-xs">
-                        <Button variant="outline" className="h-10 text-xs border-slate-200" onClick={() => executeDeleteStatus('single')}>حذف هذه الحصة فقط</Button>
-                        <Button variant="outline" className="h-10 text-xs border-orange-200 text-orange-700 hover:bg-orange-50" onClick={() => executeDeleteStatus('group_from_today')}>إنهاء من اليوم (حذف المتبقي)</Button>
-                        <Button variant="destructive" className="h-10 text-xs font-bold" onClick={() => executeDeleteStatus('group_full')}>إلغاء السلسلة كاملة</Button>
-                        <Button variant="ghost" className="h-8 text-slate-400 mt-1" onClick={() => setConfirmDeleteId(null)}>تراجع</Button>
-                    </div>
-                </div>
+            {/* 2. إنهاء من اليوم فصاعداً */}
+            <Button 
+                variant="outline" 
+                className="h-10 text-xs border-orange-200 text-orange-700 hover:bg-orange-50 gap-2" 
+                onClick={() => executeDeleteStatus('group_from_today')}
+                disabled={loading}
+            >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "إنهاء من اليوم (حذف المتبقي)"}
+            </Button>
+
+            {/* 3. حذف السلسلة كاملة */}
+            <Button 
+                variant="destructive" 
+                className="h-10 text-xs font-bold gap-2 bg-red-600 hover:bg-red-700" 
+                onClick={() => executeDeleteStatus('group_full')}
+                disabled={loading}
+            >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "إلغاء السلسلة كاملة"}
+            </Button>
+
+            {/* زر تراجع */}
+            {!loading && (
+                <Button 
+                    variant="ghost" 
+                    className="h-8 text-slate-400 mt-1" 
+                    onClick={() => setConfirmDeleteId(null)}
+                >
+                    تراجع
+                </Button>
             )}
+        </div>
+    </div>
+)}
         </DialogFooter>
     </DialogContent>
 </Dialog>

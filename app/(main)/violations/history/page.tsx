@@ -48,6 +48,7 @@ const [confirmDeleteId, setConfirmDeleteId] = useState<any>(null);
 const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 const [selectedStudentForDelete, setSelectedStudentForDelete] = useState<any>(null);
 const searchParams = useSearchParams();
+const [activeCard, setActiveCard] = useState<string | null>(null);
     // 🟢 استخراج المعلمات (البداية، النهاية، الدورة، الدفعة)
     const targetStart = searchParams.get('start_date');
     const targetEnd = searchParams.get('end_date');
@@ -109,10 +110,33 @@ const groupedRows = useMemo(() => {
         fetchSummaries();
     }, [startDate, endDate]);
 
-    const fetchInitialOptions = async () => {
+   const fetchInitialOptions = async () => {
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`);
-            if (res.ok) setOptions(await res.json());
+            if (res.ok) {
+                let data = await res.json();
+
+                // 🔑 جلب صلاحيات المستخدم الحالي
+                const user = JSON.parse(localStorage.getItem("user") || "{}");
+                const scope = user?.extra_permissions?.scope;
+
+                // 🛡️ تصفية القوائم بناءً على النطاق
+                if (user.role !== 'owner' && scope?.is_restricted) {
+                    const allowedCoursesKeys = scope.courses || []; // بصيغة "اسم الدورة||الدفعة"
+
+                    // 1. تصفية الدورات
+                    const allowedCourseNames = allowedCoursesKeys.map((key: string) => key.split('||')[0]);
+                    data.courses = (data.courses || []).filter((cName: string) => 
+                        allowedCourseNames.includes(cName)
+                    );
+
+                    // 2. تصفية الدفعات
+                    data.batches = (data.batches || []).filter((bName: string) => {
+                        return allowedCoursesKeys.some((key: string) => key.endsWith(`||${bName}`));
+                    });
+                }
+                setOptions(data);
+            }
         } catch (e) { console.error(e); }
     };
 
@@ -120,30 +144,63 @@ const groupedRows = useMemo(() => {
         setLoading(true);
         try {
             const token = localStorage.getItem("token");
+            const user = JSON.parse(localStorage.getItem("user") || "{}");
+            const scope = user?.extra_permissions?.scope;
+
             const res = await fetch(
                 `${process.env.NEXT_PUBLIC_API_URL}/violations/summaries?start_date=${startDate}&end_date=${endDate}`,
                 { headers: { "Authorization": `Bearer ${token}` } }
             );
-            if (res.ok) setDailySummaries(await res.json());
-        } catch (e) { toast.error("خطأ في الاتصال"); } finally { setLoading(false); }
+
+            if (res.ok) {
+                let data = await res.json();
+
+                // 🛡️ [تصفية البطاقات بناءً على النطاق المسموح]
+                if (user.role !== 'owner' && scope?.is_restricted) {
+                    const allowedCoursesKeys = scope.courses || [];
+                    data = data.filter((item: any) => {
+                        const key = `${item.course}||${item.batch}`;
+                        return allowedCoursesKeys.includes(key);
+                    });
+                }
+                setDailySummaries(data);
+            }
+        } catch (e) { 
+            toast.error("خطأ في الاتصال"); 
+        } finally { 
+            setLoading(false); 
+        }
     };
 
-    const openViolationReport = async (course: string, batch: string) => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL}/violations/report-details?start_date=${startDate}&end_date=${endDate}&course=${course}&batch=${batch}`,
-                { headers: { "Authorization": `Bearer ${token}` } }
-            );
-            if (res.ok) {
-                const data = await res.json();
-                setReportRows(data.rows || []);
-                setApprovals(data.approvals || {}); // 🟢 استقبال التوقيعات من الباك إند
-                setSelectedReport({ course, batch });
-            }
-        } catch (e) { toast.error("فشل جلب التفاصيل"); } finally { setLoading(false); }
-    };
+  const openViolationReport = async (course: string, batch: string) => {
+    // 🟢 تفعيل حالة التحميل للبطاقة المختارة
+    setActiveCard(course + batch);
+    setLoading(true);
+
+    try {
+        const token = localStorage.getItem("token");
+        // 🟢 التغيير الجوهري: الرابط الجديد الذي يجلب المخالفات المعتمدة فقط
+        const res = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/violations/approved-report-details?start_date=${startDate}&end_date=${endDate}&course=${course}&batch=${batch}`,
+            { headers: { "Authorization": `Bearer ${token}` } }
+        );
+
+        if (res.ok) {
+            const data = await res.json();
+            setReportRows(data.rows || []);
+            setApprovals(data.approvals || {});
+            setSelectedReport({ course, batch });
+        } else {
+            toast.error("لا توجد مخالفات معتمدة لهذه الدورة في الفترة المختارة");
+            setActiveCard(null); // إعادة البطاقة لشكلها الطبيعي عند الفشل
+        }
+    } catch (e) {
+        toast.error("خطأ في الاتصال");
+        setActiveCard(null);
+    } finally {
+        setLoading(false);
+    }
+};
 
     // 🟢 دالة تنفيذ الاعتماد (التوقيع)
    // 🟢 تحديث تعريف الدالة لتستقبل المسمى المخصص أيضاً
@@ -397,28 +454,71 @@ const confirmDeleteAll = async () => {
                         <div className="flex justify-center py-20"><Loader2 className="w-12 h-12 animate-spin text-[#c5b391]" /></div>
                     ) : (
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {paginatedReports.map((report: any, index: number) => (
-                                <div key={index} onClick={() => openViolationReport(report.course, report.batch)} className="bg-white p-6 rounded-2xl border-2 border-slate-100 hover:border-red-400 hover:shadow-2xl transition-all cursor-pointer group relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 w-2 h-full bg-red-600 opacity-20 group-hover:opacity-100 transition-opacity" />
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h3 className="font-black text-xl text-slate-800">{report.course}</h3>
-                                            <p className="text-slate-500 font-bold">الدفعة: {report.batch && report.batch !== 'none' ? report.batch : '---'}</p>
-                                            <div className="flex gap-2 mt-2">
-                                                <Badge className="bg-red-50 text-red-700 border-red-100 font-black">
-    {report.count} طلاب مخالفين
-</Badge>
-                                                {report.status === "fully_approved" && <Badge className="bg-green-50 text-green-700 border-green-100">معتمد ✅</Badge>}
-                                            </div>
-                                        </div>
-                                        <div className="p-3 bg-red-50 rounded-xl"><FileText className="w-6 h-6 text-red-600" /></div>
-                                    </div>
-                                    <div className="mt-6 flex justify-between items-center text-[10px] font-black text-slate-400">
-                                        <span>الفترة: {startDate} / {endDate}</span>
-                                        <span className="text-red-600">فتح السجل ←</span>
-                                    </div>
-                                </div>
-                            ))}
+                           {paginatedReports.map((report: any, index: number) => {
+    // 1. التحقق هل هذه البطاقة هي التي جاري تحميل بياناتها حالياً؟
+    const isThisCardLoading = loading && activeCard === (report.course + report.batch);
+
+    return (
+        <div 
+            key={index} 
+            // 2. منع النقر المتكرر أثناء التحميل
+            onClick={() => !loading && openViolationReport(report.course, report.batch)} 
+            className={`bg-white p-6 rounded-2xl border-2 transition-all cursor-pointer group relative overflow-hidden ${
+                isThisCardLoading 
+                ? 'border-red-500 bg-red-50/50 scale-[0.98] shadow-inner' // شكل البطاقة عند النقر (تتحول للأحمر الفاتح وتنكمش قليلاً)
+                : 'border-slate-100 hover:border-red-400 hover:shadow-2xl' // الشكل الطبيعي
+            }`}
+        >
+            {/* الديكور الجانبي - يتوهج بالأحمر الثابت عند التحميل */}
+            <div className={`absolute top-0 right-0 w-2 h-full transition-all ${
+                isThisCardLoading ? 'bg-red-600 opacity-100' : 'bg-red-600 opacity-20 group-hover:opacity-100'
+            }`} />
+            
+            <div className="flex justify-between items-start">
+                <div>
+                    <h3 className={`font-black text-xl mb-1 transition-colors ${isThisCardLoading ? 'text-red-900' : 'text-slate-800'}`}>
+                        {report.course}
+                    </h3>
+                    <p className="text-slate-500 font-bold">الدفعة: {report.batch && report.batch !== 'none' ? report.batch : '---'}</p>
+                    
+                    <div className="flex gap-2 mt-2">
+                        {isThisCardLoading ? (
+                            <Badge className="bg-white text-red-600 border-red-200 animate-pulse font-black text-[10px]">
+                                جاري التحقق من الاعتمادات...
+                            </Badge>
+                        ) : (
+                            <>
+                                <Badge className="bg-red-50 text-red-700 border-red-100 font-black text-[10px]">
+                                    {report.count} مخالفات
+                                </Badge>
+                                {report.status === "fully_approved" && (
+                                    <Badge className="bg-green-50 text-green-700 border-green-100 text-[10px]">معتمد ✅</Badge>
+                                )}
+                            </>
+                        )}
+                    </div>
+                </div>
+
+                {/* 3. استبدال الأيقونة بمؤشر دوران (Spinner) أثناء التحميل */}
+                <div className={`p-3 rounded-xl transition-all ${isThisCardLoading ? 'bg-red-100' : 'bg-red-50'}`}>
+                    {isThisCardLoading ? (
+                        <Loader2 className="w-6 h-6 animate-spin text-red-600" />
+                    ) : (
+                        <FileText className="w-6 h-6 text-red-600" />
+                    )}
+                </div>
+            </div>
+
+            <div className="mt-6 flex justify-between items-center text-[10px] font-black text-slate-400">
+                <span>الفترة: {startDate} / {endDate}</span>
+                {/* 4. تغيير النص ليؤكد الاستجابة */}
+                <span className={`transition-colors ${isThisCardLoading ? 'text-red-600 font-black' : 'group-hover:text-red-600'}`}>
+                    {isThisCardLoading ? "يتم الآن جلب السجل الرسمي..." : "فتح السجل ←"}
+                </span>
+            </div>
+        </div>
+    );
+})}
                         </div>
                     )}
 

@@ -63,7 +63,7 @@ const [milSubjectFilter, setMilSubjectFilter] = useState("all"); // الفلتر
     // --- 4. States (UI Logic) ---
     const [violationSubjectFilter, setViolationSubjectFilter] = useState("all")
     const [reportSubjectFilter, setReportSubjectFilter] = useState("all")
-    
+    const [mounted, setMounted] = useState(false);
     // Pagination States
     const [currentPage, setCurrentPage] = useState(1)
     const [itemsPerPage, setItemsPerPage] = useState(20)
@@ -297,60 +297,99 @@ const totalFitExamsPages = Math.ceil(fitnessExamsList.length / fitExamsPerPage);
         ? "دليل المجندين (التدريب العسكري)" 
         : "دليل المجندين (التدريب الرياضي)";
 
-    // --- 6. Effects ---
-    // 1️⃣ هذا الـ Effect مسؤول عن جلب البيانات الأولية "مرة واحدة فقط" عند فتح الصفحة
-    useEffect(() => {
-        setIsClient(true);
-        
-        const fetchInitialData = async () => {
-            const token = localStorage.getItem("token");
-            if (!token) return;
-            const headers = { "Authorization": `Bearer ${token}` };
-            
-            try {
-                // جلب الأقسام العسكرية (رماية، مشاة، أسلحة، إلخ)
-                const resSec = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/military-sections`, { headers });
-                if (resSec.ok) {
-                    const sections = await resSec.json();
-                    setMilSectionsList(sections);
+
+   const fetchFilters = async () => {
+    const token = localStorage.getItem("token");
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const scope = user?.extra_permissions?.scope;
+
+    try {
+        const params = new URLSearchParams();
+        if (filterCourse !== 'all') params.append('course', filterCourse);
+        if (filterBatch !== 'all') params.append('batch', filterBatch);
+
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${params.toString()}`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+
+        if (res.ok) {
+            let data = await res.json();
+
+            // 🛡️ تطبيق قيود النطاق على القوائم المنسدلة (Select Options)
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedCoursesKeys = scope.courses || [];
+                const allowedCompanies = scope.companies || [];
+                const allowedPlatoons = scope.platoons || [];
+
+                // 1. فلترة الدورات المسموحة
+                data.courses = (data.courses || []).filter((cName: string) => 
+                    allowedCoursesKeys.some((key: string) => key.startsWith(cName))
+                );
+
+                // 2. فلترة الدفعات المسموحة
+                data.batches = (data.batches || []).filter((bName: string) => 
+                    allowedCoursesKeys.some((key: string) => key.endsWith(`||${bName}`))
+                );
+
+                // 3. فلترة السرايا والفصائل بناءً على الدورة المختارة حالياً
+                if (filterCourse !== "all" && filterBatch !== "all") {
+                    const currentPrefix = `${filterCourse}||${filterBatch}->`;
+                    
+                    data.companies = (data.companies || []).filter((comp: string) => 
+                        allowedCompanies.includes(`${currentPrefix}${comp}`)
+                    );
+
+                    data.platoons = (data.platoons || []).filter((plat: string) => 
+                        allowedPlatoons.includes(`${currentPrefix}${plat}`)
+                    );
+                } else {
+                    // إذا لم يحدد دورة، نفرغ القوائم لمنع عرض كل السرايا
+                    data.companies = [];
+                    data.platoons = [];
                 }
-
-                // جلب خيارات الفلاتر الأولية
-                const resFilters = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`, { headers });
-                if (resFilters.ok) setFilterOptions(await resFilters.json());
-            } catch (e) {
-                console.error("Initial Data Fetch Error:", e);
             }
-        };
-
-        fetchInitialData();
-    }, []);
-
-    // 2️⃣ هذا الـ Effect مسؤول عن تحديث خيارات الفلاتر "فقط" عند تغيير الاختيارات
-    useEffect(() => {
-        if (!isClient) return;
-
-        const fetchDependentFilters = async () => {
-            const token = localStorage.getItem("token");
-            const headers = { "Authorization": `Bearer ${token}` };
-            try {
-                const p = new URLSearchParams();
-                if (filterCourse !== 'all') p.append('course', filterCourse);
-                if (filterBatch !== 'all') p.append('batch', filterBatch);
-                if (filterCompany !== 'all') p.append('company', filterCompany);
-
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${p.toString()}`, { headers });
-                if (res.ok) setFilterOptions(await res.json());
-            } catch (e) {
-                console.error("Filter Update Error:", e);
+            setFilterOptions(data);
+        }
+    } catch (e) { console.error("Error fetching filtered options", e); }
+};     
+   // 1️⃣ هذا الـ Effect المسؤول عن جلب وتصفية البيانات الأولية (الدورة والدفعة) عند فتح الصفحة
+useEffect(() => {
+    setMounted(true); // 🟢 أضف هذا السطر هنا
+    setIsClient(true);
+    
+    const fetchInitialData = async () => {
+        const token = localStorage.getItem("token");
+        if (!token) return;
+        const headers = { "Authorization": `Bearer ${token}` };
+        
+        try {
+            // 1. جلب الأقسام العسكرية (رماية، مشاة..)
+            const resSec = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings/military-sections`, { headers });
+            if (resSec.ok) {
+                const sections = await resSec.json();
+                setMilSectionsList(sections);
             }
-        };
 
-        fetchDependentFilters();
-    }, [filterCourse, filterBatch, filterCompany, isClient]);
+            // 2. استدعاء دالة الفلاتر لجلب الدورات والدفعات المسموحة فور فتح الصفحة
+            await fetchFilters();
+
+        } catch (e) { 
+            console.error("Initial Data Fetch Error:", e); 
+        }
+    };
+
+    fetchInitialData();
+}, []); // مصفوفة فارغة ليعمل مرة واحدة فقط عند البداية
+useEffect(() => {
+    // تحديث خيارات السرايا والفصائل فور تغيير الدورة أو الدفعة
+    if (mounted) fetchFilters();
+}, [filterCourse, filterBatch]);
     const fetchSoldiers = async () => {
         setLoading(true);
         const token = localStorage.getItem("token");
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        const scope = user?.extra_permissions?.scope;
+
         try {
             const p = new URLSearchParams({ limit: "1000" });
             if (filterCourse !== 'all') p.append('course', filterCourse);
@@ -358,14 +397,30 @@ const totalFitExamsPages = Math.ceil(fitnessExamsList.length / fitExamsPerPage);
             if (filterCompany !== 'all') p.append('company', filterCompany);
             if (filterPlatoon !== 'all') p.append('platoon', filterPlatoon);
             if (searchQuery) p.append('search', searchQuery);
+
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${p.toString()}`, {
                 headers: { "Authorization": `Bearer ${token}` }
             });
-            const data = await res.json();
-            setSoldiersList(data.data || []);
+            const responseData = await res.json();
+            let rawList = responseData.data || [];
+
+            // 🟢 [فلترة القوة البشرية بناءً على النطاق]
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedCourses = scope.courses || [];
+                rawList = rawList.filter((s: any) => {
+                    const key = `${s.course}${s.batch ? `||${s.batch}` : ''}`;
+                    return allowedCourses.includes(key);
+                });
+            }
+
+            setSoldiersList(rawList);
             setCurrentPage(1);
-        } catch (e) { console.error(e); }
-        finally { setLoading(false); }
+        } catch (e) { 
+            console.error(e); 
+            toast.error("فشل جلب بيانات المجندين");
+        } finally { 
+            setLoading(false); 
+        }
     }
 
     const fetchProfileDetails = async (id: number) => {

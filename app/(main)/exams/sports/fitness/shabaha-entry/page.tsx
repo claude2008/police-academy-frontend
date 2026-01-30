@@ -84,56 +84,106 @@ const [resetTarget, setResetTarget] = useState<'shabaha' | 'chip' | 'notes' | nu
       fetchFilterOptions()
   }, [filters.course, filters.batch, filters.company])
 
-  const fetchFilterOptions = async () => {
-      try {
-          const query = new URLSearchParams()
-          if (filters.course && filters.course !== "all") query.append("course", filters.course)
-          if (filters.batch && filters.batch !== "all") query.append("batch", filters.batch)
-          if (filters.company && filters.company !== "all") query.append("company", filters.company)
-          
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${query.toString()}`, {
-              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-          })
-          if (res.ok) {
-              const data = await res.json()
-              setOptions({
-                  courses: data.courses || [],
-                  batches: data.batches || [],
-                  companies: data.companies || [],
-                  platoons: data.platoons || []
-              })
-          }
-      } catch (e) { console.error("Error fetching filters", e) }
-  }
+const fetchFilterOptions = async () => {
+    try {
+        const token = localStorage.getItem("token");
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        const scope = user?.extra_permissions?.scope;
+        const isRestricted = user.role !== 'owner' && scope?.is_restricted;
+        const userCourses = scope?.courses || [];
 
-  // --- 2. جلب الجنود ---
-  const fetchSoldiers = async () => {
-      setIsLoading(true)
-      try {
-          const query = new URLSearchParams({
-              skip: ((currentPage - 1) * itemsPerPage).toString(),
-              limit: itemsPerPage.toString(),
-              course: filters.course,
-              batch: filters.batch || "all",
-              company: filters.company || "all",
-              platoon: filters.platoon || "all",
-              search: search
-          })
+        // 🛑 نقطة التفتيش الصارمة (Kill Switch) للمستخدم المخفي كلياً
+        if (isRestricted && userCourses.length === 0) {
+            setOptions({ courses: [], batches: [], companies: [], platoons: [] });
+            return; // توقف هنا ولا تطلب بيانات من السيرفر
+        }
 
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${query.toString()}`, {
-              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-          })
-          
-          if (res.ok) {
-              const data = await res.json()
-              // دمج البيانات المؤقتة (الشباحات) مع بيانات الجنود
-              // (يجب أن يتم ذلك في الباك إند، لكن للتأكد سنعرض ما يأتي)
-              setSoldiers(data.data)
-              setTotalItems(data.total)
-          }
-      } catch (e) { toast.error("فشل جلب البيانات") }
-      finally { setIsLoading(false) }
-  }
+        const query = new URLSearchParams()
+        if (filters.course && filters.course !== "all") query.append("course", filters.course)
+        if (filters.batch && filters.batch !== "all") query.append("batch", filters.batch)
+        if (filters.company && filters.company !== "all") query.append("company", filters.company)
+        
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${query.toString()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        })
+
+        if (res.ok) {
+            let data = await res.json();
+
+            // 🛡️ تصفية الخيارات بناءً على ما هو مسموح في النطاق
+            if (isRestricted) {
+                // 1. تصفية الدورات
+                const allowedCourseNames = userCourses.map((key: string) => key.split('||')[0]);
+                data.courses = (data.courses || []).filter((c: string) => allowedCourseNames.includes(c));
+
+                // 2. تصفية الدفعات
+                data.batches = (data.batches || []).filter((b: string) => 
+                    userCourses.some((key: string) => key.endsWith(`||${b}`))
+                );
+
+                // 3. تصفية السرايا والفصائل بناءً على المسار المختار حالياً
+                if (filters.course && filters.batch) {
+                    const currentPath = `${filters.course}||${filters.batch}->`;
+                    const allowedComps = scope?.companies || [];
+                    const allowedPlats = scope?.platoons || [];
+
+                    data.companies = (data.companies || []).filter((c: string) => 
+                        allowedComps.includes(`${currentPath}${c}`)
+                    );
+                    data.platoons = (data.platoons || []).filter((p: string) => 
+                        allowedPlats.includes(`${currentPath}${p}`)
+                    );
+                }
+            }
+
+            setOptions({
+                courses: data.courses || [],
+                batches: data.batches || [],
+                companies: data.companies || [],
+                platoons: data.platoons || []
+            })
+        }
+    } catch (e) { console.error("Error fetching filters", e) }
+}
+ const fetchSoldiers = async () => {
+        setIsLoading(true)
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        const scope = user?.extra_permissions?.scope;
+
+        try {
+            const query = new URLSearchParams({
+                skip: ((currentPage - 1) * itemsPerPage).toString(),
+                limit: itemsPerPage.toString(),
+                course: filters.course,
+                batch: filters.batch || "all",
+                company: filters.company || "all",
+                platoon: filters.platoon || "all",
+                search: search
+            })
+
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${query.toString()}`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            })
+            
+            if (res.ok) {
+                const data = await res.json()
+                let rawList = data.data || [];
+
+                // 🛡️ [تصفية أمنية أخيرة للجنود قبل العرض]
+                if (user.role !== 'owner' && scope?.is_restricted) {
+                    const allowedCourses = scope.courses || [];
+                    rawList = rawList.filter((s: any) => {
+                        const key = `${s.course}${s.batch ? `||${s.batch}` : ''}`;
+                        return allowedCourses.includes(key);
+                    });
+                }
+
+                setSoldiers(rawList)
+                setTotalItems(data.total)
+            }
+        } catch (e) { toast.error("فشل جلب البيانات") }
+        finally { setIsLoading(false) }
+    }
 
 // هذه الدالة ستُستدعى عند ضغط الزر الأحمر
 const openConfirmDialog = (target: 'shabaha' | 'chip' | 'notes') => {
@@ -505,28 +555,51 @@ const handlePrintPDF = async () => {
              <div className="space-y-2">
                 <label className="text-sm font-medium">الدورة <span className="text-red-500">*</span></label>
                 <Select value={filters.course} onValueChange={(v) => setFilters({...filters, course: v, batch: "", company: "", platoon: ""})}>
-                    <SelectTrigger className="text-right h-10 bg-slate-50"><SelectValue placeholder="اختر الدورة" /></SelectTrigger>
-                    <SelectContent>
-                        {options.courses.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                    </SelectContent>
-                </Select>
+    <SelectTrigger className="text-right h-10 bg-slate-50">
+        <SelectValue placeholder={options.courses.length === 0 ? "لا توجد صلاحيات" : "اختر الدورة"} />
+    </SelectTrigger>
+    <SelectContent>
+        {options.courses.length > 0 ? (
+            options.courses.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)
+        ) : (
+            <SelectItem value="none" disabled className="text-red-500 font-bold">لا تملك صلاحية على أي دورة</SelectItem>
+        )}
+    </SelectContent>
+</Select>
              </div>
 
              {/* 2. الدفعة */}
              <div className="space-y-2">
-                <label className="text-sm font-medium">الدفعة</label>
-                <Select 
-                    value={filters.batch} 
-                    onValueChange={(v) => setFilters({...filters, batch: v})} 
-                    disabled={!filters.course || options.batches.length === 0}
-                >
-                    <SelectTrigger className="text-right h-10 bg-slate-50"><SelectValue placeholder={options.batches.length === 0 ? "لا توجد دفعات" : "الكل"} /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">الكل</SelectItem>
-                        {options.batches.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                    </SelectContent>
-                </Select>
-             </div>
+    <label className="text-sm font-medium">الدفعة</label>
+    <Select 
+        value={filters.batch} 
+        onValueChange={(v) => setFilters({...filters, batch: v})} 
+        // القائمة تتعطل إذا لم يتم اختيار دورة أو إذا لم تكن هناك دفعات مسموحة
+        disabled={!filters.course || options.batches.length === 0}
+    >
+        <SelectTrigger className="text-right h-10 bg-slate-50">
+            <SelectValue placeholder={
+                !filters.course ? "اختر الدورة أولاً" : 
+                options.batches.length === 0 ? "لا توجد دفعات مسموحة" : 
+                "الكل"
+            } />
+        </SelectTrigger>
+        <SelectContent>
+            {options.batches.length > 0 ? (
+                <>
+                    <SelectItem value="all">الكل</SelectItem>
+                    {options.batches.map(b => (
+                        <SelectItem key={b} value={b}>{b}</SelectItem>
+                    ))}
+                </>
+            ) : (
+                <SelectItem value="none" disabled className="text-center text-red-500 font-bold italic">
+                    لا تملك صلاحية على أي دفعة
+                </SelectItem>
+            )}
+        </SelectContent>
+    </Select>
+</div>
 
              {/* 3. السرية */}
              <div className="space-y-2">

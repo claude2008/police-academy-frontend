@@ -37,16 +37,17 @@ const ROLES = [
     { value: "owner", label: "👑 المالك (Owner)", color: "bg-purple-100 text-purple-700 font-bold" },
     { value: "manager", label: "مدير", color: "bg-slate-800 text-white" },
     { value: "admin", label: "رئيس قسم", color: "bg-slate-800 text-white" },
-    { value: "assistant_admin", label: "مساعد مسؤول", color: "bg-slate-600 text-white" },
+    
     { value: "sports_officer", label: "👮‍♂️ ضابط فرع التدريب الرياضي", color: "bg-blue-100 text-blue-700" },
     { value: "military_officer", label: "👮‍♂️ ضابط فرع التدريب العسكري", color: "bg-green-100 text-green-700" },
+    { value: "assistant_admin", label: "مشرف", color: "bg-slate-600 text-white" },
     { value: "sports_supervisor", label: "👁️ مشرف التدريب الرياضي", color: "bg-blue-50 text-blue-600" },
     { value: "military_supervisor", label: "👁️ مشرف التدريب العسكري", color: "bg-green-50 text-green-600" },
     { value: "sports_trainer", label: "👟 مدرب التدريب الرياضي", color: "bg-slate-100 text-slate-700" },
     { value: "military_trainer", label: "🪖 مدرب التدريب العسكري", color: "bg-slate-100 text-slate-700" }
 ];
 
-const RANKS = ["شرطي", "وكيل عريف", "عريف", "وكيل ضابط", "وكيل ضابط أول", "ملازم", "ملازم أول", "نقيب", "رائد", "مقدم", "عقيد", "عميد", "لواء", "مدني"];
+const RANKS = ["شرطي", "وكيل عريف", "عريف", "وكيل ضابط", "وكيل ضابط أول", "ملازم", "ملازم أول", "نقيب", "رائد","رائد ركن", "مقدم", "عقيد", "عميد", "لواء", "مدني"];
 
 const initialFormData = {
     id: 0,
@@ -172,23 +173,52 @@ useEffect(() => {
     }
 }, [formData.role]);
 
-    const fetchUsers = async () => {
-        setLoading(true);
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/`);
-            if (res.ok) {
-                const data = await res.json();
-                setUsers(data);
-                setCurrentPage(1);
-            } else {
-                toast.error("فشل جلب قائمة المستخدمين");
-            }
-        } catch (e) {
-            toast.error("فشل الاتصال بالخادم");
-        } finally {
-            setLoading(false);
+ const fetchUsers = async () => {
+    setLoading(true);
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/`);
+        if (res.ok) {
+            const data = await res.json();
+
+            // 🟢 منطق الترتيب الهرمي المعدل (استبعاد مساعد المسؤول من الصدارة)
+            const sortedStaff = data.sort((a: any, b: any) => {
+                // 1. تعريف القيادة العليا فقط (بدون مساعد المسؤول)
+                const topManagement = ['manager', 'admin'];
+                const aIsTop = topManagement.includes(a.role);
+                const bIsTop = topManagement.includes(b.role);
+
+                // 2. تعريف السادة الضباط
+                const officerRoles = ['sports_officer', 'military_officer'];
+                const aIsOfficer = officerRoles.includes(a.role);
+                const bIsOfficer = officerRoles.includes(b.role);
+
+                // --- تنفيذ الترتيب ---
+
+                // أولاً: المدير ورئيس القسم في المقدمة
+                if (aIsTop && !bIsTop) return -1;
+                if (!aIsTop && bIsTop) return 1;
+
+                // ثانياً: السادة الضباط يلونهم مباشرة
+                if (aIsOfficer && !bIsOfficer) return -1;
+                if (!aIsOfficer && bIsOfficer) return 1;
+
+                // ثالثاً: البقية (بمن فيهم مساعد المسؤول/المشرف) يترتبون حسب الأقدمية
+                const numA = parseInt(a.military_id) || 0;
+                const numB = parseInt(b.military_id) || 0;
+                return numA - numB;
+            });
+
+            setUsers(sortedStaff);
+            setCurrentPage(1);
+        } else {
+            toast.error("فشل جلب قائمة المستخدمين");
         }
-    };
+    } catch (e) {
+        toast.error("فشل الاتصال بالخادم");
+    } finally {
+        setLoading(false);
+    }
+};
 // 1. دالة لفتح نافذة التأكيد فقط
 const openDeleteConfirm = (user: any) => {
     setUserToDelete(user);
@@ -367,54 +397,100 @@ const executePhotoDelete = async () => {
     }
 };
     
-// دالة لفتح نافذة الصلاحيات وشحن البيانات الحالية
-    const openPermissionsModal = (user: any) => {
-        setSelectedUserForPerms(user);
-        // نأخذ الصلاحيات المخزنة في قاعدة البيانات أو مصفوفة فارغة إذا لم توجد
-        setTempPermissions(user.extra_permissions || []); 
-        setIsPermissionsOpen(true);
-    };
+// ✅ الدالة المحدثة والآمنة
+const openPermissionsModal = (user: any) => {
+    setSelectedUserForPerms(user);
+    
+    const rawExtra = user.extra_permissions;
+
+    // فحص ذكي: إذا كانت البيانات مصفوفة نأخذها كما هي
+    if (Array.isArray(rawExtra)) {
+        setTempPermissions(rawExtra);
+    } 
+    // إذا كانت كائناً (بسبب تعديل الـ Scope الأخير)، نأخذ المفاتيح التي ليست 'scope'
+    else if (rawExtra && typeof rawExtra === 'object') {
+        // إذا كنت تخزن الصلاحيات كمفاتيح داخل الكائن
+        const permissionKeys = Object.keys(rawExtra).filter(key => key !== 'scope');
+        setTempPermissions(permissionKeys);
+    } 
+    else {
+        setTempPermissions([]);
+    }
+    
+    setIsPermissionsOpen(true);
+};
 
     // دالة الحفظ النهائي للصلاحيات في السيرفر
     const handleSavePermissions = async () => {
-        if (!selectedUserForPerms) return;
-        setIsSubmitting(true);
-        const t = toast.loading("جاري تحديث الصلاحيات...");
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${selectedUserForPerms.id}`, {
-                method: "PUT",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${localStorage.getItem("token")}`
-                },
-                body: JSON.stringify({ extra_permissions: tempPermissions })
+    if (!selectedUserForPerms) return;
+    setIsSubmitting(true);
+    const t = toast.loading("جاري تحديث الصلاحيات...");
+
+    try {
+        // 1️⃣ استخراج البيانات القديمة لضمان عدم ضياع الـ scope
+        // نتحقق أن extra_permissions كائن وليس مصفوفة قديمة
+        const oldExtra = selectedUserForPerms.extra_permissions;
+        const currentScope = (oldExtra && typeof oldExtra === 'object' && !Array.isArray(oldExtra)) 
+            ? oldExtra.scope 
+            : null;
+
+        // 2️⃣ بناء كائن الصلاحيات الجديد (New Permissions Object)
+        // نبدأ بكائن فارغ ونحقن فيه الـ scope القديم إذا وجد
+        const newExtra: any = {};
+        
+        if (currentScope) {
+            newExtra.scope = currentScope;
+        }
+
+        // 3️⃣ تحويل مصفوفة tempPermissions (التابات المختارة) إلى مفاتيح داخل الكائن
+        // tempPermissions تكون مثل: ["fitness_standards", "combat_standards"]
+        if (Array.isArray(tempPermissions)) {
+            tempPermissions.forEach((permId: string) => {
+                newExtra[permId] = true;
             });
-
-           if (res.ok) {
-    const updatedUserFromServer = await res.json(); // السيرفر يعيد المستخدم الجديد بالصلاحيات
-    
-    // 🟢 إذا كان المستخدم الذي قمت بتعديله هو "أنت" (نفسك)
-    // قم بتحديث بياناتك في المتصفح فوراً لكي تظهر التابات دون إعادة تسجيل دخول
-    const currentUserStr = localStorage.getItem("user");
-    if (currentUserStr) {
-        const currentUser = JSON.parse(currentUserStr);
-        if (currentUser.id === selectedUserForPerms.id) {
-            localStorage.setItem("user", JSON.stringify(updatedUserFromServer));
         }
-    }
 
-    toast.success("تم تحديث صلاحيات الوصول بنجاح ✅", { id: t });
-    fetchUsers();
-    setIsPermissionsOpen(false);
-}else {
-                toast.error("فشل تحديث الصلاحيات", { id: t });
+        // 4️⃣ الإرسال إلى السيرفر
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${selectedUserForPerms.id}`, {
+            method: "PUT",
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("token")}`
+            },
+            body: JSON.stringify({ extra_permissions: newExtra }) // إرسال الكائن المدمج الذكي
+        });
+
+        if (res.ok) {
+            const updatedUserFromServer = await res.json(); 
+
+            // 5️⃣ تحديث الجلسة الحالية (localStorage) إذا كان المستخدم يعدل نفسه
+            const currentUserStr = localStorage.getItem("user");
+            if (currentUserStr) {
+                const currentUser = JSON.parse(currentUserStr);
+                if (currentUser.id === selectedUserForPerms.id) {
+                    // دمج البيانات الجديدة لضمان تحديث التابات فوراً
+                    const updatedLocalUser = { ...currentUser, ...updatedUserFromServer };
+                    localStorage.setItem("user", JSON.stringify(updatedLocalUser));
+                    
+                    // تحديث حالة النظام فوراً (اختياري حسب هيكلة مشروعك)
+                    // window.location.reload(); // يمكنك تفعيل هذا السطر إذا أردت تحديثاً قسرياً للواجهة
+                }
             }
-        } catch (e) {
-            toast.error("خطأ في الاتصال بالسيرفر", { id: t });
-        } finally {
-            setIsSubmitting(false);
+
+            toast.success("تم تحديث صلاحيات الوصول بنجاح ✅", { id: t });
+            fetchUsers();
+            setIsPermissionsOpen(false);
+        } else {
+            const errData = await res.json();
+            toast.error(errData.detail || "فشل تحديث الصلاحيات", { id: t });
         }
-    };
+    } catch (e) {
+        console.error("Save Permissions Error:", e);
+        toast.error("خطأ في الاتصال بالسيرفر", { id: t });
+    } finally {
+        setIsSubmitting(false);
+    }
+};
     const openEditModal = (user: any) => {
         setFormData({
             id: user.id,
@@ -431,31 +507,58 @@ const executePhotoDelete = async () => {
         setIsEditOpen(true)
     }
 
-   // 🔍 منطق الفلترة والبحث المدمج (المعدل لإخفاء المالك عن الجميع إلا المالك نفسه)
-   const filteredUsers = useMemo(() => {
-    // 🟢 إذا لم يتم تحديد الرتبة بعد، لا تصفِّ شيئاً (انتظر)
+  const filteredUsers = useMemo(() => {
     if (!userRole) return []; 
 
     return users.filter(u => {
+        // 1. بحث النص (الاسم، الرقم، الإيميل)
         const matchesSearch = u.name.toLowerCase().includes(search.toLowerCase()) || 
-                            u.military_id.includes(search) || 
-                            u.email?.toLowerCase().includes(search.toLowerCase());
+                             u.military_id.includes(search) || 
+                             u.email?.toLowerCase().includes(search.toLowerCase());
         
-        const matchesBranch = branchFilter === "all" || u.branch === branchFilter;
+        // 2. تعريف من هو "الضابط" برمجياً
+        const isOfficerRole = u.role === "sports_officer" || u.role === "military_officer";
 
-        // 🛡️ منطق الإخفاء الذكي:
+        // 3. منطق الفلترة الذكي والمستقل
+        let matchesBranch = false;
+        
+        if (branchFilter === "all") {
+            matchesBranch = true;
+        } 
+        else if (branchFilter === "all_officers") {
+            // يعرض الضباط فقط
+            matchesBranch = isOfficerRole;
+        } 
+        else if (branchFilter === "تدريب رياضي") {
+            // يعرض الرياضي بشرط ألا يكون ضابطاً
+            matchesBranch = u.branch === "تدريب رياضي" && !isOfficerRole;
+        } 
+        else if (branchFilter === "تدريب عسكري") {
+            // يعرض العسكري بشرط ألا يكون ضابطاً
+            matchesBranch = u.branch === "تدريب عسكري" && !isOfficerRole;
+        } 
+        else {
+            // خيار "السادة المسؤولين" (الإدارة العامة) سيبقى كما هو
+            matchesBranch = u.branch === branchFilter;
+        }
+
+        // 4. حماية إخفاء المالك (Owner)
         const isAuthorizedToSee = userRole === "owner" || u.role !== "owner";
 
         return matchesSearch && matchesBranch && isAuthorizedToSee;
     });
 }, [users, search, branchFilter, userRole]);
 
-    // 🛡️ فلترة الأدوار (إخفاء المالك عن غير المالك)
    const availableRoles = useMemo(() => {
+    // 1. إذا كان المستخدم هو المالك، يرى كل شيء
     if (userRole === "owner") return ROLES;
     
-    // التعديل هنا: استثناء المالك واستثناء مساعد المسؤول أيضاً
-    return ROLES.filter(r => r.value !== "owner" && r.value !== "assistant_admin");
+    // 2. إذا كان أي مستخدم آخر (مدير أو رئيس قسم):
+    // نقوم بإخفاء: المالك + مساعد المسؤول
+    return ROLES.filter(r => 
+        r.value !== "owner" && 
+        r.value !== "assistant_admin"
+    );
 }, [userRole]);
 
     const totalUsers = filteredUsers.length;
@@ -519,14 +622,21 @@ if (isLoadingAuth) {
                                 <Select value={branchFilter} onValueChange={setBranchFilter}>
                                     <SelectTrigger className="w-[180px] bg-white"><SelectValue placeholder="فلترة حسب الفرع" /></SelectTrigger>
                                     <SelectContent dir="rtl">
-                                        <SelectItem value="all">جميع الفروع</SelectItem>
-                                       <SelectItem value="الإدارة العامة" className="text-blue-600 font-bold">
-  المسؤولين 
-</SelectItem>
-                                        <SelectItem value="تدريب رياضي">تدريب رياضي</SelectItem>
-                                        <SelectItem value="تدريب عسكري">تدريب عسكري</SelectItem>
-                                        
-                                    </SelectContent>
+    <SelectItem value="all" className="font-bold">جميع المستخدمين</SelectItem>
+    
+    {/* 👑 مجمع المسؤولين */}
+    <SelectItem value="الإدارة العامة" className="text-purple-700 font-bold bg-purple-50/50">
+        ⭐ السادة المسؤولين
+    </SelectItem>
+    
+    {/* 👮‍♂️ مجمع الضباط (رياضي + عسكري) */}
+    <SelectItem value="all_officers" className="text-blue-700 font-bold bg-blue-50/50">
+        👮‍♂️ السادة الضباط
+    </SelectItem>
+    
+    <SelectItem value="تدريب رياضي">فرع التدريب الرياضي</SelectItem>
+    <SelectItem value="تدريب عسكري">فرع التدريب العسكري</SelectItem>
+</SelectContent>
                                 </Select>
                             </div>
                         </div>
@@ -566,16 +676,18 @@ if (isLoadingAuth) {
     </div>
 </TableCell>
                                             <TableCell className="font-mono font-bold">{user.military_id}</TableCell>
-                                            <TableCell>
+                                           <TableCell>
     <div className="flex flex-col">
         <div className="flex items-center gap-2">
-            <span className="font-bold">{user.name}</span>
+            {/* 🟢 الآن ستظهر كلمة مدني أو الرتبة العسكرية متبوعة بـ / ثم الاسم */}
+            <span className="font-bold text-slate-900">
+                {user.rank ? `${user.rank} / ` : ""}{user.name}
+            </span>
             
-            {/* ✅ الحل: حذف title من الأيقونة مباشرة */}
             {user.role === "manager" && <UserCog className="w-3.5 h-3.5 text-slate-700" />}
             {user.role === "admin" && <ShieldAlert className="w-3.5 h-3.5 text-blue-600" />}
         </div>
-        <span className="text-[10px] text-blue-600">{user.branch}</span>
+        <span className="text-[10px] text-blue-600 font-medium">{user.branch}</span>
     </div>
 </TableCell>
                                             <TableCell className="font-mono text-sm text-center" dir="ltr">{user.email || '-'}</TableCell>
@@ -881,7 +993,7 @@ if (isLoadingAuth) {
                     <div 
                         key={tab.id} 
                         onClick={() => {
-                            if (tempPermissions.includes(tab.id)) {
+                            if ((Array.isArray(tempPermissions) ? tempPermissions : []).includes(tab.id)) {
                                 setTempPermissions(tempPermissions.filter(id => id !== tab.id));
                             } else {
                                 setTempPermissions([...tempPermissions, tab.id]);
@@ -889,13 +1001,13 @@ if (isLoadingAuth) {
                         }}
                         className={cn(
                             "flex items-center justify-between p-3 rounded-xl border-2 cursor-pointer transition-all",
-                            tempPermissions.includes(tab.id) 
+                            (Array.isArray(tempPermissions) ? tempPermissions : []).includes(tab.id)
                                 ? "border-amber-500 bg-amber-50" 
                                 : "border-slate-100 hover:border-slate-200"
                         )}
                     >
                         <span className="font-bold text-sm text-slate-700">{tab.label}</span>
-                        {tempPermissions.includes(tab.id) && (
+                        {(Array.isArray(tempPermissions) ? tempPermissions : []).includes(tab.id) && (
                             <Badge className="bg-amber-600 text-white border-none">مسموح</Badge>
                         )}
                     </div>

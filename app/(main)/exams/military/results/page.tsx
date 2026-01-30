@@ -108,59 +108,60 @@ useEffect(() => {
         }
     }
 }, [records, targetRecordId]);
-    const fetchRecords = async () => {
-    setLoading(true); // 1. البدء في إظهار علامة التحميل
+const fetchRecords = async () => {
+    setLoading(true);
     try {
+        const token = localStorage.getItem("token");
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        const scope = user?.extra_permissions?.scope;
+        const isRestricted = user.role !== 'owner' && scope?.is_restricted;
+        
+        // 🟢 [التعديل الذهبي]: تنظيف المصفوفة من الصلاحيات الإدارية
+        // نعتبر أن مفتاح الدورة الحقيقي يجب أن يحتوي على "||" (الخاص بالدفعة)
+        // أو نستبعد الكلمات المحجوزة يدوياً
+        const rawCourses = scope?.courses || [];
+        const userCourses = rawCourses.filter((key: string) => 
+            key !== "fitness_standards" &&  // استبعاد معايير اللياقة
+            key.includes("||")              // استبعاد أي شيء ليس بصيغة (دورة||دفعة)
+        );
+
+        // 🛑 [نقطة التفتيش المعدلة]
+        // الآن، إذا كان لديه فقط "fitness_standards"، ستصبح userCourses فارغة، وسيتم الحجب
+        if (isRestricted && userCourses.length === 0) {
+            console.log("⛔ وصول محظور: تم استبعاد الصلاحيات الإدارية، ولا توجد دورات.");
+            setRecords([]);
+            setLoading(false);
+            return; // ✋ إغلاق فوري
+        }
+
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records`, {
-            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+            headers: { "Authorization": `Bearer ${token}` }
         });
         
         if (res.ok) {
             const rawData = await res.json();
-            const processed = rawData.map((r: any) => ({
+            
+            let processed = rawData.map((r: any) => ({
                 ...r,
                 students_data: typeof r.students_data === 'string' ? JSON.parse(r.students_data) : r.students_data,
                 approvals: typeof r.approvals === 'string' ? JSON.parse(r.approvals) : r.approvals
             }));
 
-            setRecords(processed);
-            toast.success("تم تحديث البيانات  بنجاح"); // 2. تنبيه المستخدم بالنجاح
-
-            // تحديث البيانات داخل السجل المفتوح (إن وجد) لضمان المزامنة
-            if (selectedRecord) {
-                const currentKey = `${selectedRecord.exam_date}-${selectedRecord.title}-${selectedRecord.course}-${selectedRecord.batch}`;
-                const groups: Record<string, any> = {};
-                
-                processed.forEach((r: any) => {
-                    const key = `${r.exam_date}-${r.title}-${r.course}-${r.batch}`;
-                    if (!groups[key]) {
-                        groups[key] = { ...r, all_ids: [r.id] };
-                        groups[key].students_data = groups[key].students_data.map((s:any) => ({
-                            ...s, 
-                            recorded_by: s.recorded_by || r.creator_name || "النظام"
-                        }));
-                    } else {
-                        const existingIds = groups[key].students_data.map((s: any) => String(s.military_id));
-                        const newStudents = r.students_data
-                            .filter((s: any) => !existingIds.includes(String(s.military_id)))
-                            .map((s:any) => ({
-                                ...s, 
-                                recorded_by: s.recorded_by || r.creator_name || "النظام"
-                            }));
-                        groups[key].students_data = [...groups[key].students_data, ...newStudents];
-                        groups[key].all_ids.push(r.id);
-                    }
+            // 🛡️ تصفية النتائج
+            if (isRestricted) {
+                processed = processed.filter((r: any) => {
+                    const key = `${r.course}${r.batch ? `||${r.batch}` : ''}`;
+                    // نستخدم المصفوفة النظيفة userCourses للمقارنة
+                    return userCourses.includes(key);
                 });
-                if (groups[currentKey]) setSelectedRecord(groups[currentKey]);
             }
-        } else {
-            toast.error("حدث خطأ أثناء جلب البيانات من السيرفر");
+
+            setRecords(processed);
         }
     } catch (e) {
-        console.error(e);
-        toast.error("فشل الاتصال بالسيرفر، تحقق من الإنترنت");
+        toast.error("فشل الاتصال بالسيرفر");
     } finally {
-        setLoading(false); // 3. 🔑 أهم خطوة: إيقاف الدوران وعلامة التحميل مهما كانت النتيجة
+        setLoading(false);
     }
 };
 
@@ -573,6 +574,15 @@ const exportToExcel = () => {
         return "infantry"; // الافتراضي للمواد العسكرية الأخرى (مشاة، أسلحة..)
     };
 const courseBatchGroups = useMemo(() => {
+    // 🛡️ الحارس: جلب بيانات المستخدم والنطاق فوراً
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
+    const scope = user?.extra_permissions?.scope;
+    
+    // إذا كان المستخدم مقيداً كلياً، نوقف المعالجة ونرجع مصفوفة فارغة فوراً
+    if (user.role !== 'owner' && scope?.is_restricted && (!scope.courses || scope.courses.length === 0)) {
+        return [];
+    }
+
     const groups: Record<string, any> = {};
     
     records.forEach(r => {
@@ -624,7 +634,15 @@ const courseBatchGroups = useMemo(() => {
 }, [records, configs, selectedSection, selectedExamType, courseFilter, batchFilter]);
    // 1. ابحث عن هذا المتغير
 const groupedRecords = useMemo(() => {
-    // 🚨 شرط الحماية: إذا لم يتم اختيار دورة/دفعة من البطاقات الكبيرة، نرجع مصفوفة فارغة
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
+    const scope = user?.extra_permissions?.scope;
+    
+    // 🛡️ حماية: منع عرض السجلات الفردية إذا كان النطاق فارغاً
+    if (user.role !== 'owner' && scope?.is_restricted && (!scope.courses || scope.courses.length === 0)) {
+        return [];
+    }
+
+    // 🚨 شرط الحماية الأصلي الخاص بك
     if (!activeGroup) return [];
 
     const filtered = records.filter(r => {
@@ -1281,30 +1299,44 @@ const saveTrainerScoresToDB = async () => {
     {/* 2️⃣ السطر الثاني: الدورة + الدفعة (عمودين) */}
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* فلتر الدورة */}
-        <div className="space-y-1">
-            <Select value={courseFilter} onValueChange={(v) => {setCourseFilter(v); setBatchFilter("all"); setCurrentPage(1);}}>
-                <SelectTrigger className="h-10 bg-white font-bold border-slate-200">
-                    <SelectValue placeholder="-- اختر الدورة --" />
-                </SelectTrigger>
-                <SelectContent dir="rtl">
+      <div className="space-y-1">
+    <Select value={courseFilter} onValueChange={(v) => {setCourseFilter(v); setBatchFilter("all"); setCurrentPage(1);}}>
+        <SelectTrigger className="h-10 bg-white font-bold border-slate-200">
+            {/* 🟢 placeholder ذكي يتغير حسب الحالة */}
+            <SelectValue placeholder={coursesList.length === 0 ? "لا توجد صلاحيات" : "-- اختر الدورة --"} />
+        </SelectTrigger>
+        <SelectContent dir="rtl">
+            {coursesList.length > 0 ? (
+                <>
                     <SelectItem value="all">كل الدورات</SelectItem>
                     {coursesList.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-            </Select>
-        </div>
+                </>
+            ) : (
+                <SelectItem value="none" disabled className="text-red-500 font-bold">لا تملك صلاحيات</SelectItem>
+            )}
+        </SelectContent>
+    </Select>
+</div>
 
         {/* فلتر الدفعة */}
-        <div className="space-y-1">
-            <Select value={batchFilter} onValueChange={(v) => {setBatchFilter(v); setCurrentPage(1);}}>
-                <SelectTrigger className="h-10 bg-white font-bold border-slate-200">
-                    <SelectValue placeholder="-- اختر الدفعة --" />
-                </SelectTrigger>
-                <SelectContent dir="rtl">
+       <div className="space-y-1">
+    <Select value={batchFilter} onValueChange={(v) => {setBatchFilter(v); setCurrentPage(1);}}>
+        <SelectTrigger className="h-10 bg-white font-bold border-slate-200">
+            {/* 🟢 placeholder ذكي يتغير حسب الحالة */}
+            <SelectValue placeholder={batchesList.length === 0 ? "لا توجد دفعات" : "-- اختر الدفعة --"} />
+        </SelectTrigger>
+        <SelectContent dir="rtl">
+            {batchesList.length > 0 ? (
+                <>
                     <SelectItem value="all">كل الدفعات</SelectItem>
                     {batchesList.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-                </SelectContent>
-            </Select>
-        </div>
+                </>
+            ) : (
+                <SelectItem value="none" disabled className="text-red-500 font-bold">لا تملك صلاحيات</SelectItem>
+            )}
+        </SelectContent>
+    </Select>
+</div>
     </div>
 
     {/* 3️⃣ السطر الثالث: القسم + النوع (عمودين - مخصص للعسكري) */}

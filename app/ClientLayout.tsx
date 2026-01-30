@@ -64,100 +64,92 @@ type NavItem = {
 }
 
 // هيكل القائمة الجديد
+// هيكل القائمة المحدث ليشمل المسودات القديمة
 const navigationStructure: NavItem[] = [
-	{ id: "home", name: "الرئيسية", href: "/dashboard", icon: LayoutDashboard },
-	
-	// 1. إدارة الاختبارات
-	{
-		id: "exams-mgmt",
-		name: "إدارة الاختبارات",
-		icon: ClipboardCheck,
-		children: [
-			{ id: "data-entry", name: "إدخال البيانات", href: "/data-entry", icon: FileInput },
-			{ id: "results", name: "سجل النتائج", href: "/results", icon: Table },
-			{ id: "stats", name: "الإحصائيات", href: "/statistics", icon: BarChart3 },
-			{ id: "compare", name: "المقارنات", href: "/comparisons", icon: ArrowLeftRight },
-		]
-	},
+    { id: "home", name: "الرئيسية", href: "/dashboard", icon: LayoutDashboard },
+    
+    // 1. إدارة الاختبارات
+    {
+        id: "exams-mgmt",
+        name: "إدارة الاختبارات",
+        icon: ClipboardCheck,
+        children: [
+            { id: "data-entry", name: "إدخال البيانات", href: "/data-entry", icon: FileInput },
+            { id: "results", name: "سجل النتائج", href: "/results", icon: Table },
+            { id: "stats", name: "الإحصائيات", href: "/statistics", icon: BarChart3 },
+            { id: "compare", name: "المقارنات", href: "/comparisons", icon: ArrowLeftRight },
+        ]
+    },
 
-	// 2. الاختبارات الرقمية
-	{
-		id: "digital-exams",
-		name: "الاختبارات الرقمية",
-		icon: Users,
-		children: [
-			{ 
-				id: "dig-sports",
-				name: "التدريب الرياضي", 
-				icon: Dumbbell,
-				children: [
-					{ 
-    id: "dig-sports-fit", 
-    name: "اختبار اللياقة", 
-    icon: Activity,
-    children: [
-        { id: "dig-sports-fit-entry", name: "رصد النتائج", href: "/exams/sports/fitness/merge", icon: ClipboardCheck },
-        { id: "cs-sp-sha", name: "إدخال الشباحات", href: "/exams/sports/fitness/shabaha-entry", icon: Shirt }, 
-        { id: "dig-sports-fit-download", name: "تنزيل الاختبارات", href: "/exams/sports/fitness/download", icon: FileText },
-    ]
-},
-					{ id: "dig-sports-com", name: "اختبار الاشتباك", href: "/exams/sports/engagement", icon: Swords },
-					{ id: "dig-sports-results", name: "سجل النتائج ", href: "/exams/sports/fitness-records", icon: Table },
-				]
-			},
-			{ 
+    // 2. الاختبارات الرقمية
+    {
+        id: "digital-exams",
+        name: "الاختبارات الرقمية",
+        icon: Users,
+        children: [
+            { 
+                id: "dig-sports",
+                name: "التدريب الرياضي", 
+                icon: Dumbbell,
+                children: [
+                    { 
+                        id: "dig-sports-fit", 
+                        name: "اختبار اللياقة", 
+                        icon: Activity,
+                        children: [
+                            { id: "dig-sports-fit-entry", name: "رصد النتائج", href: "/exams/sports/fitness/merge", icon: ClipboardCheck },
+                            { id: "cs-sp-sha", name: "إدخال الشباحات", href: "/exams/sports/fitness/shabaha-entry", icon: Shirt }, 
+                            { id: "dig-sports-fit-download", name: "تنزيل الاختبارات", href: "/exams/sports/fitness/download", icon: FileText },
+                        ]
+                    },
+                    { id: "dig-sports-com", name: "اختبار الاشتباك", href: "/exams/sports/engagement", icon: Swords },
+                    { id: "dig-sports-results", name: "سجل النتائج ", href: "/exams/sports/fitness-records", icon: Table },
+                ]
+            },
+            { 
                 id: "dig-military",
                 name: "التدريب العسكري", 
                 icon: Shield,
                 children: [
-                    { 
-                        id: "dig-mil-unified", 
-                        // 🟢 تم تغيير الاسم حسب طلبك
-                        name: "الاختبارات العسكرية", 
-                        href: "/exams/military/MilitaryExams", 
-                        icon: ShieldCheck 
-                    },
-                    
-                    
+                    { id: "dig-mil-unified", name: "الاختبارات العسكرية", href: "/exams/military/MilitaryExams", icon: ShieldCheck },
                     { id: "dig-mil-results", name: "سجل النتائج", href: "/exams/military/results", icon: Table },
                 ]
             },
-			
-		]
-	},
+        ]
+    },
 
-	// 3. إدارة المدربين
-	{
-		id: "trainers-mgmt",
-		name: "إدارة المدربين",
-		icon: UserCog,
-		children: [
-			{
-				id: "trainers-sports",
-				name: "فرع التدريب الرياضي",
-				icon: Dumbbell,
-				children: [
-					{ id: "tr-sp-fit", name: "ملف مدربين اللياقة", href: "/trainers/sports/fitness", icon: User },
-					{ id: "tr-sp-com", name: "ملف مدربين الاشتباك", href: "/trainers/sports/combat", icon: Swords },
-					{ id: "tr-sp-rep", name: "تقرير شخصي ", href: "/trainers/sports/reports", icon: FileText },
-					{ id: "tr-sp-adm", name: "الملف الإداري", href: "/trainers/admin-file?branch=sports", icon: Activity },
-					{ id: "tr-sp-forms", name: "النماذج الإدارية", href: "/trainers/sports/admin-forms", icon: FileText },
-				]
-			},
-			{
-				id: "trainers-military",
-				name: "فرع التدريب العسكري",
-				icon: Shield,
-				children: [
-					{ id: "tr-mil-list", name: "ملف المدربين  ", href: "/trainers/military/list", icon: User },
-					{ id: "tr-mil-rep", name: "تقرير شخصي ", href: "/trainers/military/reports", icon: FileText },
-					{ id: "tr-mil-adm", name: "الملف الإداري", href: "/trainers/admin-file?branch=military", icon: Activity },
-				]
-			}
-		]
-	},
+    // 3. إدارة المدربين
+    {
+        id: "trainers-mgmt",
+        name: "إدارة المدربين",
+        icon: UserCog,
+        children: [
+            {
+                id: "trainers-sports",
+                name: "فرع التدريب الرياضي",
+                icon: Dumbbell,
+                children: [
+                    { id: "tr-sp-fit", name: "ملف مدربين اللياقة", href: "/trainers/sports/fitness", icon: User },
+                    { id: "tr-sp-com", name: "ملف مدربين الاشتباك", href: "/trainers/sports/combat", icon: Swords },
+                    { id: "tr-sp-rep", name: "تقرير شخصي ", href: "/trainers/sports/reports", icon: FileText },
+                    { id: "tr-sp-adm", name: "الملف الإداري", href: "/trainers/admin-file?branch=sports", icon: Activity },
+                    { id: "tr-sp-forms", name: "النماذج الإدارية", href: "/trainers/sports/admin-forms", icon: FileText },
+                ]
+            },
+            {
+                id: "trainers-military",
+                name: "فرع التدريب العسكري",
+                icon: Shield,
+                children: [
+                    { id: "tr-mil-list", name: "ملف المدربين  ", href: "/trainers/military/list", icon: User },
+                    { id: "tr-mil-rep", name: "تقرير شخصي ", href: "/trainers/military/reports", icon: FileText },
+                    { id: "tr-mil-adm", name: "الملف الإداري", href: "/trainers/admin-file?branch=military", icon: Activity },
+                ]
+            }
+        ]
+    },
 
-	// 4. الملف الإداري للدورات
+    // 4. الملف الإداري للدورات
     {
         id: "courses-mgmt",
         name: "إدارة الدورات",
@@ -169,12 +161,18 @@ const navigationStructure: NavItem[] = [
                 icon: Dumbbell,
                 children: [
                     { id: "cs-sp-sol", name: "بيانات المجندين", href: "/courses/sports/soldiers-data", icon: User },
-                    
-                    // 🟢 إضافة الرابط الجديد هنا للقسم الرياضي
                     { id: "cs-sp-day-new", name: "تسجيل الحالات", href: "/daily-schedule?branch=sports", icon: ClipboardCheck },
-                    { id: "cs-sp-audit", name: "عرض التكميل اليومي ", href: "/daily-audit?branch=sports", icon: ShieldCheck },
+                    
+                    
+{ 
+  id: "cs-sp-daily-audit-new", 
+  name: " تدقيق التكميل", 
+  href: "/courses/audit", 
+  icon: ShieldCheck 
+},
+                    { id: "cs-sp-audit", name: "عرض التكميل المعتمد ", href: "/daily-audit?branch=sports", icon: ShieldCheck },
                     { id: "cs-sp-vio-new", name: "تسجيل المخالفات", href: "/violations", icon: ShieldAlert },
-                    { id: "cs-sp-vio-history", name: "عرض المخالفات ", href: "/violations/history", icon: FileText },
+                    { id: "cs-sp-vio-history", name: "عرض المخالفات المعتمدة ", href: "/violations/history", icon: FileText },
                     { id: "cs-sp-rep", name: "تقرير عن مجند  ", href: "/courses/sports/reports", icon: FileText },
                     { id: "cs-sp-grad", name: "الدرجات الأسبوعية", href: "/courses/sports/weekly-grades", icon: Table },
                     { id: "cs-sp-wgt", name: "متابعة الأوزان", href: "/courses/sports/weights", icon: Scale },
@@ -186,12 +184,18 @@ const navigationStructure: NavItem[] = [
                 name: "فرع التدريب العسكري",
                 icon: Shield,
                 children: [
-                    
-                    // 🟢 إضافة الرابط الجديد هنا للقسم العسكري
                     { id: "cs-mil-day-new", name: "تسجيل الحالات", href: "/daily-schedule?branch=military", icon: ClipboardCheck },
-                    { id: "cs-mil-audit", name: " عرض التكميل اليومي", href: "/daily-audit?branch=military", icon: ShieldCheck },
+                    
+                    { 
+  id: "cs-sp-daily-audit-new", 
+  name: "تدقيق التكميل", 
+  href: "/courses/audit", 
+  icon: ShieldCheck 
+},
+                    { id: "cs-mil-audit", name: " عرض التكميل المعتمد", href: "/daily-audit?branch=military", icon: ShieldCheck },
                     { id: "cs-mil-vio-new", name: "تسجيل المخالفات ", href: "/violations", icon: ShieldAlert },
-                    { id: "cs-mil-vio-history", name: "عرض المخالفات ", href: "/violations/history", icon: FileText },
+                    
+                    { id: "cs-mil-vio-history", name: "عرض المخالفات المعتمدة ", href: "/violations/history", icon: FileText },
                     { id: "cs-mil-rep", name: "تقرير عن مجند ", href: "/courses/military/reports", icon: FileText }, 
                     { id: "cs-mil-soldiers", name: "ملف المجند", href: "/courses/military/soldiers", icon: Users },
                 ]
@@ -199,10 +203,9 @@ const navigationStructure: NavItem[] = [
         ]
     },
 
-	// 👇 التعديل: إضافة "إدارة المستخدمين" (سنخفيها برمجياً لغير المالك)
-	{ id: "users-mgmt", name: "إدارة المستخدمين", href: "/admin/users", icon: ShieldAlert },
-	
-	{ id: "settings", name: "الإعدادات", href: "/settings", icon: Settings },
+    { id: "users-mgmt", name: "إدارة المستخدمين", href: "/admin/users", icon: ShieldAlert },
+    { id: "scope-mgmt", name: "إدارة نطاق العمل", href: "/scope-management", icon: ShieldCheck },
+    { id: "settings", name: "الإعدادات", href: "/settings", icon: Settings },
 ]
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
@@ -355,6 +358,11 @@ if (item.id === "compare") {
         return null; // سيختفي الرابط تماماً من القائمة لأي رتبة أخرى
     }
 }
+// ابحث عن هذا السطر تقريباً في منتصف الكود
+if (item.id === "cs-sp-audit" || item.id === "cs-mil-audit" || item.id === "cs-sp-daily-audit-new") {
+    const allowed = ["owner", "manager", "admin", "assistant_admin", "military_officer", "sports_officer", "military_supervisor", "sports_supervisor"];
+    if (isLoading || !allowed.includes(userRole || "")) return null;
+}
     // ----------------------------------------------------------------
     // 4. الاختبارات الرقمية (التعديلات الجديدة المطلوبة)
     // ----------------------------------------------------------------
@@ -405,7 +413,15 @@ if (item.id === "compare") {
         const allowedToSeeUsers = ["owner", "manager", "admin"].includes(userRole || "");
         if (!allowedToSeeUsers) return null; 
     }
-
+    // ----------------------------------------------------------------
+    // 6. إدارة نطاق العمل (تظهر للقيادات والضباط والمشرف العسكري فقط)
+    // ----------------------------------------------------------------
+    if (item.id === "scope-mgmt") {
+        const allowed = ["owner", "assistant_admin", "sports_officer", "military_officer", "military_supervisor"];
+        if (isLoading || !allowed.includes(userRole || "")) {
+            return null;
+        }
+    }
     // إدارة الدورات - عسكري
     if (item.id === "courses-military") {
         if (isLoading || !userRole || !MILITARY_ROLES.includes(userRole)) return null;

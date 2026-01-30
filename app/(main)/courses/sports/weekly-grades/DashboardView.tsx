@@ -37,7 +37,7 @@ export default function DashboardView() {
     const [finalMatrix, setFinalMatrix] = useState<{headers: any[], data: any[]} | null>(null)
     const [loadingDetails, setLoadingDetails] = useState(false)
 
-    useEffect(() => {
+   useEffect(() => {
         const fetchFilters = async () => {
             try {
                 const params = new URLSearchParams()
@@ -45,7 +45,35 @@ export default function DashboardView() {
                 if (filterBatch !== 'all') params.append('batch', filterBatch)
                 if (filterCompany !== 'all') params.append('company', filterCompany)
                 const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${params.toString()}`)
-                if (res.ok) setFilterOptions(await res.json())
+                
+                if (res.ok) {
+                    let data = await res.json();
+
+                    // 🟢 [تطبيق قيود النطاق الذكية]
+                    const user = JSON.parse(localStorage.getItem("user") || "{}");
+                    const scope = user?.extra_permissions?.scope;
+
+                    if (user.role !== 'owner' && scope?.is_restricted) {
+                        const allowedCourses = scope.courses || [];
+                        const allowedCompanies = scope.companies || [];
+
+                        // 1. فلترة الدورات
+                        data.courses = data.courses.filter((courseName: string) => {
+                            return allowedCourses.some((ac: any) => ac.startsWith(courseName));
+                        });
+
+                        // 2. فلترة السرايا بناءً على الدورة والدفعة المختارة
+                        if (filterCourse !== "all" && filterBatch !== "all") {
+                            const currentKeyPrefix = `${filterCourse}||${filterBatch}->`;
+                            data.companies = data.companies.filter((companyName: string) => {
+                                return allowedCompanies.includes(`${currentKeyPrefix}${companyName}`);
+                            });
+                        } else {
+                            data.companies = [];
+                        }
+                    }
+                    setFilterOptions(data)
+                }
             } catch (e) { console.error("Filter error") }
         }
         fetchFilters()
@@ -61,21 +89,40 @@ const fetchDashboardStats = async () => {
         if (filterCourse !== 'all') params.append('course', filterCourse);
         if (filterBatch !== 'all') params.append('batch', filterBatch);
         if (filterCompany !== 'all') params.append('company', filterCompany);
-        
-        // 🚀 إضافة الفترة إذا كانت الدورة "طلبة الدبلوم"
-        if (filterCourse === "طلبة الدبلوم" && filterPeriod !== "all") {
-            params.append('period', filterPeriod);
-        }
-
+        if (filterCourse === "طلبة الدبلوم" && filterPeriod !== "all") params.append('period', filterPeriod);
         params.append('subject', subject);
 
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/stats?${params.toString()}`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-});
-        if (res.ok) setDashboardData(await res.json());
-        else setDashboardData([]);
-    } catch (e) { console.error(e); setDashboardData([]); } 
-    finally { setLoading(false); }
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+
+        if (res.ok) {
+            let data = await res.json();
+
+            // 🟢 [فلترة بطاقات الفصائل بناءً على النطاق]
+            const user = JSON.parse(localStorage.getItem("user") || "{}");
+            const scope = user?.extra_permissions?.scope;
+
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedPlatoons = scope.platoons || [];
+                const currentKeyPrefix = `${filterCourse}||${filterBatch}->`;
+
+                data = data.filter((item: any) => {
+                    // نتحقق إذا كان الفصيل المكتوب على البطاقة موجود ضمن المسموح
+                    return allowedPlatoons.includes(`${currentKeyPrefix}${item.platoon}`);
+                });
+            }
+
+            setDashboardData(data);
+        } else {
+            setDashboardData([]);
+        }
+    } catch (e) { 
+        console.error(e); 
+        setDashboardData([]); 
+    } finally { 
+        setLoading(false); 
+    }
 }
 
 // ✅ نسخة واحدة منظفة ومدمجة تشمل كل الفلاتر

@@ -1308,16 +1308,17 @@ if (!mounted) return null
     
     {/* 1. معايير العسكري */}
     {(["owner", "manager", "admin"].includes(userRole || "") || 
-      currentUser?.extra_permissions?.includes("military_standards")) && (
+      currentUser?.extra_permissions?.military_standards || // 🟢 فحص الكائن (الجديد)
+      (Array.isArray(currentUser?.extra_permissions) && currentUser.extra_permissions.includes("military_standards"))) && ( // 🔵 فحص المصفوفة (للتوافق)
         <TabsTrigger value="mil-standards" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             معايير العسكري
         </TabsTrigger>
     )}
 
-
     {/* 2. معايير اللياقة */}
     {(["owner", "manager", "admin"].includes(userRole || "") || 
-      currentUser?.extra_permissions?.includes("fitness_standards")) && (
+      currentUser?.extra_permissions?.fitness_standards || 
+      (Array.isArray(currentUser?.extra_permissions) && currentUser.extra_permissions.includes("fitness_standards"))) && (
         <TabsTrigger value="standards" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-green-600 data-[state=active]:text-white">
             معايير اللياقة
         </TabsTrigger>
@@ -1325,7 +1326,8 @@ if (!mounted) return null
 
     {/* 3. معايير الاشتباك */}
     {(["owner", "manager", "admin"].includes(userRole || "") || 
-      currentUser?.extra_permissions?.includes("combat_standards")) && (
+      currentUser?.extra_permissions?.combat_standards || 
+      (Array.isArray(currentUser?.extra_permissions) && currentUser.extra_permissions.includes("combat_standards"))) && (
         <TabsTrigger value="engagement" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-orange-600 data-[state=active]:text-white">
             معايير الاشتباك
         </TabsTrigger>
@@ -1333,7 +1335,8 @@ if (!mounted) return null
 
     {/* 4. لائحة المخالفات */}
     {(["owner", "manager", "admin"].includes(userRole || "") || 
-      currentUser?.extra_permissions?.includes("disciplinary_regulations")) && (
+      currentUser?.extra_permissions?.disciplinary_regulations || 
+      (Array.isArray(currentUser?.extra_permissions) && currentUser.extra_permissions.includes("disciplinary_regulations"))) && (
         <TabsTrigger value="disciplinary" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-amber-700 data-[state=active]:text-white">
             لائحة المخالفات
         </TabsTrigger>
@@ -1341,7 +1344,8 @@ if (!mounted) return null
 
     {/* 5. البرنامج التدريبي */}
     {(["owner", "manager", "admin"].includes(userRole || "") || 
-      currentUser?.extra_permissions?.includes("training_program")) && (
+      currentUser?.extra_permissions?.training_program || 
+      (Array.isArray(currentUser?.extra_permissions) && currentUser.extra_permissions.includes("training_program"))) && (
         <TabsTrigger value="training-schedule" className="text-[10px] md:text-xs py-2.5 data-[state=active]:bg-amber-500 data-[state=active]:text-white">
             البرنامج التدريبي
         </TabsTrigger>
@@ -1364,7 +1368,8 @@ if (!mounted) return null
 {/* 🔵 تاب معايير العسكري المطور (دعم الأقسام الديناميكية مع زر الإضافة) */}
 <TabsContent value="mil-standards">
   {(["owner", "manager", "admin"].includes(userRole || "") || 
-    currentUser?.extra_permissions?.includes("military_standards")) ? (
+    currentUser?.extra_permissions?.military_standards || 
+    (Array.isArray(currentUser?.extra_permissions) && currentUser?.extra_permissions?.includes("military_standards"))) ? (
     <Card className="border-t-4 border-t-blue-600 shadow-xl" >
       <CardHeader className="text-right flex flex-col md:flex-row justify-between items-center gap-4">
         <div>
@@ -1613,7 +1618,7 @@ if (!mounted) return null
 
         {/* 🟢 تاب معايير اللياقة */}
         <TabsContent value="standards">
-{(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("fitness_standards")) ? (
+{(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.fitness_standards || (Array.isArray(currentUser?.extra_permissions) && currentUser?.extra_permissions?.includes("fitness_standards"))) ? (
           <Card className="border-t-4 border-t-green-600 shadow-md">
             <CardHeader className="text-right">
               <CardTitle>قواعد التقييم الرياضي</CardTitle>
@@ -1665,7 +1670,9 @@ if (!mounted) return null
 
        {/* 🟠 تاب معايير الاشتباك - نسخة مطورة */}
 <TabsContent value="engagement">
-  {(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("combat_standards")) ? (
+  {(["owner", "manager", "admin"].includes(userRole || "") || 
+    currentUser?.extra_permissions?.combat_standards || 
+    (Array.isArray(currentUser?.extra_permissions) && currentUser?.extra_permissions?.includes("combat_standards"))) ? (
   <Card className="border-t-4 border-t-orange-600 shadow-md">
     <CardHeader className="text-right pb-2">
       <CardTitle className="text-orange-700">إدارة معايير الاشتباك</CardTitle>
@@ -1828,7 +1835,9 @@ if (!mounted) return null
 </TabsContent>
 
 <TabsContent value="disciplinary">
-{(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("disciplinary_regulations")) ? (
+  {(["owner", "manager", "admin"].includes(userRole || "") || 
+    currentUser?.extra_permissions?.disciplinary_regulations || 
+    (Array.isArray(currentUser?.extra_permissions) && currentUser?.extra_permissions?.includes("disciplinary_regulations"))) ? (
   <Card className="border-t-4 border-t-amber-700 shadow-md">
     <CardHeader className="text-right">
       <CardTitle className="text-amber-800 flex items-center gap-2">
@@ -2249,8 +2258,11 @@ if (!mounted) return null
             </CardContent>
           </Card>
         </TabsContent>
+
       <TabsContent value="training-schedule">
-{(["owner", "manager", "admin"].includes(userRole || "") || currentUser?.extra_permissions?.includes("training_program")) ? (
+  {(["owner", "manager", "admin"].includes(userRole || "") || 
+    currentUser?.extra_permissions?.training_program || 
+    (Array.isArray(currentUser?.extra_permissions) && currentUser?.extra_permissions?.includes("training_program"))) ? (
             <Card className="border-t-4 border-t-amber-500 shadow-md">
               {/* ... (Header كما هو) ... */}
               <CardHeader className="flex flex-row items-center justify-between pb-2">

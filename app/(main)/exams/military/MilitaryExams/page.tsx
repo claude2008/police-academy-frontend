@@ -106,29 +106,45 @@ const isShooting = useMemo(() => selectedSectionKey === 'shooting', [selectedSec
   }, [activeConfig]);
 
   // --- دوال البحث والإضافة (نسخة طبق الأصل من الرماية) ---
-  const handleSearch = async () => {
+ const handleSearch = async () => {
     if (!selectedExamId) return toast.error("يرجى اختيار نوع الاختبار أولاً");
     
-    // 🟢 التعديل: نطلب الصفة فقط إذا لم يكن الاختبار رماية
     if (!isShooting && !selectedRole) {
         return toast.error("يرجى تحديد صفتك (عضو/رئيس) قبل البدء");
     }
 
     const cleanQuery = normalizeNumbers(searchQuery).trim();
-    if (!cleanQuery) return;
+    
+    // 🔴 منع البحث الفارغ
+    if (!cleanQuery) {
+        return toast.error("يرجى إدخال الرقم العسكري أو اسم المجند أولاً");
+    }
+
     if (students.find(s => s.military_id === cleanQuery)) return toast.error("هذا المختبر مضاف بالفعل");
 
     setLoading(true);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?search=${cleanQuery}`, {
+      // 🟢 التعديل الأول: الانتقال لمسار البحث العالمي /search
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/search?query=${cleanQuery}`, {
         headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
       });
+      
       const data = await res.json();
-      if (data.data?.[0]) {
-        setSelectedSoldier(data.data[0]); setTempScores({}); setTempNotes(""); setIsModalOpen(true);
-      } else { toast.error("لم يتم العثور على جندي"); }
+
+      // 🟢 التعديل الثاني: التعامل مع المصفوفة المباشرة القادمة من الباك إند
+      // دالة search تعيد [ ] وليس { data: [ ] }
+      if (Array.isArray(data) && data.length > 0) {
+        setSelectedSoldier(data[0]); 
+        setTempScores({}); 
+        setTempNotes(""); 
+        setIsModalOpen(true);
+      } else { 
+        toast.error("لم يتم العثور على جندي بهذا الرقم في قاعدة البيانات العامة"); 
+      }
+    } catch (e) {
+        toast.error("خطأ في الاتصال بالسيرفر");
     } finally { setLoading(false); }
-  };
+};
 
  const confirmAddition = () => {
     if (!activeConfig || !selectedSoldier) return;

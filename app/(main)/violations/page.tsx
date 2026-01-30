@@ -37,6 +37,7 @@ type ViolationEntry = {
   housing: string;
   period_name: string;
   period_type: string;
+  session_id: number;
   attachments?: string[]; // 🟢 أضف علامة الاستفهام هنا ليكون اختيارياً
 };
 
@@ -224,14 +225,14 @@ useEffect(() => {
   }, [selectedSoldier]);
 
  const addToQueue = () => {
-    const periodData = availablePeriods.find(p => p.name === selectedPeriod);
-    
-    // التحقق الأساسي
+    // 🟢 نجد ترتيب الحصة (Index) في المصفوفة المتاحة
+    const periodIndex = availablePeriods.findIndex(p => p.name === selectedPeriod);
+    const periodData = availablePeriods[periodIndex];
+
     if (!selectedSoldier || !selectedViolation || !selectedPeriod) {
         return toast.warning("أكمل البيانات أولاً");
     }
 
-    // تجهيز السجل الجديد مع المرفقات
     const newEntry: ViolationEntry = {
         tempId: Date.now().toString(),
         soldier: selectedSoldier,
@@ -242,11 +243,10 @@ useEffect(() => {
         housing: housingSystem === 'sleeping' ? 'مبيت' : 'ثابت',
         period_name: selectedPeriod,
         period_type: periodData?.type || 'other',
-        // 🟢 إضافة الصور المرفوعة (إذا وجدت) للسجل
+        session_id: periodIndex, // 👈 حفظ الرقم (0 لحصة 1، 1 لحصة 2... وهكذا)
         attachments: [...tempImages] 
     };
 
-    // إضافة السجل للقائمة
     setSessionQueue([newEntry, ...sessionQueue]);
 
     // 🧹 تنظيف الحقول للاستعداد للرصد التالي
@@ -294,7 +294,6 @@ const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
   try {
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     
-    // تجهيز البيانات للإرسال
     const payload = sessionQueue.map((item: ViolationEntry) => ({
       military_id: item.soldier.military_id,
       violation_name: item.violation_name,
@@ -303,6 +302,7 @@ const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       note: item.note,
       housing_system: item.housing,
       period: item.period_name,
+      session_id: item.session_id, // 👈 الآن سيرسل الرقم الصافي (0, 1, 2...)
       entered_by: user.name || "مستخدم مجهول",
       entry_date: new Date().toISOString(),
       attachments: item.attachments || [] 

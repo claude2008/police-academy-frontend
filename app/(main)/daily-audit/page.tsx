@@ -57,7 +57,7 @@ const searchParams = useSearchParams();
     const targetCourse = searchParams.get('course');
     const targetBatch = searchParams.get('batch');
     const [options, setOptions] = useState({ courses: [], batches: [] });
-
+const [activeCard, setActiveCard] = useState<string | null>(null);
    useEffect(() => {
     fetchInitialOptions();
 }, [date]);
@@ -72,35 +72,69 @@ const searchParams = useSearchParams();
 }, [dailySummaries, selectedCourse, selectedBatch]);
 
    const fetchInitialOptions = async () => {
-    setLoading(true);
-    try {
-        const token = localStorage.getItem("token");
-        const [fRes, tRes, sRes] = await Promise.all([
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`),
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates`, {
-                headers: { "Authorization": `Bearer ${token}` }
-            }),
-            // 🟢 التعديل هنا: نستخدم الرابط الجديد والذكي الذي أنشأناه في الباك إند
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/daily-summaries?date=${date}`, {
-                headers: { "Authorization": `Bearer ${token}` }
-            })
-        ]);
-        
-        if (fRes.ok) setOptions(await fRes.json());
-        if (tRes.ok) setTemplates(await tRes.json());
-        
-        // 🟢 معالجة البيانات أصبحت أسهل بكثير لأن الباك إند يرسلها جاهزة
-        if (sRes.ok) {
-            const data = await sRes.json();
-            // البيانات تصل الآن بالشكل: [{course: "...", batch: "...", count: 2}, ...]
-            setDailySummaries(data);
+        setLoading(true);
+        try {
+            const token = localStorage.getItem("token");
+            const userStr = localStorage.getItem("user");
+            const user = JSON.parse(userStr || "{}");
+            const scope = user?.extra_permissions?.scope;
+
+            const [fRes, tRes, sRes] = await Promise.all([
+                fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`),
+                fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates`, {
+                    headers: { "Authorization": `Bearer ${token}` }
+                }),
+                fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/daily-summaries?date=${date}`, {
+                    headers: { "Authorization": `Bearer ${token}` }
+                })
+            ]);
+            
+            if (fRes.ok) {
+                let filterData = await fRes.json();
+
+                // 🔑 جلب صلاحيات المستخدم
+                const user = JSON.parse(localStorage.getItem("user") || "{}");
+                const scope = user?.extra_permissions?.scope;
+
+                // 🛡️ تصفية القوائم المنسدلة (الدورة والدفعة)
+                if (user.role !== 'owner' && scope?.is_restricted) {
+                    const allowedCoursesKeys = scope.courses || []; // بصيغة "اسم الدورة||الدفعة"
+
+                    // 1. تصفية الدورات (استخراج الاسم الأول من المفتاح)
+                    const allowedCourseNames = allowedCoursesKeys.map((key: string) => key.split('||')[0]);
+                    filterData.courses = (filterData.courses || []).filter((cName: string) => 
+                        allowedCourseNames.includes(cName)
+                    );
+
+                    // 2. تصفية الدفعات (لا تظهر إلا الدفعة التي تشكل مع دورة مسموحة مفتاحاً صحيحاً)
+                    filterData.batches = (filterData.batches || []).filter((bName: string) => {
+                        return allowedCoursesKeys.some((key: string) => key.endsWith(`||${bName}`));
+                    });
+                }
+                
+                setOptions(filterData);
+            }
+
+            if (tRes.ok) setTemplates(await tRes.json());
+            
+            if (sRes.ok) {
+                let summaryData = await sRes.json();
+                // 🟢 [تصفية البطاقات (المجلدات) المتاحة للعرض]
+                if (user.role !== 'owner' && scope?.is_restricted) {
+                    const allowedCourses = scope.courses || [];
+                    summaryData = summaryData.filter((item: any) => {
+                        const key = `${item.course}||${item.batch}`;
+                        return allowedCourses.includes(key);
+                    });
+                }
+                setDailySummaries(summaryData);
+            }
+        } catch (e) { 
+            toast.error("خطأ في جلب البيانات"); 
+        } finally { 
+            setLoading(false); 
         }
-    } catch (e) { 
-        toast.error("خطأ في جلب البيانات"); 
-    } finally { 
-        setLoading(false); 
-    }
-};
+    };
 // 🔔 موظف الاستقبال لفتح التكميل مباشرة من الإشعارات
 useEffect(() => {
     const handleDeepLink = async () => {
@@ -138,27 +172,33 @@ useEffect(() => {
 }, [targetDate, targetCourse, targetBatch, dailySummaries, date]); 
 // 🔄 يراقب التغيرات لضمان الفتح حتى لو تأخر تحميل البيانات من السيرفر
     const openReport = async (course: string, batch: string) => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL}/session/audit-report-data?date=${date}&course=${course}&batch=${batch}`,
-                { headers: { "Authorization": `Bearer ${token}` } }
-            );
+    // 🟢 تفعيل حالة التحميل للبطاقة المحددة
+    setActiveCard(course + batch); 
+    setLoading(true);
 
-            if (res.ok) {
-                const data = await res.json();
-                setAttendanceData(data);
-                setSelectedReport({ course, batch }); 
-            } else {
-                toast.error("فشل في جلب بيانات التقرير");
-            }
-        } catch (e) {
-            toast.error("خطأ في الاتصال");
-        } finally {
-            setLoading(false);
+    try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/session/approved-daily-report?date=${date}&course=${course}&batch=${batch}`,
+            { headers: { "Authorization": `Bearer ${token}` } }
+        );
+
+        if (res.ok) {
+            const data = await res.json();
+            setAttendanceData(data);
+            setSelectedReport({ course, batch }); 
+        } else {
+            toast.error("لا توجد حصص معتمدة لهذه الدورة اليوم");
+            setActiveCard(null); // إلغاء التفعيل في حال الفشل
         }
-    };
+    } catch (e) {
+        toast.error("خطأ في الاتصال");
+        setActiveCard(null); // إلغاء التفعيل في حال الخطأ
+    } finally {
+        setLoading(false);
+        // لا نلغي activeCard هنا لكي تظل البطاقة بشكلها "النشط" حتى تفتح الصفحة فعلياً
+    }
+};
 
     const handleUnapprove = async (level: string) => {
         try {
@@ -259,7 +299,7 @@ const displayStats = useMemo(() => {
                 ? ` (${sess.startTime}-${sess.endTime})` 
                 : "";
             
-            const sessionKey = `ح${index + 1}${timeInfo}`; // هذا سيكون عنوان العمود
+            const sessionKey = `حصة${index + 1}${timeInfo}`; // هذا سيكون عنوان العمود
             
             const sessionObj = row.sessions[index];
     
@@ -328,7 +368,7 @@ const handlePrint = () => {
                     <div className="flex flex-col gap-4 bg-white p-4 rounded-2xl border shadow-sm no-print">
                         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                             <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-                                <ShieldCheck className="w-8 h-8 text-[#c5b391]" /> تدقيق واعتماد التكميل اليومي
+                                <ShieldCheck className="w-8 h-8 text-[#c5b391]" /> اعتماد التكميل اليومي
                             </h1>
                             <div className="flex items-center gap-2">
                                 <Input type="date" value={date} onChange={(e)=>setDate(e.target.value)} className="w-40 font-bold border-[#c5b391]" />
@@ -358,46 +398,64 @@ const handlePrint = () => {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-    {paginatedReports.map((report: any, index: number) => (
+   {paginatedReports.map((report: any, index: number) => {
+    // التحقق هل هذه البطاقة هي التي جاري تحميلها حالياً؟
+    const isThisCardLoading = loading && activeCard === (report.course + report.batch);
+
+    return (
         <div 
             key={index}
-            onClick={() => openReport(report.course, report.batch)}
-            className="bg-white p-6 rounded-2xl border-2 border-slate-100 hover:border-[#c5b391] hover:shadow-xl transition-all cursor-pointer group relative overflow-hidden"
+            onClick={() => !loading && openReport(report.course, report.batch)}
+            className={`bg-white p-6 rounded-2xl border-2 transition-all cursor-pointer group relative overflow-hidden ${
+                isThisCardLoading 
+                ? 'border-[#c5b391] bg-[#c5b391]/5 scale-[0.98] shadow-inner' // شكل البطاقة أثناء الضغط
+                : 'border-slate-100 hover:border-[#c5b391] hover:shadow-xl' // الشكل الطبيعي
+            }`}
         >
-            {/* الديكور الجانبي القديم */}
-            <div className="absolute top-0 right-0 w-2 h-full bg-[#c5b391] opacity-20 group-hover:opacity-100 transition-opacity" />
+            {/* الديكور الجانبي يتوهج عند التحميل */}
+            <div className={`absolute top-0 right-0 w-2 h-full transition-all ${
+                isThisCardLoading ? 'bg-[#c5b391] opacity-100' : 'bg-[#c5b391] opacity-20 group-hover:opacity-100'
+            }`} />
             
             <div className="flex justify-between items-start">
                 <div>
-                    <h3 className="font-black text-xl text-slate-800 mb-1">
+                    <h3 className={`font-black text-xl mb-1 transition-colors ${isThisCardLoading ? 'text-[#8a7a5b]' : 'text-slate-800'}`}>
                         {report.course}
                     </h3>
                     <p className="text-[#c5b391] font-bold text-sm">
                         {report.batch && report.batch !== "none" ? report.batch : "بدون دفعة"}
                     </p>
-                    <div className="flex gap-2 items-center">
-            {report.status === "fully_approved" ? (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 font-black text-[10px]">
-                    معتمد بالكامل ✅
-                </Badge>
-            ) : report.status === "officer_approved" ? (
-                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 font-black text-[10px]">
-                    تم اعتماد الضابط 🔵
-                </Badge>
-            ) : report.status === "supervisor_approved" ? (
-                <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-200 font-black text-[10px]">
-                    تم اعتماد المشرف 🟣
-                </Badge>
-            ) : (
-                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 font-black text-[10px]">
-                    قيد المراجعة ⏳
-                </Badge>
-            )}
-        </div>
+                    
+                    <div className="flex gap-2 items-center mt-2">
+                        {/* إظهار علامة انتظار إذا كانت جاري التحميل، وإلا إظهار البادج العادي */}
+                        {isThisCardLoading ? (
+                            <Badge variant="outline" className="bg-white text-[#c5b391] border-[#c5b391] animate-pulse font-black text-[10px]">
+                                جاري جلب البيانات...
+                            </Badge>
+                        ) : (
+                            report.status === "fully_approved" ? (
+                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 font-black text-[10px]">
+                                    معتمد بالكامل ✅
+                                </Badge>
+                            ) : (
+                                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200 font-black text-[10px]">
+                                    قيد المراجعة ⏳
+                                </Badge>
+                            )
+                        )}
+                    </div>
                 </div>
-                <div className="bg-red-50 text-red-600 px-3 py-1 rounded-full text-xs font-black">
-                    {report.count} طلاب
-                </div>
+
+                {/* استبدال رقم الطلاب بأيقونة دوارة أثناء التحميل */}
+                {isThisCardLoading ? (
+                    <div className="p-2 bg-[#c5b391]/20 rounded-full">
+                        <Loader2 className="w-5 h-5 animate-spin text-[#8a7a5b]" />
+                    </div>
+                ) : (
+                    <div className="bg-red-50 text-red-600 px-3 py-1 rounded-full text-xs font-black">
+                        {report.count} طلاب
+                    </div>
+                )}
             </div>
 
             <div className="mt-6 flex items-center justify-between text-slate-400 text-[11px] font-bold">
@@ -405,10 +463,13 @@ const handlePrint = () => {
                     <Calendar className="w-3.5 h-3.5" />
                     <span>تاريخ: {date}</span>
                 </div>
-                <span className="group-hover:text-[#c5b391] transition-colors">عرض التقرير ←</span>
+                <span className={`transition-colors ${isThisCardLoading ? 'text-[#c5b391] font-black' : 'group-hover:text-[#c5b391]'}`}>
+                    {isThisCardLoading ? "فتح التقرير..." : "عرض التقرير ←"}
+                </span>
             </div>
         </div>
-    ))}
+    );
+})}
 </div>
 
                     <div className="flex items-center justify-between bg-white p-4 rounded-xl border shadow-sm">
@@ -486,44 +547,7 @@ const handlePrint = () => {
                         </h1>
                     </div>
 
-                   <div className="no-print overflow-x-auto rounded-xl border-2 border-[#c5b391] shadow-md mb-6">
-    <table className="w-full min-w-[800px] text-center text-sm">
-        <thead className="bg-[#c5b391] text-black font-black">
-            <tr className="divide-x divide-black">
-                <th className="p-2 border-l border-black">القوة</th>
-                <th className="p-2 border-l border-black">طبية</th>
-                <th className="p-2 border-l border-black">عيادة</th>
-                <th className="p-2 border-l border-black">إجازة</th>
-                <th className="p-2 border-l border-black">إجازة إدارية</th>
-                <th className="p-2 border-l border-black">إجازة وفاة</th>
-                <th className="p-2 border-l border-black">تأخير</th>
-                <th className="p-2 border-l border-black">استراحة</th>
-                <th className="p-2 border-l border-black">غياب</th>
-                {/* 🟢 العمود الجديد لضبط الحساب */}
-                <th className="p-2 border-l border-black bg-[#b5a381]">أخرى</th>
-                <th className="p-2 border-l border-black bg-[#c5b391]">الحالات</th>
-                <th className="p-2 bg-[#c5b391]">الموجود</th>
-            </tr>
-        </thead>
-        <tbody className="bg-white font-black text-slate-700">
-            <tr className="divide-x divide-black">
-                <td className="p-2 bg-slate-50 border-l border-black">{displayStats.total}</td>
-                <td className="p-2 border-l border-black text-red-600">{displayStats.medical || "-"}</td>
-                <td className="p-2 border-l border-black text-red-600">{displayStats.clinic || "-"}</td>
-                <td className="p-2 border-l border-black text-red-600">{displayStats.leave || "-"}</td>
-                <td className="p-2 border-l border-black text-red-600">{displayStats.admin_leave || "-"}</td>
-                <td className="p-2 border-l border-black text-red-600">{displayStats.death_leave || "-"}</td>
-                <td className="p-2 border-l border-black text-red-600">{displayStats.late_parade || "-"}</td>
-                <td className="p-2 border-l border-black text-red-600">{displayStats.rest || "-"}</td>
-                <td className="p-2 border-l border-black text-red-600">{displayStats.absent || "-"}</td>
-                {/* 🟢 عرض القيمة المحسوبة للحالات الإضافية */}
-                <td className="p-2 border-l border-black text-red-600">{displayStats.calculatedOther || "-"}</td>
-                <td className="p-2 text-red-600 bg-blue-50/30 border-l border-black">{displayStats.cases}</td>
-                <td className="p-2 text-green-700">{displayStats.present}</td>
-            </tr>
-        </tbody>
-    </table>
-</div>
+                  
 
                     <div className="border-2 border-black rounded-lg overflow-x-auto shadow-sm">
                         <Table className="border-collapse min-w-full">
@@ -535,7 +559,7 @@ const handlePrint = () => {
     <TableHead key={i} className="text-center font-black text-black border-l border-black min-w-[50px] p-1 bg-[#c5b391]">
         <div className="flex flex-col items-center justify-center gap-0.5">
             {/* رقم الحصة */}
-            <span className="text-[11px] leading-none">{`ح${i+1}`}</span>
+            <span className="text-[11px] leading-none">{`حصة${i+1}`}</span>
             
             {/* 🟢 إضافة الوقت (من - إلى) بخط أصغر */}
             {sess.startTime && sess.endTime && sess.startTime !== "00:00" && (
@@ -635,17 +659,16 @@ const handlePrint = () => {
 </TableCell>
                                         {/* ✅ ضع هذا الكود مكانه تماماً */}
 {row.sessions.map((sessionObj: any, sIdx: number) => {
-    // المنطق الجديد: إذا كانت الحالة "أخرى" وهناك ملاحظة، نعرض الملاحظة (مثل: مستشفى)
-    const displayValue = (sessionObj?.status === "أخرى" && sessionObj?.note) 
-        ? sessionObj.note 
-        : (sessionObj?.status || "-");
+    // عرض الحالة (مثلاً: طبية) أو "-" إذا كان حاضراً
+    const status = sessionObj?.status || "حاضر";
+    const isPresent = status === "حاضر";
 
     return (
         <TableCell 
             key={sIdx} 
-            className="text-center p-0 font-black text-[10px] text-red-600 border-l border-black min-w-[60px]"
+            className={`text-center p-0 font-black text-[10px] border-l border-black min-w-[60px] ${isPresent ? 'text-slate-300' : 'text-red-600'}`}
         >
-            {displayValue}
+            {isPresent ? "-" : (sessionObj.note && status === "أخرى" ? sessionObj.note : status)}
         </TableCell>
     );
 })}
@@ -659,15 +682,19 @@ const handlePrint = () => {
                                     </TableRow>
                                 ))}
                                {(!attendanceData.rows || attendanceData.rows.length === 0) && (
-                <TableRow>
-                    <TableCell 
-                        colSpan={(attendanceData.template?.length || 0) + 5} 
-                        className="h-32 text-center text-slate-400 font-bold"
-                    >
-                        لا يوجد حالات مسجلة لهذا اليوم (الكل حاضر)
-                    </TableCell>
-                </TableRow>
-            )}
+    <TableRow>
+        <TableCell 
+            colSpan={(attendanceData.template?.length || 0) + 5} 
+            className="h-40 text-center text-slate-400 font-bold bg-slate-50/50"
+        >
+            <div className="flex flex-col items-center gap-2">
+                <CheckCircle2 className="w-10 h-10 text-green-500 opacity-20" />
+                <p>لم يتم اعتماد أي حالات غياب لهذه الدورة اليوم حتى الآن</p>
+                <p className="text-[10px] text-slate-400 font-medium">(أو أن جميع الطلبة حاضرون في الحصص المعتمدة)</p>
+            </div>
+        </TableCell>
+    </TableRow>
+)}
         </TableBody>
                         </Table>
                     </div>

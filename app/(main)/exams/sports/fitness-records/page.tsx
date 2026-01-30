@@ -81,23 +81,44 @@ useEffect(() => {
     }
 }, [selectedGroup]);
 
-    const fetchRecords = async () => {
+   const fetchRecords = async () => {
         setLoading(true);
         try {
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records`, {
-               headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
             });
+            
             if (res.ok) {
                 const rawData = await res.json();
-                const processed = rawData.map((r: any) => ({
+                const user = JSON.parse(localStorage.getItem("user") || "{}");
+                const scope = user?.extra_permissions?.scope;
+
+                let processed = rawData.map((r: any) => ({
                     ...r,
                     students_data: typeof r.students_data === 'string' ? JSON.parse(r.students_data) : r.students_data,
                     approvals: typeof r.approvals === 'string' ? JSON.parse(r.approvals) : r.approvals
                 }));
+
+                // 🟢 الحارس الصارم: إذا كان مقيداً والقائمة فارغة، امسح كل البيانات فوراً
+                if (user.role !== 'owner' && scope?.is_restricted === true) {
+                    const allowedCourses = scope.courses || [];
+                    if (allowedCourses.length === 0) {
+                        processed = []; // تقييد كلي فعلي
+                    } else {
+                        processed = processed.filter((r: any) => {
+                            const key = `${r.course}${r.batch ? `||${r.batch}` : ''}`;
+                            return allowedCourses.includes(key);
+                        });
+                    }
+                }
+
                 setRecords(processed);
             }
-
-        } catch (e) { toast.error("فشل الاتصال"); } finally { setLoading(false); }
+        } catch (e) { 
+            toast.error("فشل الاتصال"); 
+        } finally { 
+            setLoading(false); 
+        }
     };
 
 const uniqueCourses = useMemo(() => [...new Set(records.map(r => r.course))].filter(Boolean), [records]);
@@ -182,52 +203,17 @@ const uniqueCourses = useMemo(() => [...new Set(records.map(r => r.course))].fil
         });
     }, [records, searchQuery, dateSearch, activeTab, filterCourse, filterBatch]);
 
-    // 🟢 4. منطق الترقيم للبطاقات (Pagination for Cards)
-
-    const paginatedCards = useMemo(() => {
-
-        const start = (mainPage - 1) * mainItemsPerPage;
-
-        return filteredGroupedRecords.slice(start, start + mainItemsPerPage);
-
-    }, [filteredGroupedRecords, mainPage, mainItemsPerPage]);
-
-
-
-    const totalMainPages = Math.ceil(filteredGroupedRecords.length / mainItemsPerPage);
-
-    useEffect(() => {
-
-        if (selectedGroup && viewMode === "official") {
-
-            const fetchBatch = async () => {
-
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?course=${selectedGroup.course}&batch=${selectedGroup.batch}&limit=2000`, {
-
-                    headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-
-                });
-
-                if (res.ok) {
-
-                    const data = await res.json();
-
-                    setAllSoldiersInBatch(data.data);
-
-                }
-
-            };
-
-            fetchBatch();
-
-        }
-
-    }, [selectedGroup, viewMode]);
-
 
 const courseBatchGroups = useMemo(() => {
-    const groups: Record<string, any> = {};
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
+    const scope = user?.extra_permissions?.scope;
     
+    // 🛡️ حماية إضافية: إذا كان المستخدم مقيداً كلياً، لا تبدأ المعالجة أصلاً
+    if (user.role !== 'owner' && scope?.is_restricted && (!scope.courses || scope.courses.length === 0)) {
+        return [];
+    }
+
+    const groups: Record<string, any> = {};
     records.forEach(r => {
         // ... (نفس كود الفلترة الأولية كما هو) ...
         const titleLower = (r.title || "").toLowerCase();
@@ -276,8 +262,18 @@ const courseBatchGroups = useMemo(() => {
         return matchCourse && matchBatch;
     });
 }, [records, activeTab, filterCourse, filterBatch]);
-  const groupedRecords = useMemo(() => {
-    // 🚨 شرط الحماية: إذا لم نكن داخل دورة، لا نحسب شيئاً
+ 
+const groupedRecords = useMemo(() => {
+    // 🛡️ حارس أمن النطاق
+    const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
+    const scope = user?.extra_permissions?.scope;
+    
+    // إذا كان المستخدم مقيداً كلياً (نطاق فارغ)، نمنع الحساب فوراً
+    if (user.role !== 'owner' && scope?.is_restricted && (!scope.courses || scope.courses.length === 0)) {
+        return [];
+    }
+
+    // 🚨 شرط الحماية الأصلي الخاص بك: إذا لم نكن داخل دورة، لا نحسب شيئاً
     if (!activeGroup) return [];
 
     const filtered = records.filter(r => {
@@ -340,52 +336,97 @@ const courseBatchGroups = useMemo(() => {
         return { ...group, student_count_ref: uniqueSoldiers.size };
     });
 }, [records, searchQuery, dateSearch, activeTab, activeGroup]); // 🟢 أضفنا activeGroup
-// 🔔 موظف الاستقبال الذكي لصفحة الرياضة
-useEffect(() => {
-    if (targetRecordId && records.length > 0) {
-        const recordIdNum = parseInt(targetRecordId);
-        const foundRecord = records.find(r => r.id === recordIdNum);
 
-        if (foundRecord) {
-            console.log("🎯 تم رصد إشعار رياضي، جاري توجيه المستخدم...");
+// 🟢 تعديل: اجعل الترقيم يأخذ من المجموعة المفلترة للدورة المختارة فقط
+const paginatedCards = useMemo(() => {
+    const start = (mainPage - 1) * mainItemsPerPage;
+    // ابدل filteredGroupedRecords بـ groupedRecords
+    return groupedRecords.slice(start, start + mainItemsPerPage);
+}, [groupedRecords, mainPage, mainItemsPerPage]);
 
-            // 1. تحديد التبويب الصحيح (لياقة أم اشتباك)
-            const titleLower = (foundRecord.title || "").toLowerCase();
-            const isEngagement = titleLower.includes("اشتباك") || (foundRecord.subject && foundRecord.subject.includes("engagement"));
-            setActiveTab(isEngagement ? "engagement" : "fitness");
+    const totalMainPages = Math.ceil(groupedRecords.length / mainItemsPerPage);
 
-            // 2. تفعيل "المستوى الأول" (فتح بطاقة الدورة)
-            setActiveGroup({ course: foundRecord.course, batch: foundRecord.batch });
+    useEffect(() => {
 
-            // 3. تفعيل "المستوى الثاني" (فتح الكشف)
-            // بما أن صفحة الرياضة تستخدم نظام المجموعات المدمجة، نبحث عن المجموعة التي تحتوي على هذا السجل
-            const targetGroup = groupedRecords.find(g => 
-                g.sub_records.some((sub: any) => sub.id === recordIdNum)
-            );
+        if (selectedGroup && viewMode === "official") {
 
-            if (targetGroup) {
-                setSelectedGroup(targetGroup);
-            } else {
-                // إذا لم نجد المجموعة المدمجة بعد (بسبب تأخر المعالجة)، نفتح السجل الفردي كحل احتياطي
-                setSelectedGroup({
-                    title: foundRecord.title,
-                    exam_date: foundRecord.exam_date,
-                    course: foundRecord.course,
-                    batch: foundRecord.batch,
-                    sub_records: [foundRecord],
-                    type: isEngagement ? "engagement" : "fitness"
+            const fetchBatch = async () => {
+
+                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?course=${selectedGroup.course}&batch=${selectedGroup.batch}&limit=2000`, {
+
+                    headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+
                 });
-            }
 
-            // 4. تنظيف الرابط
-            const newUrl = window.location.pathname;
-            window.history.replaceState({}, '', newUrl);
-            
-            toast.success(`تم فتح: ${foundRecord.title}`);
+                if (res.ok) {
+
+                    const data = await res.json();
+
+                    setAllSoldiersInBatch(data.data);
+
+                }
+
+            };
+
+            fetchBatch();
+
         }
-    }
-}, [records, targetRecordId, groupedRecords]); // 🔄 يراقب groupedRecords لضمان العثور على المجموعة المدمجة
 
+    }, [selectedGroup, viewMode]);
+
+
+
+ 
+// 🔔 موظف الاستقبال الذكي لصفحة الرياضة
+// 🟢 تأكد أن هذا الـ useEffect موجود "بعد" تعريف groupedRecords في الملف
+useEffect(() => {
+    // 1. فحص الشروط الأساسية: وجود معرف السجل وتحميل البيانات
+    if (!targetRecordId || records.length === 0) return;
+
+    const recordIdNum = parseInt(targetRecordId);
+    const foundRecord = records.find(r => r.id === recordIdNum);
+
+    if (foundRecord) {
+        console.log("🎯 معالجة إشعار رياضي للسجل رقم:", recordIdNum);
+
+        // 2. تحديد التبويب (لياقة أم اشتباك)
+        const titleLower = (foundRecord.title || "").toLowerCase();
+        const isEngagement = titleLower.includes("اشتباك") || (foundRecord.subject && foundRecord.subject.includes("engagement"));
+        
+        // تحديث الحالة لمرة واحدة
+        setActiveTab(isEngagement ? "engagement" : "fitness");
+        setActiveGroup({ course: foundRecord.course, batch: foundRecord.batch });
+
+        // 3. 🛡️ الحل الذكي للعثور على المجموعة المدمجة دون التسبب في انهيار
+        // بدلاً من مراقبة groupedRecords، سنبحث فيها مباشرة إذا كانت موجودة
+        // أو نقوم بتجميع السجلات المرتبطة يدوياً فوراً
+        const relatedSubRecords = records.filter(r => 
+            r.exam_date === foundRecord.exam_date && 
+            r.course === foundRecord.course && 
+            r.batch === foundRecord.batch &&
+            (isEngagement ? (r.title.includes("اشتباك") || (r.subject && r.subject.includes("engagement"))) : !r.title.includes("اشتباك"))
+        );
+
+        if (relatedSubRecords.length > 0) {
+            setSelectedGroup({
+                key: `${foundRecord.exam_date}-${foundRecord.course}-${foundRecord.batch}`,
+                title: isEngagement ? `اختبار اشتباك - ${foundRecord.exam_date}` : foundRecord.title,
+                exam_date: foundRecord.exam_date,
+                course: foundRecord.course,
+                batch: foundRecord.batch,
+                sub_records: relatedSubRecords,
+                type: isEngagement ? "engagement" : "fitness",
+                status: relatedSubRecords.some(r => r.status === 'approved') ? 'approved' : 'pending'
+            });
+        }
+
+        // 4. تنظيف الرابط لمنع تكرار العملية
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+        
+        toast.success(`تم التوجه إلى: ${foundRecord.title}`);
+    }
+}, [records.length, targetRecordId]); // 🔄 تم إزالة groupedRecords من هنا لكسر حلقة الانهيار (Infinite Loop)
 
    const processedGroupData = useMemo(() => {
 
@@ -1503,10 +1544,10 @@ const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
 
                                         <SelectTrigger className="w-full md:w-24 h-7 border-none text-xs font-bold"><SelectValue /></SelectTrigger>
 
-                                        <SelectContent>
+<SelectContent>
     <SelectItem value="all">الكل</SelectItem>
-    {/* 🟢 أضفنا ?. لضمان عدم الانهيار */}
-    {Array.from(new Set(processedGroupData?.students?.map((s:any)=>s.company || s["السرية"])))
+    {/* حماية إضافية: التأكد أن المخطط موجود قبل عمل map */}
+    {processedGroupData?.students?.length > 0 && Array.from(new Set(processedGroupData.students.map((s:any)=>s.company || s["السرية"])))
         .filter(Boolean)
         .map(c=><SelectItem key={c as string} value={c as string}>{c as string}</SelectItem>)}
 </SelectContent>
@@ -2543,9 +2584,72 @@ const buildDetailSheet = (scoreKey: 'technical_scores' | 'scenario_scores') => {
                             </Card>
                         ))}
                     </div>
-                    {/* شريط الترقيم الخاص بالبطاقات هنا */}
-                    {/* (يمكنك نسخ كود الترقيم القديم ووضعه هنا إذا أردت) */}
+                   {/* 🟢 شريط الترقيم والتحكم (مطابق تماماً للسجل العسكري) */}
+{!loading && groupedRecords.length > 0 && (
+    <div className="flex flex-col md:flex-row items-center justify-between gap-4 p-4 bg-white border rounded-xl mt-8 shadow-sm no-print animate-in fade-in duration-500">
+        
+        {/* 1. اختيار عدد البطاقات في الصفحة */}
+        <div className="flex items-center gap-2">
+            <Label className="text-xs font-bold text-slate-500">عرض:</Label>
+            <Select 
+                value={String(mainItemsPerPage)} 
+                onValueChange={(v) => {
+                    setMainItemsPerPage(Number(v)); 
+                    setMainPage(1);
+                }}
+            >
+                <SelectTrigger className="w-24 h-8 text-xs bg-white font-bold shadow-sm">
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="12">12 بطاقة</SelectItem>
+                    <SelectItem value="24">24 بطاقة</SelectItem>
+                    <SelectItem value="50">50 بطاقة</SelectItem>
+                </SelectContent>
+            </Select>
+            <span className="text-[10px] text-slate-400 font-bold mr-2">
+                إجمالي الاختبارات: {groupedRecords.length}
+            </span>
+        </div>
+
+        {/* 2. أزرار التنقل بين الصفحات */}
+        <div className="flex items-center gap-3">
+            <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={mainPage === 1} 
+                onClick={() => {
+                    setMainPage(p => p - 1);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }} 
+                className="font-bold h-8 px-4 bg-white shadow-sm"
+            >
+                <ChevronRight className="w-4 h-4 ml-1" /> السابق
+            </Button>
+
+            <div className={`text-xs font-black px-4 py-1 rounded-lg border shadow-inner ${
+                activeTab === 'fitness' ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700'
+            }`}>
+                صفحة {mainPage} من {Math.max(1, Math.ceil(groupedRecords.length / mainItemsPerPage))}
+            </div>
+
+            <Button 
+                variant="outline" 
+                size="sm" 
+                disabled={mainPage >= Math.ceil(groupedRecords.length / mainItemsPerPage)} 
+                onClick={() => {
+                    setMainPage(p => p + 1);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }} 
+                className="font-bold h-8 px-4 bg-white shadow-sm"
+            >
+                التالي <ChevronLeft className="w-4 h-4 mr-1" />
+            </Button>
+        </div>
+    </div>
+)}
                 </div>
+                
             )}
         </>
     )}
