@@ -74,16 +74,17 @@ export default function DashboardPage() {
     },
     { 
       id: "violations", label: " المخالفات", icon: <ShieldAlert className="w-9 h-9 text-white drop-shadow-md" />, 
-      color: "bg-gradient-to-br from-red-500 to-red-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-red-300/50", notification: 5 
+      color: "bg-gradient-to-br from-red-500 to-red-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-red-300/50", 
+      notification: 0 // 🟢 تم التغيير من 5 إلى 0 لإخفاء التنبيه
     },
     { 
       id: "exams", label: "الاختبارات", icon: <ClipboardList className="w-9 h-9 text-white drop-shadow-md" />, 
       color: "bg-gradient-to-br from-purple-500 to-purple-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-purple-300/50", notification: 0
     },
-    
     { 
       id: "reports", label: "التقارير", icon: <BarChart3 className="w-9 h-9 text-white drop-shadow-md" />, 
-      color: "bg-gradient-to-br from-amber-500 to-amber-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-amber-300/50", notification: 3 
+      color: "bg-gradient-to-br from-amber-500 to-amber-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-amber-300/50", 
+      notification: 0 // 🟢 تم التغيير من 3 إلى 0 لإخفاء التنبيه
     },
     { 
         id: "soldiers", label: "الملف الشخصي", icon: <Users className="w-9 h-9 text-white drop-shadow-md" />, 
@@ -474,7 +475,7 @@ if (feature === 'others') {
 
   return (
     <ProtectedRoute allowedRoles={["owner","manager","admin","assistant_admin","sports_officer","sports_supervisor", "sports_trainer","military_officer","military_supervisor", "military_trainer"]}>
-      <motion.div initial="hidden" animate="visible" variants={containerVariants} className="min-h-screen bg-slate-50/50 p-4 md:p-12 pb-6 space-y-8" dir="rtl">
+      <motion.div initial="hidden" animate="visible" variants={containerVariants} className="min-h-screen bg-slate-50/50 p-4 md:p-12 pb-10 space-y-8" dir="rtl">
         
         <motion.div variants={itemVariants} className="relative overflow-hidden bg-slate-900 rounded-[2.5rem] p-8 md:p-12 text-white shadow-2xl border border-slate-800">
           <div className="absolute inset-0 z-0">

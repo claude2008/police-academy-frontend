@@ -24,7 +24,7 @@ import * as XLSX from 'xlsx';
 import ProtectedRoute from "@/components/ProtectedRoute"
 import { format, addDays, isValid } from "date-fns"
 import { ar } from "date-fns/locale"
-
+import { useSearchParams } from "next/navigation";
 // --- ثوابت النظام ---
 const STATUS_TRANSLATIONS: any = {
     "medical": "طبية", "clinic": "عيادة", "leave": "إجازة", "admin_leave": "إجازة إدارية",
@@ -72,8 +72,95 @@ const [isSaving, setIsSaving] = useState(false); // لحالة حفظ التعد
     id: null,
     name: ""
 });
+
 const [proxyLevel, setProxyLevel] = useState(""); // لتحديد أي مستوى يتم اعتماده بالنيابة
-    // --- جلب البيانات ---
+ const searchParams = useSearchParams();
+
+ // 🟢 كود الاستجابة الذكية للإشعارات (الإصلاح النهائي للاسم)
+  useEffect(() => {
+    const paramDate = searchParams.get('date');
+    const paramCourse = searchParams.get('course');
+    const paramBatch = searchParams.get('batch');
+    const paramSessionId = searchParams.get('session_id');
+
+    if (paramDate && paramCourse && paramSessionId) {
+      
+      console.log("🚀 [1] بدأ التفعيل من الإشعار");
+      setDate(paramDate);
+      setSelectedCourse({
+        course: paramCourse,
+        batch: paramBatch || ""
+      });
+
+      const initializeFromNotification = async () => {
+        setLoading(true);
+        try {
+            // أ) جلب قائمة الحصص
+            const templateRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/template?course=${paramCourse}&date=${paramDate}&batch=${paramBatch || ""}`, {
+                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+            });
+
+            const displayId = Number(paramSessionId) + 1;
+            let correctName = `حصة ${displayId}`; 
+            let fullSessionData = null;
+
+            if (templateRes.ok) {
+                const sessionsList = await templateRes.json();
+                setSessions(sessionsList);
+
+                // 🔍 طباعة أول عنصر لفحص البنية
+                if (sessionsList.length > 0) {
+                    console.log("📦 [2] أول عنصر في القائمة:", sessionsList[0]);
+                }
+
+                // 🔍 البحث بمرونة أكبر (تحويل الطرفين لأرقام ثم لنصوص لضمان التطابق)
+                // في بعض الأحيان الـ ID يكون Index (0, 1, 2)
+                const targetSession = sessionsList.find((s: any, index: number) => {
+                    // محاولة 1: مقارنة ID صريح
+                    if (String(s.id) === String(paramSessionId)) return true;
+                    // محاولة 2: مقارنة الـ Index (لأن الـ ID في الجدول هو الترتيب)
+                    if (String(index) === String(paramSessionId)) return true;
+                    return false;
+                });
+                
+                if (targetSession) {
+                    correctName = targetSession.name || targetSession.label || correctName;
+                    fullSessionData = targetSession;
+                    console.log("✅ [3] تم العثور على الاسم:", correctName);
+                } else {
+                    console.warn("⚠️ [3] لم يتم العثور، سنستخدم:", correctName);
+                }
+            }
+
+            // ب) التحديث النهائي
+            setSelectedSession({ 
+                ...(fullSessionData || {}), 
+                id: paramSessionId, 
+                name: correctName, 
+                displayId: displayId 
+            });
+
+            // ج) جلب بيانات الجدول
+            const auditRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/audit-report-data?date=${paramDate}&course=${paramCourse}&batch=${paramBatch || ""}&session_id=${paramSessionId}`, {
+                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+            });
+            
+            if (auditRes.ok) {
+                setAuditData(await auditRes.json());
+                setViewMode('audit');
+            }
+
+        } catch (e) {
+            console.error("❌ خطأ:", e);
+        } finally {
+            setLoading(false);
+        }
+      };
+
+      initializeFromNotification();
+    }
+  }, [searchParams]);
+// --- جلب البيانات ---
 useEffect(() => {
     if (viewMode === 'audit' && selectedCourse && selectedSession) {
         // تجهيز الاسم: كشف الحالات والمخالفات - اسم الحصة - اسم الدورة - الدفعة - التاريخ
@@ -800,20 +887,28 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
                                 <Table>
                                     <TableHeader className="bg-[#c5b391] print:bg-[#c5b391]! [-webkit-print-color-adjust:exact]">
     <TableRow className="print:border-b-2 print:border-black">
-                                            <TableHead className="text-center font-black text-black w-10 border-l border-slate-300 print:border-black">#</TableHead>
-                                            <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black w-64">البيانات العسكرية</TableHead>
-                                            <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black print:w-[250px]">
-    المخالفة
-</TableHead>
-                                            <TableHead className="text-center font-black text-black border-l border-slate-300 print:border-black w-[120px] print:w-[100px]">
-    الجزاء
-</TableHead>
-                                            <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black">الملاحظات</TableHead>
-                                            <TableHead className="text-center font-black text-black border-l border-slate-300 print:hidden w-16">المرفق</TableHead>
-                                            <TableHead className="text-center font-black text-black border-l border-slate-300 print:border-black w-32">المدخل</TableHead>
-                                            <TableHead className="text-center font-black text-black w-16 no-print">إجراء</TableHead>
-                                        </TableRow>
-                                    </TableHeader>
+        <TableHead className="text-center font-black text-black w-10 border-l border-slate-300 print:border-black">#</TableHead>
+        <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black w-64">البيانات العسكرية</TableHead>
+        
+        {/* 🟢 تم زيادة العرض هنا (min-w) لضمان مساحة كافية للمخالفة */}
+        <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black min-w-[300px] md:min-w-[400px]">
+            المخالفة
+        </TableHead>
+
+        <TableHead className="text-center font-black text-black border-l border-slate-300 print:border-black w-[120px] print:w-[100px]">
+            الجزاء
+        </TableHead>
+        <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black">الملاحظات</TableHead>
+        <TableHead className="text-center font-black text-black border-l border-slate-300 print:hidden w-16">المرفق</TableHead>
+        
+        {/* 🟢 توحيد مقاس عمود المدخل مع جدول الحالات */}
+        <TableHead className="text-center font-black text-black border-l border-slate-300 print:border-black w-24 print:w-20 print:text-[9px]">
+            المدخل
+        </TableHead>
+        
+        <TableHead className="text-center font-black text-black w-16 no-print">إجراء</TableHead>
+    </TableRow>
+</TableHeader>
                                     <TableBody>
                                         {violationRows.length === 0 ? (
                                             <TableRow><TableCell colSpan={7} className="text-center py-6 text-slate-400 font-bold">لا توجد مخالفات مسجلة</TableCell></TableRow>
@@ -838,11 +933,10 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
     </div>
 </TableCell>
                                                 <TableCell className="text-right border-l border-slate-300 print:border-black p-2 align-top">
-    {/* 🟢 استخدام max-w مع break-words و whitespace-normal */}
-    <div className="max-w-[300px] print:max-w-[250px] whitespace-normal break-words leading-relaxed font-medium text-slate-800 print:text-[10px]">
-        {row.violation_name}
-    </div>
-</TableCell>
+            <div className="whitespace-normal break-words leading-relaxed font-bold text-slate-800 text-xs md:text-sm print:text-[10px]">
+                {row.violation_name}
+            </div>
+        </TableCell>
                                                 <TableCell className="text-center border-l border-slate-300 print:border-black p-2 align-middle">
     {/* 🟢 العرض محدد بـ 100 بكسل مع تفعيل الالتفاف */}
     <div className="max-w-[120px] print:max-w-[100px] whitespace-normal break-words leading-tight font-bold text-red-700 text-xs print:text-[9px]">
@@ -877,7 +971,11 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
         )}
     </div>
 </TableCell>
-                                                <TableCell className="text-center text-[10px] font-bold text-slate-500 border-l border-slate-300 print:border-black">{row.entered_by}</TableCell>
+                                                <TableCell className="text-center border-l border-slate-300 print:border-black p-1">
+            <div className="w-24 print:w-16 mx-auto leading-tight break-words whitespace-normal text-[10px] print:text-[8px] font-bold text-slate-500 print:text-black">
+                {row.entered_by}
+            </div>
+        </TableCell>
                                                 <TableCell className="text-center no-print">
                                                     <Button 
     size="icon" 

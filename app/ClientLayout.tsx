@@ -5,6 +5,7 @@ import "./globals.css"
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { motion } from "framer-motion"
 import { 
     LayoutDashboard, FileInput, Table, BarChart3, ArrowLeftRight, 
     Users, ClipboardCheck, Settings, LogOut, Menu, ChevronDown, ChevronLeft,
@@ -283,7 +284,46 @@ const handleLogout = async () => {
     }, [pathname]); // ⬅️ هذا هو السر: إعادة التحقق عند كل تغيير في الرابط
 
 
+const NavIcon = ({ active, color, icon, isLogout = false }: any) => (
+    <motion.div
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        className="relative"
+    >
+        {/* الحلقات المتموجة تظهر فقط للزر النشط */}
+        {active && (
+            <>
+                <motion.div
+                    animate={{ scale: [1, 1.4, 1], opacity: [0.3, 0, 0.3] }}
+                    transition={{ duration: 2, repeat: Infinity }}
+                    className={cn("absolute inset-0 rounded-full bg-gradient-to-br", color)}
+                />
+                <div className={cn("absolute inset-0 rounded-full blur-md scale-150 opacity-40", color.replace('from-', 'bg-'))} />
+            </>
+        )}
 
+        {/* جسم الزر (تم تصغيره من 16 إلى 12) */}
+        <div className={cn(
+            "relative w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500",
+            "border-2 border-white dark:border-slate-800",
+            active ? `bg-gradient-to-br ${color} shadow-blue-500/40` : "bg-slate-200 dark:bg-slate-800 grayscale-[0.5]"
+        )}>
+            {/* أيقونة الزر */}
+            <div className={cn("relative z-10", !active && "text-slate-500 dark:text-slate-400")}>
+                {icon}
+            </div>
+            
+            {/* لمعة داخلية للنشط فقط */}
+            {active && (
+                <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                    className="absolute inset-0.5 rounded-full bg-gradient-to-tr from-white/20 to-transparent"
+                />
+            )}
+        </div>
+    </motion.div>
+);
 
 	const toggleMenu = (id: string) => {
 		setOpenMenus(prev => ({ ...prev, [id]: !prev[id] }))
@@ -417,7 +457,7 @@ if (item.id === "cs-sp-audit" || item.id === "cs-mil-audit" || item.id === "cs-s
     // 6. إدارة نطاق العمل (تظهر للقيادات والضباط والمشرف العسكري فقط)
     // ----------------------------------------------------------------
     if (item.id === "scope-mgmt") {
-        const allowed = ["owner", "assistant_admin", "sports_officer", "military_officer", "military_supervisor"];
+        const allowed = ["owner", "assistant_admin", "military_supervisor"];
         if (isLoading || !allowed.includes(userRole || "")) {
             return null;
         }
@@ -665,34 +705,50 @@ if (item.id === "cs-sp-sol") {
 
 								{/* الشريط السفلي للموبايل */}
 								
-{/* 📱 الشريط السفلي المحدث مع Z-Index عالٍ جداً لمنع التداخل */}
-<nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t px-4 flex justify-between items-center shadow-[0_-5px_15px_rgba(0,0,0,0.15)] h-16 pb-safe z-[999] pointer-events-auto">
+{/* 📱 الشريط السفلي الاحترافي - نسخة مطورة وأصغر حجماً */}
+<nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200/50 dark:border-slate-700/50 px-6 flex justify-between items-center shadow-[0_-10px_40px_rgba(0,0,0,0.1)] h-16 pb-safe z-[999]">
     
-    {/* 1. الرئيسية */}
-    <Link href="/dashboard" className={cn(
-        "flex flex-col items-center justify-center flex-1 gap-1 transition-all h-full",
-        pathname === "/dashboard" ? "text-blue-600 scale-105" : "text-slate-400"
-    )}>
-        <LayoutDashboard className="w-5 h-5"/>
-        <span className="text-[10px] font-black">الرئيسية</span>
+    {/* 🏠 1. الرئيسية */}
+    <Link href="/dashboard" className="relative flex-1 flex flex-col items-center justify-center group">
+        <div className="relative -mt-8"> {/* البروز للأعلى */}
+            <NavIcon 
+                active={pathname === "/dashboard"} 
+                color="from-blue-500 to-cyan-400" 
+                icon={<LayoutDashboard className="w-5 h-5 text-white" />} 
+            />
+        </div>
+        <span className={cn(
+            "text-[9px] font-black mt-1 transition-colors duration-300",
+            pathname === "/dashboard" ? "text-blue-600" : "text-slate-400"
+        )}>الرئيسية</span>
     </Link>
 
-    {/* 2. الإعدادات */}
-    <Link href="/settings" className={cn(
-        "flex flex-col items-center justify-center flex-1 gap-1 transition-all h-full",
-        pathname === "/settings" ? "text-blue-600 scale-105" : "text-slate-400"
-    )}>
-        <Settings className="w-5 h-5"/>
-        <span className="text-[10px] font-black">الإعدادات</span>
+    {/* ⚙️ 2. الإعدادات */}
+    <Link href="/settings" className="relative flex-1 flex flex-col items-center justify-center group">
+        <div className="relative -mt-8">
+            <NavIcon 
+                active={pathname === "/settings"} 
+                color="from-indigo-500 to-purple-400" 
+                icon={<Settings className="w-5 h-5 text-white" />} 
+            />
+        </div>
+        <span className={cn(
+            "text-[9px] font-black mt-1 transition-colors duration-300",
+            pathname === "/settings" ? "text-indigo-600" : "text-slate-400"
+        )}>الإعدادات</span>
     </Link>
-    
-    {/* 3. خروج (الزر الثابت) */}
-    <button 
-        onClick={() => setIsLogoutDialogOpen(true)}
-        className="flex flex-col items-center justify-center flex-1 gap-1 text-red-500 active:scale-90 transition-all h-full"
-    >
-        <LogOut className="w-5 h-5"/>
-        <span className="text-[10px] font-black">خروج</span>
+
+    {/* 🚪 3. خروج */}
+    <button onClick={() => setIsLogoutDialogOpen(true)} className="relative flex-1 flex flex-col items-center justify-center group">
+        <div className="relative -mt-8">
+            <NavIcon 
+                active={false} // لا يوجد حالة "نشط" دائمة للخروج
+                isLogout={true}
+                color="from-red-500 to-rose-400" 
+                icon={<LogOut className="w-5 h-5 text-white" />} 
+            />
+        </div>
+        <span className="text-[9px] font-black mt-1 text-slate-400 group-hover:text-red-500 transition-colors">خروج</span>
     </button>
 </nav>
 

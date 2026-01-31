@@ -73,7 +73,8 @@ const [milSubjectFilter, setMilSubjectFilter] = useState("all"); // الفلتر
     const [weightsPerPage, setWeightsPerPage] = useState(5)
     const [milExamsPage, setMilExamsPage] = useState(1)
     const [milExamsPerPage, setMilExamsPerPage] = useState(10)
-
+    const [sessionFilter, setSessionFilter] = useState("all");
+const [availableSessions, setAvailableSessions] = useState<any[]>([]);
     const params = useParams();
     const currentBranch = params.branch as string; 
     const userRole = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}")?.role : null;
@@ -423,20 +424,42 @@ useEffect(() => {
         }
     }
 
-    const fetchProfileDetails = async (id: number) => {
-        setLoadingProfile(true);
-        const token = localStorage.getItem("token");
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/${id}/full-profile`, {
-                headers: { "Authorization": `Bearer ${token}` }
-            });
-            if (res.ok) setProfileData(await res.json());
-        } catch (e) { console.error(e); }
-        finally { setLoadingProfile(false); }
+   const fetchProfileDetails = async (id: number) => {
+    setLoadingProfile(true);
+    const token = localStorage.getItem("token");
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/${id}/full-profile`, {
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        
+        if (res.ok) {
+    const data = await res.json();
+    
+    // 🔍 رسالة فحص: لنرى كل ما أرسله السيرفر
+    console.log("Full Profile Data Received:", data);
+    console.log("Sessions from Backend:", data.course_sessions);
+
+    setProfileData(data);
+    setAvailableSessions(data.course_sessions || []);
+    setSessionFilter("all");
+}
+    } catch (e) { 
+        console.error(e); 
+        toast.error("خطأ في جلب بيانات البروفايل");
+    } finally { 
+        setLoadingProfile(false); 
     }
+}
 
     const handleOpenProfile = (soldier: any) => { setSelectedSoldier(soldier); fetchProfileDetails(soldier.id); }
-    const handleBackToDirectory = () => { setSelectedSoldier(null); setProfileData({ weights: [], status_stats: {}, violation_stats: {}, reports: [], military_exams: [] }); }
+    const handleBackToDirectory = () => { 
+    setSelectedSoldier(null); 
+    setProfileData({ weights: [], status_stats: {}, violation_stats: {}, reports: [], military_exams: [] }); 
+    
+    // 🆕 تصفير فلاتر الحصص
+    setSessionFilter("all");
+    setAvailableSessions([]);
+}
     
     const handlePrint = () => {
         const originalTitle = document.title;
@@ -579,20 +602,54 @@ const handleOpenAnyFile = (fileData: string) => {
 // 🟢 فلترة الحالات الإدارية (تستخدم reportFrom / reportTo)
 const filteredAttendance = useMemo(() => {
     return (profileData.attendance_list || []).filter((item: any) => {
-        if (!reportFrom && !reportTo) return true;
-        const d = item.start_date;
-        return d >= (reportFrom || "0000-00-00") && d <= (reportTo || "9999-99-99");
+        // 1. فلترة التاريخ (موجودة سابقاً)
+        const matchesDate = (!reportFrom && !reportTo) || 
+                          (item.start_date >= (reportFrom || "0000-00-00") && 
+                           item.start_date <= (reportTo || "9999-99-99"));
+        
+        // 2. 🆕 فلترة الحصة الذكية
+        let matchesSession = true;
+        if (sessionFilter !== "all") {
+            // تظهر الحالة إذا كانت (إجازة/طبية عامة) أو إذا كانت تخص الحصة المختارة
+            const isGlobal = ["medical", "leave", "absent"].includes(item.status_key);
+            const isSpecific = item.involved_sessions?.includes(String(sessionFilter));
+            matchesSession = isGlobal || isSpecific;
+        }
+
+        return matchesDate && matchesSession;
     });
-}, [profileData.attendance_list, reportFrom, reportTo]);
+}, [profileData.attendance_list, reportFrom, reportTo, sessionFilter]);
 
 // 🔴 فلترة المخالفات (تستخدم vioFrom / vioTo)
 const filteredViolations = useMemo(() => {
     return (profileData.violations_list || []).filter((item: any) => {
         const matchesDate = (!vioFrom || item.date >= vioFrom) && (!vioTo || item.date <= vioTo);
         const matchesSubject = violationSubjectFilter === 'all' || item.branch === violationSubjectFilter;
-        return matchesDate && matchesSubject;
+        
+        // 🆕 فلترة الحصة للمخالفات
+        const matchesSession = sessionFilter === "all" || String(item.session_id) === String(sessionFilter);
+        
+        return matchesDate && matchesSubject && matchesSession;
     });
-}, [profileData.violations_list, vioFrom, vioTo, violationSubjectFilter]);
+}, [profileData.violations_list, vioFrom, vioTo, violationSubjectFilter, sessionFilter]);
+const statsSummary = useMemo(() => {
+    const counts: Record<string, number> = {};
+    
+    filteredAttendance.forEach((item: any) => {
+        const label = item.status_label || "أخرى";
+        counts[label] = (counts[label] || 0) + 1;
+    });
+    
+    // يرجع مصفوفة مرتبة مثل: [["طبية", 3], ["تأخير", 1]]
+    return Object.entries(counts); 
+}, [filteredAttendance]);
+
+const selectedSessionName = useMemo(() => {
+    if (sessionFilter === "all") return "كل الحصص";
+    // البحث عن اسم الحصة في المصفوفة بناءً على المعرف
+    const session = availableSessions.find(s => String(s.id) === String(sessionFilter));
+    return session ? session.name : `الحصة ${Number(sessionFilter) + 1}`;
+}, [sessionFilter, availableSessions]);
     if (!isClient) return null;
 const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "military_officer"].includes(userRole || "");
     return (
@@ -1323,14 +1380,57 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
     </AccordionTrigger>
     <AccordionContent className="pb-4 pt-2 border-t text-right">
         {/* شريط البحث */}
-        <div className="flex items-center gap-2 mb-4 no-print">
-            <Button variant="outline" size="sm" 
-                className={cn("h-8 gap-2 text-[10px] font-bold transition-all", showReportFilter ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-slate-50")}
-                onClick={() => setShowReportFilter(!showReportFilter)}
-            >
-                <Eye className="w-3.5 h-3.5" /> {showReportFilter ? "إخفاء فلاتر التاريخ" : "بحث بالتاريخ"}
-            </Button>
-        </div>
+        <div className="flex items-center gap-3 mb-4 no-print flex-wrap">
+    {/* 🆕 1. قائمة اختيار الحصة */}
+    <div className="flex items-center gap-2">
+        <span className="text-[10px] font-black text-slate-400">تصفية:</span>
+        <Select value={sessionFilter} onValueChange={setSessionFilter}>
+            <SelectTrigger className="w-[180px] h-8 text-[10px] bg-white border-blue-200 font-bold shadow-sm">
+                <SelectValue placeholder="اختر الحصة..." />
+            </SelectTrigger>
+            <SelectContent dir="rtl">
+    <SelectItem value="all" className="text-xs">كل الحصص</SelectItem>
+    
+    {/* 🔍 فحص سريع داخل الواجهة */}
+    {availableSessions.length === 0 && (
+        <div className="text-[9px] p-2 text-red-400 italic">لا توجد حصص مسجلة لهذه الدورة</div>
+    )}
+
+    {availableSessions.map((sess: any, idx: number) => (
+        <SelectItem key={idx} value={String(idx)} className="text-xs">
+            {`ح${idx + 1}: ${sess.name || sess}`}
+        </SelectItem>
+    ))}
+</SelectContent>
+        </Select>
+    </div>
+
+    {/* 2. زر البحث بالتاريخ (كما هو مع تحسين بسيط في المسافة) */}
+    <Button 
+        variant="outline" 
+        size="sm" 
+        className={cn(
+            "h-8 gap-2 text-[10px] font-bold transition-all shadow-sm", 
+            showReportFilter ? "bg-blue-50 text-blue-600 border-blue-200" : "bg-slate-50 text-slate-500"
+        )}
+        onClick={() => setShowReportFilter(!showReportFilter)}
+    >
+        <Eye className="w-3.5 h-3.5" /> 
+        {showReportFilter ? "إخفاء فلاتر التاريخ" : "بحث بالتاريخ"}
+    </Button>
+
+    {/* 🆕 3. زر تصفية سريع (اختياري) لإعادة الضبط */}
+    {sessionFilter !== "all" && (
+        <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => setSessionFilter("all")}
+            className="h-8 text-[9px] text-red-500 hover:text-red-600 font-bold"
+        >
+            <RotateCcw className="w-3 h-3 ml-1" /> إعادة ضبط
+        </Button>
+    )}
+</div>
 
         {showReportFilter && (
             <div className="animate-in zoom-in-95 fade-in duration-300">
@@ -1373,6 +1473,33 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                     ))}
                 </TableBody>
             </Table>
+            {/* 🆕 ملخص تحليل القوة - يظهر في الشاشة والطباعة */}
+{statsSummary.length > 0 && (
+    <div className="mt-8 p-4 bg-slate-50 rounded-2xl border border-slate-200 print:bg-white print:border-black print:rounded-none print:p-2">
+        <h4 className="text-sm font-black text-slate-800 mb-4 flex items-center gap-2 print:text-lg print:mb-2">
+            <Calculator className="w-4 h-4 text-blue-600 no-print" /> 
+            <span>ملخص تحليل القوة ({selectedSessionName})</span>
+        </h4>
+        
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+            {statsSummary.map(([label, count], i) => (
+                <div key={i} className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col items-center justify-center shadow-sm print:border-black print:shadow-none">
+                    <span className="text-[10px] font-bold text-slate-500 mb-1 print:text-black print:text-xs">
+                        {label}
+                    </span>
+                    <span className="text-lg font-black text-blue-700 print:text-black">
+                        {count}
+                    </span>
+                </div>
+            ))}
+        </div>
+        
+        {/* ملاحظة تظهر في الطباعة فقط لتوثيق الفترة */}
+        <div className="hidden print:block mt-2 text-[10px] text-slate-400 italic">
+            * تم استخراج هذه الإحصائيات بناءً على الفلاتر المختارة في النظام.
+        </div>
+    </div>
+)}
         </div>
     </AccordionContent>
 </AccordionItem>

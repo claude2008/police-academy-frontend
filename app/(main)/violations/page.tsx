@@ -76,7 +76,7 @@ export default function ViolationsRegistrationPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSoldier, setSelectedSoldier] = useState<Soldier | null>(null);
   const [allRegulations, setAllRegulations] = useState<any[]>([]);
-  const [availablePeriods, setAvailablePeriods] = useState<{name: string, type: string}[]>([]);
+  const [availablePeriods, setAvailablePeriods] = useState<{name: string, type: string, is_approved?: boolean}[]>([]);
   // البحث عن السطر الخاص بـ isSaved وتعديله ليصبح هكذا:
 const [isSaved, setIsSaved] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -138,15 +138,20 @@ useEffect(() => {
     } catch (e) { console.error(e); }
   };
 
-  const fetchTodaySessions = async () => {
+  // ابحث عن الدالة وحدثها كالتالي:
+const fetchTodaySessions = async () => {
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates/today-sessions?course=${selectedSoldier?.course}&batch=${selectedSoldier?.batch}`, {
-        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-      });
-      if (res.ok) setAvailablePeriods(await res.json());
-      else setAvailablePeriods([{name: "طابور الصباح", type: "military"}, {name: "لياقة بدنية", type: "sports"}]);
-    } catch (e) { setAvailablePeriods([]); }
-  };
+        const today = format(new Date(), "yyyy-MM-dd");
+        // أضفنا التاريخ لكي نعرف هل حصص "اليوم" معتمدة أم لا
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates/today-sessions?course=${selectedSoldier?.course}&batch=${selectedSoldier?.batch}&date=${today}`, {
+            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            setAvailablePeriods(data); // البيانات الآن تحتوي على حقل is_approved لكل حصة
+        }
+    } catch (e) { console.error(e); }
+};
 
   const handleSearchSoldier = async () => {
     // 1. التطهير القسري (Forced Normalization) 
@@ -225,14 +230,21 @@ useEffect(() => {
   }, [selectedSoldier]);
 
  const addToQueue = () => {
-    // 🟢 نجد ترتيب الحصة (Index) في المصفوفة المتاحة
+    // 1. نجد ترتيب الحصة وبياناتها
     const periodIndex = availablePeriods.findIndex(p => p.name === selectedPeriod);
     const periodData = availablePeriods[periodIndex];
 
+    // 🛡️ القفل الأمني: التحقق من الاعتماد قبل أي شيء
+    if (periodData?.is_approved) {
+        return toast.error("عفواً، هذه الحصة معتمدة رسمياً ولا يمكن إضافة مخالفات جديدة لها 🔒");
+    }
+
+    // 2. التحقق من اكتمال البيانات الأساسية
     if (!selectedSoldier || !selectedViolation || !selectedPeriod) {
         return toast.warning("أكمل البيانات أولاً");
     }
 
+    // 3. تجهيز السجل الجديد
     const newEntry: ViolationEntry = {
         tempId: Date.now().toString(),
         soldier: selectedSoldier,
@@ -243,20 +255,20 @@ useEffect(() => {
         housing: housingSystem === 'sleeping' ? 'مبيت' : 'ثابت',
         period_name: selectedPeriod,
         period_type: periodData?.type || 'other',
-        session_id: periodIndex, // 👈 حفظ الرقم (0 لحصة 1، 1 لحصة 2... وهكذا)
+        session_id: periodIndex, // حفظ الرقم الصافي
         attachments: [...tempImages] 
     };
 
     setSessionQueue([newEntry, ...sessionQueue]);
 
-    // 🧹 تنظيف الحقول للاستعداد للرصد التالي
+    // 🧹 تنظيف الحقول
     setViolationNote(""); 
     setViolationSearch(""); 
     setSelectedViolation(null);
-    setTempImages([]); // 🟢 تفريغ الصور المؤقتة بعد نقلها للسجل
+    setTempImages([]);
     
     setIsSaved(false);
-    localStorage.setItem("is_queue_saved", "false"); // إعادة الزر لوضعية الحفظ
+    localStorage.setItem("is_queue_saved", "false");
 };
 // داخل المكون، أضف حالة للصور المختارة حالياً
 const [tempImages, setTempImages] = useState<string[]>([]);
@@ -295,18 +307,21 @@ const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const user = JSON.parse(localStorage.getItem("user") || "{}");
     
     const payload = sessionQueue.map((item: ViolationEntry) => ({
-      military_id: item.soldier.military_id,
-      violation_name: item.violation_name,
-      penalty: item.penalty,
-      deduction: item.deduction,
-      note: item.note,
-      housing_system: item.housing,
-      period: item.period_name,
-      session_id: item.session_id, // 👈 الآن سيرسل الرقم الصافي (0, 1, 2...)
-      entered_by: user.name || "مستخدم مجهول",
-      entry_date: new Date().toISOString(),
-      attachments: item.attachments || [] 
-    }));
+    military_id: item.soldier.military_id,
+    violation_name: item.violation_name,
+    penalty: item.penalty,
+    deduction: item.deduction,
+    note: item.note,
+    housing_system: item.housing,
+    period: item.period_name,
+    
+    // 🟢 التعديل الجوهري: تحويل الرقم إلى نص (String)
+    session_id: String(item.session_id), 
+    
+    entered_by: user.name || "مستخدم مجهول",
+    entry_date: new Date().toISOString(),
+    attachments: item.attachments || [] 
+}));
 
     const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/violations/bulk-save`, {
       method: "POST",
@@ -535,10 +550,30 @@ if (isSaved && entryToDelete) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-black text-slate-500 flex items-center gap-1 uppercase tracking-wider">حصة وقوع المخالفة *</label>
-                  <select value={selectedPeriod} onChange={(e)=>setSelectedPeriod(e.target.value)} className="w-full h-11 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 font-bold text-sm outline-none focus:border-amber-500 transition-all cursor-pointer">
-                    <option value="">-- اختر الحصة التدريبية --</option>
-                    {availablePeriods.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                  </select>
+                  {/* ابحث عن الـ select الخاص بالحصص وحدثه كالتالي */}
+<select 
+    value={selectedPeriod} 
+    onChange={(e)=>setSelectedPeriod(e.target.value)} 
+    className={cn(
+        "w-full h-11 bg-slate-50 border-2 border-slate-100 rounded-xl px-4 font-bold text-sm outline-none transition-all",
+        // إذا كانت الحصة المختارة معتمدة، نغير لون الإطار للأحمر
+        availablePeriods.find(p => p.name === selectedPeriod)?.is_approved && "border-red-200 bg-red-50"
+    )}
+>
+    <option value="">-- اختر الحصة التدريبية --</option>
+   {availablePeriods.map((p, idx) => (
+    <option 
+        key={idx} 
+        value={p.name} 
+        // 🔒 القفل الحقيقي: يمنع اختيار الحصة المعتمدة
+        disabled={p.is_approved === true} 
+        // 🎨 لمسة جمالية: جعل النص باهت للأجزاء المغلقة
+        className={cn(p.is_approved ? "text-slate-400 italic" : "text-slate-900 font-bold")}
+    >
+        {p.name}
+    </option>
+))}
+</select>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-black text-slate-500 flex items-center gap-1 uppercase tracking-wider">فلترة بمدة الجزاء:</label>
