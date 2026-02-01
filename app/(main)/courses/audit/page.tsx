@@ -491,7 +491,7 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
                 
                 <style jsx global>{`
                     @media print {
-                        @page { size: A4 Portrait; margin: 2mm; }
+                        @page { size: A4 Portrait; margin: 5mm; }
                         body { background: white; }
                         .no-print { display: none !important; }
                         .print-border { border: 1px solid #000 !important; }

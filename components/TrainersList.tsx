@@ -91,10 +91,28 @@ const canManagePhotos = ["owner", "manager", "admin", "assistant_admin"].include
     // إعادة الجلب عند تغيير الصفحة (تغيير الـ Key)
     useEffect(() => { fetchTrainers() }, [branch, specialization])
 
+   // 🟢 التعديل النهائي: تحديد قائمة الأدوار المسموح بظهورها فقط
     const filteredTrainers = useMemo(() => {
-        return trainers.filter(t => 
-            (t.name || "").includes(search) || (t.military_id || "").includes(search)
-        )
+        // 1. تحديد القائمة البيضاء للأدوار
+        const allowedRoles = [
+            "military_trainer", 
+            "military_supervisor", 
+            "sports_trainer", 
+            "sports_supervisor", 
+            "owner", 
+            "assistant_admin",
+            "trainer"
+        ];
+
+        return trainers.filter(t => {
+            // أ. التحقق من نص البحث (الاسم أو الرقم العسكري)
+            const matchesSearch = (t.name || "").includes(search) || (t.military_id || "").includes(search);
+            
+            // ب. التحقق من أن دور المستخدم موجود في القائمة البيضاء
+            const isAllowedRole = allowedRoles.includes(t.role);
+
+            return matchesSearch && isAllowedRole;
+        })
     }, [trainers, search])
 
    const openAddModal = () => {
@@ -414,7 +432,7 @@ const handlePhotoDeleteExec = async () => {
                          <Dumbbell className="w-8 h-8 text-blue-600" />}
                         {title}
                     </h1>
-                    <p className="text-slate-500 mt-1">العدد الكلي: {trainers.length}</p>
+                    <p className="text-slate-500 mt-1">العدد الكلي: {filteredTrainers.length}</p>
                 </div>
 
                 <div className="flex flex-wrap gap-2 w-full lg:w-auto">

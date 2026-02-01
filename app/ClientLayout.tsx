@@ -2,7 +2,7 @@
 
 import "./globals.css"
 
-import { useEffect, useState } from "react"
+import React, { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion } from "framer-motion"
@@ -284,13 +284,13 @@ const handleLogout = async () => {
     }, [pathname]); // ⬅️ هذا هو السر: إعادة التحقق عند كل تغيير في الرابط
 
 
-const NavIcon = ({ active, color, icon, isLogout = false }: any) => (
+// 🟢 أضفنا خاصية isHome
+const NavIcon = ({ active, color, icon, isHome = false }: any) => (
     <motion.div
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
         className="relative"
     >
-        {/* الحلقات المتموجة تظهر فقط للزر النشط */}
         {active && (
             <>
                 <motion.div
@@ -302,18 +302,22 @@ const NavIcon = ({ active, color, icon, isLogout = false }: any) => (
             </>
         )}
 
-        {/* جسم الزر (تم تصغيره من 16 إلى 12) */}
         <div className={cn(
             "relative w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all duration-500",
             "border-2 border-white dark:border-slate-800",
-            active ? `bg-gradient-to-br ${color} shadow-blue-500/40` : "bg-slate-200 dark:bg-slate-800 grayscale-[0.5]"
+            // 🔵 إذا كانت رئيسية وغير نشطة، نعطيها خلفية رمادية فاتحة جداً بدون تأثير الـ Grayscale
+            active ? `bg-gradient-to-br ${color} shadow-blue-500/40` : 
+            (isHome ? "bg-slate-100 dark:bg-slate-800 shadow-sm" : "bg-slate-200 dark:bg-slate-800 grayscale")
         )}>
-            {/* أيقونة الزر */}
-            <div className={cn("relative z-10", !active && "text-slate-500 dark:text-slate-400")}>
-                {icon}
+            {/* 🔵 هنا التحكم بلون الأيقونة: إذا كانت رئيسية وغير نشطة تأخذ اللون الأزرق صراحة */}
+            <div className={cn(
+                "relative z-10 transition-colors duration-500",
+                active ? "text-white" : (isHome ? "text-blue-600" : "text-slate-500")
+            )}>
+                {/* استنساخ الأيقونة مع إزالة أي ألوان ثابتة منها */}
+                {React.cloneElement(icon, { className: "w-5 h-5" })}
             </div>
             
-            {/* لمعة داخلية للنشط فقط */}
             {active && (
                 <motion.div
                     animate={{ rotate: 360 }}
@@ -705,21 +709,22 @@ if (item.id === "cs-sp-sol") {
 
 								{/* الشريط السفلي للموبايل */}
 								
-{/* 📱 الشريط السفلي الاحترافي - نسخة مطورة وأصغر حجماً */}
+{/* 📱 الشريط السفلي الاحترافي */}
 <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200/50 dark:border-slate-700/50 px-6 flex justify-between items-center shadow-[0_-10px_40px_rgba(0,0,0,0.1)] h-16 pb-safe z-[999]">
     
     {/* 🏠 1. الرئيسية */}
     <Link href="/dashboard" className="relative flex-1 flex flex-col items-center justify-center group">
-        <div className="relative -mt-8"> {/* البروز للأعلى */}
+        <div className="relative -mt-8">
             <NavIcon 
                 active={pathname === "/dashboard"} 
+                isHome={true} // 👈 تم التفعيل
                 color="from-blue-500 to-cyan-400" 
-                icon={<LayoutDashboard className="w-5 h-5 text-white" />} 
+                icon={<LayoutDashboard />} // 👈 أزلنا text-white من هنا
             />
         </div>
         <span className={cn(
             "text-[9px] font-black mt-1 transition-colors duration-300",
-            pathname === "/dashboard" ? "text-blue-600" : "text-slate-400"
+            pathname === "/dashboard" ? "text-blue-600" : "text-blue-600/70" // 👈 جعلنا النص أيضاً ملوناً باهت قليلاً
         )}>الرئيسية</span>
     </Link>
 
@@ -729,7 +734,7 @@ if (item.id === "cs-sp-sol") {
             <NavIcon 
                 active={pathname === "/settings"} 
                 color="from-indigo-500 to-purple-400" 
-                icon={<Settings className="w-5 h-5 text-white" />} 
+                icon={<Settings />} // 👈 أزلنا text-white
             />
         </div>
         <span className={cn(
@@ -742,13 +747,12 @@ if (item.id === "cs-sp-sol") {
     <button onClick={() => setIsLogoutDialogOpen(true)} className="relative flex-1 flex flex-col items-center justify-center group">
         <div className="relative -mt-8">
             <NavIcon 
-                active={false} // لا يوجد حالة "نشط" دائمة للخروج
-                isLogout={true}
+                active={false} 
                 color="from-red-500 to-rose-400" 
-                icon={<LogOut className="w-5 h-5 text-white" />} 
+                icon={<LogOut />} // 👈 أزلنا text-white
             />
         </div>
-        <span className="text-[9px] font-black mt-1 text-slate-400 group-hover:text-red-500 transition-colors">خروج</span>
+        <span className="text-[9px] font-black mt-1 text-slate-400">خروج</span>
     </button>
 </nav>
 

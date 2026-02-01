@@ -108,25 +108,25 @@ const fetchUsers = async () => {
         } catch (e) { console.error(e) }
     }
 
-    const openEditModal = () => {
-        if (selectedUserIds.length === 1) {
-            const user = users.find(u => u.id === selectedUserIds[0]);
-            const scope = user?.extra_permissions?.scope;
-            if (scope) {
-                setSelectedScope({
-                    courses: scope.courses || [],
-                    companies: scope.companies || [],
-                    platoons: scope.platoons || [],
-                    is_restricted: scope.is_restricted ?? true
-                });
-            } else {
-                setSelectedScope({ courses: [], companies: [], platoons: [], is_restricted: true });
-            }
-        } else {
-            setSelectedScope({ courses: [], companies: [], platoons: [], is_restricted: true });
-        }
-        setIsEditModalOpen(true);
-    };
+    const openEditModalForUser = (user: any) => {
+    const scope = user?.extra_permissions?.scope;
+    
+    // ضبط النطاق بناءً على بيانات هذا المستخدم حصراً
+    if (scope) {
+        setSelectedScope({
+            courses: scope.courses || [],
+            companies: scope.companies || [],
+            platoons: scope.platoons || [],
+            is_restricted: scope.is_restricted ?? true
+        });
+    } else {
+        setSelectedScope({ courses: [], companies: [], platoons: [], is_restricted: true });
+    }
+    
+    // تحديد هذا المستخدم فقط
+    setSelectedUserIds([user.id]);
+    setIsEditModalOpen(true);
+};
 
     const toggleUserSelection = (id: number) => {
         setSelectedUserIds(prev => prev.includes(id) ? prev.filter(uid => uid !== id) : [...prev, id])
@@ -235,9 +235,7 @@ const fetchUsers = async () => {
                             <p className="text-slate-500 text-xs font-bold mt-0.5">تحديد صلاحيات الظهور حسب الدورات والسرايا</p>
                         </div>
                     </div>
-                    <Button disabled={selectedUserIds.length === 0} onClick={openEditModal} className="bg-slate-900 hover:bg-slate-800 font-bold gap-2 h-11 px-6 rounded-lg shadow-sm text-white transition-all active:scale-95">
-                        <UserCog className="w-4 h-4" /> تخصيص النطاق ({selectedUserIds.length})
-                    </Button>
+                    
                 </div>
 
                 <Card className="border border-slate-200 shadow-sm bg-white rounded-xl overflow-hidden">
@@ -269,6 +267,7 @@ const fetchUsers = async () => {
                                     <TableHead className="text-right font-bold text-slate-700 py-3">المستخدم (رتبة / اسم)</TableHead>
                                     <TableHead className="text-center font-bold text-slate-700">الفرع</TableHead>
                                     <TableHead className="text-center font-bold text-slate-700 px-6">النطاق المسموح حالياً</TableHead>
+                                    <TableHead className="text-center font-bold text-slate-700 px-4">إجراء</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -335,6 +334,16 @@ const fetchUsers = async () => {
         )}
     </div>
 </TableCell>
+<TableCell className="text-center px-4">
+    <Button 
+        variant="ghost" 
+        size="icon" 
+        className="h-8 w-8 text-blue-600 hover:bg-blue-50 rounded-full"
+        onClick={() => openEditModalForUser(u)} // 👈 استدعاء الدالة الجديدة
+    >
+        <UserCog className="w-4 h-4" /> 
+    </Button>
+</TableCell>
                                     </TableRow>
                                 ))}
                             </TableBody>
@@ -351,7 +360,7 @@ const fetchUsers = async () => {
                 )}
 
                 <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-                    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl p-0 border-none shadow-2xl transition-all" dir="rtl">
+                    <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto rounded-xl p-0 border-none shadow-2xl transition-all" dir="rtl">
                         <DialogHeader className="p-6 border-b bg-slate-50 sticky top-0 z-10 backdrop-blur-sm bg-white/80">
                             <DialogTitle className="flex items-center gap-2 text-xl font-black text-slate-800">
                                 <UserCog className="text-slate-700 w-6 h-6" /> تخصيص نطاق العمل ({selectedUserIds.length})
