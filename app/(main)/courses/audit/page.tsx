@@ -607,7 +607,7 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
             </div>
         </div>
         
-        <h3 className="font-black text-lg text-slate-800">ح{idx + 1}: {sess.name}</h3>
+        <h3 className="font-black text-lg text-slate-800"> {sess.name}</h3>
         <p className="text-slate-400 text-[10px] font-bold mt-1">{sess.startTime} - {sess.endTime}</p>
     </div>
 ))}
