@@ -55,22 +55,28 @@ const fetchUsers = async () => {
             const data = await res.json()
             
             const filteredStaff = data.filter((u: any) => {
-                // 1. الإدارة العامة مخفية دائماً
-                if (u.branch === "الإدارة العامة") return false;
+                // 🟢 1. الإدارة العامة: تظهر للأونر فقط وتُحجب عن البقية
+                if (u.branch === "الإدارة العامة") {
+                    return currentRole === "owner";
+                }
 
-                // 2. القيادة العليا (المالك، المدير، الآدمن) يرى الجميع
-                // 🟢 لاحظ: استبعدنا assistant_admin من هذه القائمة لكي يخضع لشروط الفرع أدناه
+                // 2. حماية الرتب العليا (المدير والمسؤول)
+                const highLevelRoles = ["owner", "manager", "admin"];
+                if (highLevelRoles.includes(u.role)) {
+                    return currentRole === "owner"; 
+                }
+
+                // 3. القيادة العليا (المالك، المدير، الآدمن) ترى الموظفين الميدانيين
                 if (["owner", "manager", "admin"].includes(currentRole)) {
                     return true;
                 }
 
-                // 3. 🛡️ المنطق الخاص بمساعد المسؤول (Assistant Admin)
-                // إذا كنت مساعد مسؤول، فأنت "مراقب رياضي" ترى فرع الرياضة فقط
+                // 4. مساعد المسؤول: يرى فرع الرياضة فقط
                 if (currentRole === "assistant_admin") {
                     return u.branch === "تدريب رياضي";
                 }
 
-                // 4. بقية الضباط والمشرفين (كلٌ يرى فرعه)
+                // 5. بقية الضباط والمشرفين (كلٌ يرى فرعه)
                 const isMeMilitary = currentRole.includes("military") || currentBranch === "تدريب عسكري";
                 const isMeSports = currentRole.includes("sports") || currentBranch === "تدريب رياضي";
 
@@ -80,12 +86,24 @@ const fetchUsers = async () => {
                 return false;
             });
 
-            // الترتيب (الضباط أولاً)
+            // 🟢 6. منطق الترتيب الاحترافي (الهرم الإداري + الأقدمية)
             const sortedStaff = filteredStaff.sort((a: any, b: any) => {
+                // أ. الأولوية الأولى: فرع الإدارة العامة دائماً في الأعلى (الوزن 0)
+                const aBranchPriority = a.branch === "الإدارة العامة" ? 0 : 1;
+                const bBranchPriority = b.branch === "الإدارة العامة" ? 0 : 1;
+                if (aBranchPriority !== bBranchPriority) return aBranchPriority - bBranchPriority;
+
+                // ب. الأولوية الثانية: رتبة الضابط تسبق رتبة المدرب (الوزن 0 للضابط)
                 const aIsOfficer = a.role?.includes('officer') ? 0 : 1;
                 const bIsOfficer = b.role?.includes('officer') ? 0 : 1;
-                return aIsOfficer - bIsOfficer;
+                if (aIsOfficer !== bIsOfficer) return aIsOfficer - bIsOfficer;
+
+                // ج. الأولوية الثالثة (الأقدمية): الترتيب حسب الرقم العسكري (تصاعدياً)
+                // الرقم العسكري الأقل يعني أقدمية أعلى ويظهر أولاً
+                return (Number(a.military_id) || 0) - (Number(b.military_id) || 0);
             });
+
+            setUsers(sortedStaff);
 
             setUsers(sortedStaff);
         }

@@ -177,7 +177,11 @@ useEffect(() => {
     }
 }, [viewMode, selectedCourse, selectedSession, date]);
     useEffect(() => { if (viewMode === 'courses') fetchCourses(); }, [date, viewMode]);
-
+useEffect(() => {
+    if (viewMode === 'sessions' && selectedCourse) {
+        handleCourseSelect(selectedCourse);
+    }
+}, [date]); // يراقب التاريخ فقط
     const fetchCourses = async () => {
         setLoading(true);
         try {
@@ -475,8 +479,17 @@ const handleFullExport = () => {
     toast.success("تم تصدير الكشف الشامل بنجاح ✅");
 };
     // --- تصفية البيانات للعرض ---
-    const attendanceRows = auditData?.attendance_rows || [];
-const violationRows = auditData?.violation_rows || [];
+   // 🟢 ترتيب الحالات بناءً على ID الجندي الأصلي
+    const attendanceRows = useMemo(() => {
+        const rows = auditData?.attendance_rows || [];
+        return [...rows].sort((a, b) => (Number(a.soldier_id) || 0) - (Number(b.soldier_id) || 0));
+    }, [auditData]);
+
+    // 🟢 ترتيب المخالفات بناءً على ID الجندي الأصلي
+    const violationRows = useMemo(() => {
+        const rows = auditData?.violation_rows || [];
+        return [...rows].sort((a, b) => (Number(a.soldier_id) || 0) - (Number(b.soldier_id) || 0));
+    }, [auditData]);
     
     // نأخذ الإحصائيات الجاهزة من السيرفر مباشرة دون أي حسابات يدوية هنا
 const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
@@ -581,36 +594,68 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
                             <span>{selectedCourse?.course}</span> <ChevronLeft className="w-4 h-4"/> <span>جدول {format(new Date(date), "EEEE", { locale: ar })}</span>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                            {sessions.map((sess: any, idx: number) => (
-    <div 
-        key={idx}
-        onClick={() => handleSessionSelect(sess, idx)}
-        className="bg-white p-5 rounded-2xl border-2 border-slate-100 hover:border-[#c5b391] hover:shadow-lg transition-all cursor-pointer group relative overflow-hidden"
-    >
-        <div className="flex justify-between items-start mb-4">
-            <div className="bg-[#c5b391]/10 p-2 rounded-lg text-[#c5b391]">
-                <BookOpen className="w-6 h-6" />
+                           {sessions.map((sess: any, idx: number) => {
+    // تحديد حالة الاعتماد
+    const isOfficer = sess.is_officer_approved;
+    const isSupervisor = sess.is_supervisor_approved;
+
+    return (
+        <div 
+            key={idx}
+            onClick={() => handleSessionSelect(sess, idx)}
+            // 🎨 تغيير لون الحدود بناءً على الاعتماد (أخضر للضابط، برتقالي للمشرف)
+            className={cn(
+                "bg-white p-5 rounded-2xl border-2 transition-all cursor-pointer group relative overflow-hidden",
+                isOfficer ? "border-green-500 shadow-green-50" : 
+                isSupervisor ? "border-orange-400 shadow-orange-50" : "border-slate-100 hover:border-[#c5b391] hover:shadow-lg"
+            )}
+        >
+            <div className="flex justify-between items-start mb-4">
+                <div className={cn(
+                    "p-2 rounded-lg",
+                    isOfficer ? "bg-green-100 text-green-600" : "bg-[#c5b391]/10 text-[#c5b391]"
+                )}>
+                    <BookOpen className="w-6 h-6" />
+                </div>
+                
+                <div className="flex flex-col gap-1 items-end">
+                    {/* 🛡️ إظهار كلمة معتمد حسب المستوى */}
+                    {isOfficer ? (
+                        <Badge className="bg-green-600 text-white text-[8px] font-black h-5 border-none">
+                            <ShieldCheck className="w-3 h-3 ml-1"/> اعتماد الضابط
+                        </Badge>
+                    ) : isSupervisor ? (
+                        <Badge className="bg-orange-500 text-white text-[8px] font-black h-5 border-none">
+                            <ShieldCheck className="w-3 h-3 ml-1"/> اعتماد المشرف
+                        </Badge>
+                    ) : null}
+
+                    {/* العدادات الأصلية */}
+                    <div className="flex flex-col gap-1 mt-1">
+                        {sess.cases_count > 0 && (
+                            <Badge variant="destructive" className="text-[9px] font-black h-5">
+                                حالات: {sess.cases_count}
+                            </Badge>
+                        )}
+                        {sess.violations_count > 0 && (
+                            <Badge className="bg-orange-500 text-white text-[9px] font-black h-5 border-none">
+                                مخالفات: {sess.violations_count}
+                            </Badge>
+                        )}
+                    </div>
+                </div>
             </div>
             
-            {/* 🟢 إظهار العدادات المزدوجة (حالات ومخالفات) */}
-            <div className="flex flex-col gap-1 items-end">
-                {sess.cases_count > 0 && (
-                    <Badge variant="destructive" className="text-[9px] font-black h-5">
-                        حالات: {sess.cases_count}
-                    </Badge>
-                )}
-                {sess.violations_count > 0 && (
-                    <Badge className="bg-orange-500 text-white text-[9px] font-black h-5 border-none">
-                        مخالفات: {sess.violations_count}
-                    </Badge>
-                )}
-            </div>
+            <h3 className="font-black text-lg text-slate-800"> {sess.name}</h3>
+            <p className="text-slate-400 text-[10px] font-bold mt-1">{sess.startTime} - {sess.endTime}</p>
+
+            {/* علامة مائية (Check) تظهر في الخلفية إذا كانت معتمدة من الضابط */}
+            {isOfficer && (
+                <CheckCircle2 className="absolute -bottom-2 -left-2 w-12 h-12 text-green-500/10 rotate-12" />
+            )}
         </div>
-        
-        <h3 className="font-black text-lg text-slate-800"> {sess.name}</h3>
-        <p className="text-slate-400 text-[10px] font-bold mt-1">{sess.startTime} - {sess.endTime}</p>
-    </div>
-))}
+    );
+})}
                         </div>
                     </div>
                 )}

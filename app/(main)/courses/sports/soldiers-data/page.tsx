@@ -40,7 +40,8 @@ export default function SoldiersDataPage() {
   const [activeStatus, setActiveStatus] = useState<string>("active");
   const [coursesList, setCoursesList] = useState<any[]>([]); 
   const [showArchived, setShowArchived] = useState(false); // 🟢 التحكم في الأرشيف
-
+// 🟢 تتبع عملية رفع الصورة لكل جندي لمنع التكرار وإظهار التحميل
+  const [uploadingSoldierId, setUploadingSoldierId] = useState<number | null>(null);
   // متغيرات البحث والترقيم للبطاقات
   const [cardSearch, setCardSearch] = useState(""); 
   const [currentCardPage, setCurrentCardPage] = useState(1); 
@@ -287,8 +288,12 @@ setTotalCount(responseData.total || rawData.length);
     currentCardPage * cardsPerPage
   );
 const handlePhotoUpload = async (soldierId: number, file: File) => {
+    // 🟢 1. قفل العملية لهذا الجندي فوراً
+    setUploadingSoldierId(soldierId);
+    
     const reader = new FileReader();
     reader.readAsDataURL(file);
+    
     reader.onload = async () => {
         const base64 = reader.result;
         try {
@@ -300,13 +305,26 @@ const handlePhotoUpload = async (soldierId: number, file: File) => {
                 },
                 body: JSON.stringify({ image_base64: base64 })
             });
+
             if (res.ok) {
-                toast.success("تم رفع الصورة بنجاح");
-                fetchSoldiers(); // تحديث الجدول
+                toast.success("تم رفع الصورة بنجاح ✅");
+                await fetchSoldiers(); // انتظار تحديث البيانات
+            } else {
+                toast.error("عفواً، فشل رفع الصورة");
             }
-        } catch (e) { toast.error("فشل الرفع"); }
+        } catch (e) { 
+            toast.error("خطأ في الاتصال بالسيرفر"); 
+        } finally {
+            // 🟢 2. فتح القفل وإخفاء علامة التحميل
+            setUploadingSoldierId(null);
+        }
     };
-};
+
+    reader.onerror = () => {
+        setUploadingSoldierId(null);
+        toast.error("فشل قراءة الملف من جهازك");
+    };
+  };
 
 const handlePhotoDeleteClick = (soldierId: number) => {
     setPhotoToDelete(soldierId); // نفتح النافذة ونخزن ID الجندي
@@ -955,34 +973,44 @@ const confirmPhotoDelete = async () => {
                                     <TableCell className="text-center font-mono">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                                     <TableCell className="text-center">
     <div className="relative group w-12 h-12 mx-auto">
-        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center overflow-hidden border-2 border-slate-200 group-hover:border-blue-400 transition-all shadow-sm">
+        <div className={cn(
+            "w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center overflow-hidden border-2 transition-all shadow-sm",
+            uploadingSoldierId === soldier.id ? "border-blue-500 ring-2 ring-blue-100" : "border-slate-200 group-hover:border-blue-400"
+        )}>
             
-            {/* 🟢 عرض الصورة السحابية أو الافتراضية فقط */}
-            <label className={cn("w-full h-full", canUploadPhoto ? "cursor-pointer" : "cursor-default")}>
+            {/* 🟢 طبقة التحميل (تظهر فقط أثناء الرفع) */}
+            {uploadingSoldierId === soldier.id && (
+                <div className="absolute inset-0 bg-white/80 z-20 flex items-center justify-center backdrop-blur-[1px] animate-in fade-in">
+                    <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                </div>
+            )}
+
+            <label className={cn(
+                "w-full h-full", 
+                canUploadPhoto && uploadingSoldierId === null ? "cursor-pointer" : "cursor-not-allowed opacity-50"
+            )}>
                 <img 
-                    // إذا وجد رابط سحابي يعرضه، وإلا يعرض الصورة الافتراضية
                     src={soldier.image_url ? `${soldier.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
                     alt="Soldier" 
                     className="w-full h-full object-cover"
-                    onError={(e) => { 
-                        (e.target as HTMLImageElement).src = "/placeholder-user.png";
-                    }}
+                    onError={(e) => { (e.target as HTMLImageElement).src = "/placeholder-user.png"; }}
                 />
                 
-                {/* مدخل الملف المخفي (يظهر فقط إذا كان للمستخدم صلاحية الرفع) */}
+                {/* 🟢 قفل الإدخال إذا كان هناك أي عملية رفع جارية */}
                 {canUploadPhoto && (
                     <input 
                         type="file" 
                         className="hidden" 
                         accept="image/*" 
+                        disabled={uploadingSoldierId !== null} // منع اختيار أي ملف آخر في نفس الوقت
                         onChange={(e) => e.target.files?.[0] && handlePhotoUpload(soldier.id, e.target.files[0])} 
                     />
                 )}
             </label>
         </div>
 
-        {/* زر الحذف يظهر فقط فوق الصورة السحابية */}
-        {soldier.image_url && canDeletePhoto && (
+        {/* منع ظهور زر الحذف أثناء التحميل */}
+        {soldier.image_url && canDeletePhoto && uploadingSoldierId === null && (
             <button 
                 onClick={() => handlePhotoDeleteClick(soldier.id)}
                 className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:scale-110"

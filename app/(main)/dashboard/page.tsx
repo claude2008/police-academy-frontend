@@ -353,10 +353,22 @@ export default function DashboardPage() {
 
         // الملف الشخصي (المجندين)
         if (featureId === 'soldiers') {
-            if (role.includes("_supervisor")) {
+            // 🟢 التعديل السحري: إضافة المدربين مع المشرفين للذهاب المباشر
+            const directAccessRoles = [
+                "military_trainer", 
+                "sports_trainer", 
+                "military_supervisor", 
+                "sports_supervisor"
+            ];
+
+            if (directAccessRoles.includes(role)) {
+                // يذهب فوراً لملف المجندين الخاص بفرعه دون فتح أي نافذة خيارات
                 router.push(`/courses/${myBranch}/soldiers`);
                 return;
             }
+
+            // فقط الضباط ومساعد المسؤول والآدمن هم من تفتح لهم نافذة الخيارات 
+            // (لكي يستطيعوا الدخول لملفات المدربين أيضاً)
             setSelectionState({ 
                 isOpen: true, 
                 step: 'action_select', 
@@ -380,8 +392,30 @@ export default function DashboardPage() {
     }
 };
 
-  const handleBranchSelect = (branch: 'military' | 'sports') => {
-      // إذا كان الزر هو الملف الشخصي أو أخرى، ننتقل للإجراء
+ const handleBranchSelect = (branch: 'military' | 'sports') => {
+      // 🟢 1. جلب بيانات المستخدم الحالية
+      const role = user?.role || "";
+      const isManagerOrAdmin = ["manager", "admin"].includes(role);
+
+      // 🟢 2. إذا كان المستخدم مدير أو مسؤول، نوجهه مباشرة للسجلات (History)
+      if (isManagerOrAdmin) {
+          if (selectionState.feature === 'attendance') {
+              // التوجه المباشر لسجل التكميل المعتمد حسب الفرع المختار
+              router.push(`/daily-audit?branch=${branch}`);
+              setSelectionState(prev => ({ ...prev, isOpen: false }));
+              return;
+          }
+
+          if (selectionState.feature === 'violations') {
+              // التوجه المباشر لسجل المخالفات العام
+              // ملاحظة: إذا كان سجل المخالفات يحتاج فرع، نمرره هنا أيضاً
+              router.push(`/violations/history`);
+              setSelectionState(prev => ({ ...prev, isOpen: false }));
+              return;
+          }
+      }
+
+      // 🔵 3. المنطق القديم لبقية الرتب (مشرف، ضابط، إلخ) أو بقية الأزرار
       if (selectionState.feature === 'soldiers' || selectionState.feature === 'others') {
           setSelectionState(prev => ({ ...prev, selectedBranch: branch, step: 'action_select' })); 
           return;
