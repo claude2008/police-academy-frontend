@@ -33,7 +33,32 @@ const buildQuery = (params: any) => {
   });
   return q.toString();
 }
+// 🟢 دالة الضغط الذكية: تحول الـ 5MB إلى 50KB في جهاز المستخدم
+const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 600; // عرض 600 بكسل ممتاز جداً للوضوح والحجم
+                const scaleSize = MAX_WIDTH / img.width;
+                canvas.width = MAX_WIDTH;
+                canvas.height = img.height * scaleSize;
 
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                
+                // تحويل لـ JPEG بجودة 0.6 (توازن مثالي بين الوضوح وصغر الحجم)
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+                resolve(compressedBase64);
+            };
+        };
+        reader.onerror = (error) => reject(error);
+    });
+};
 export default function SoldiersDataPage() {
   // --- الحالات (States) ---
   const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards'); 
@@ -288,43 +313,39 @@ setTotalCount(responseData.total || rawData.length);
     currentCardPage * cardsPerPage
   );
 const handlePhotoUpload = async (soldierId: number, file: File) => {
-    // 🟢 1. قفل العملية لهذا الجندي فوراً
+    // 1. قفل العملية وإظهار علامة التحميل
     setUploadingSoldierId(soldierId);
     
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    
-    reader.onload = async () => {
-        const base64 = reader.result;
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/${soldierId}/photo`, {
-                method: "PUT",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${localStorage.getItem("token")}`
-                },
-                body: JSON.stringify({ image_base64: base64 })
-            });
+    try {
+        // 🟢 2. المعالجة السحرية: ضغط الصورة قبل أن تغادر جهاز المستخدم
+        // الآن السيرفر سيستلم 50KB بدلاً من 5MB
+        const compressedBase64 = await compressImage(file);
 
-            if (res.ok) {
-                toast.success("تم رفع الصورة بنجاح ✅");
-                await fetchSoldiers(); // انتظار تحديث البيانات
-            } else {
-                toast.error("عفواً، فشل رفع الصورة");
-            }
-        } catch (e) { 
-            toast.error("خطأ في الاتصال بالسيرفر"); 
-        } finally {
-            // 🟢 2. فتح القفل وإخفاء علامة التحميل
-            setUploadingSoldierId(null);
+        // 3. الإرسال للسيرفر
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/${soldierId}/photo`, {
+            method: "PUT",
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("token")}`
+            },
+            body: JSON.stringify({ image_base64: compressedBase64 })
+        });
+
+        if (res.ok) {
+            toast.success("تم ضغط ورفع الصورة بنجاح ✅");
+            fetchSoldiers(); 
+        } else {
+            const errData = await res.json();
+            toast.error(errData.detail || "فشل الرفع");
         }
-    };
-
-    reader.onerror = () => {
+    } catch (e) { 
+        console.error("Compression/Upload error:", e);
+        toast.error("حدث خطأ أثناء معالجة الصورة"); 
+    } finally {
+        // 4. فتح القفل في كل الحالات
         setUploadingSoldierId(null);
-        toast.error("فشل قراءة الملف من جهازك");
-    };
-  };
+    }
+};
 
 const handlePhotoDeleteClick = (soldierId: number) => {
     setPhotoToDelete(soldierId); // نفتح النافذة ونخزن ID الجندي
@@ -991,7 +1012,8 @@ const confirmPhotoDelete = async () => {
             )}>
                 <img 
                     src={soldier.image_url ? `${soldier.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
-                    alt="Soldier" 
+                    alt="Soldier"
+                    loading="lazy" 
                     className="w-full h-full object-cover"
                     onError={(e) => { (e.target as HTMLImageElement).src = "/placeholder-user.png"; }}
                 />

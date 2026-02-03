@@ -28,6 +28,9 @@ export default function ScopeManagementPage() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false)
     const [availableCourses, setAvailableCourses] = useState<any[]>([])
     const [rawSoldiersData, setRawSoldiersData] = useState<any[]>([])
+    // أضف هذه السطرين تحت القائمة الموجودة في الأعلى
+const [allCompanies, setAllCompanies] = useState<string[]>([]);
+const [allPlatoons, setAllPlatoons] = useState<string[]>([]);
     const [selectedScope, setSelectedScope] = useState({
         courses: [] as string[],
         companies: [] as string[],
@@ -103,28 +106,56 @@ const fetchUsers = async () => {
                 return (Number(a.military_id) || 0) - (Number(b.military_id) || 0);
             });
 
-            setUsers(sortedStaff);
+            
 
             setUsers(sortedStaff);
         }
     } catch (e) { toast.error("فشل جلب المستخدمين") } finally { setLoading(false) }
 }
 
-    const fetchInitialData = async () => {
-        try {
-            const resCourses = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/active-courses`, {
-                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-            })
-            if (resCourses.ok) setAvailableCourses(await resCourses.json())
-            const resSoldiers = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?limit=5000`, {
-                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-            })
-            if (resSoldiers.ok) {
-                const result = await resSoldiers.json();
-                setRawSoldiersData(result.data || []);
-            }
-        } catch (e) { console.error(e) }
+  const fetchInitialData = async () => {
+    try {
+        console.log("🔄 جاري طلب خريطة النطاق الهرمية من السيرفر...");
+        
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/scope-options`, {
+            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+        });
+
+        if (res.ok) {
+            // البيانات الآن عبارة عن مصفوفة من الكائنات (Array of Objects)
+            const data: any[] = await res.json();
+            
+            console.log("✅ تم جلب خريطة النطاق بنجاح!");
+            console.log("📊 عدد الدورات المستلمة:", data.length);
+
+            // 1. تحديث الدورات المتاحة (ستحتوي كل دورة على شركاتها وفصائلها بداخلها)
+            setAvailableCourses(data);
+
+            // 2. تحديث السرايا والفصائل العامة (اختياري: لاستخراج قائمة شاملة إذا احتجتها)
+            const flatCompanies = Array.from(new Set(data.flatMap(d => d.companies))).sort();
+            const flatPlatoons = Array.from(new Set(data.flatMap(d => d.platoons))).sort();
+            
+            if (typeof setAllCompanies === 'function') setAllCompanies(flatCompanies);
+            if (typeof setAllPlatoons === 'function') setAllPlatoons(flatPlatoons);
+
+            // 3. تحديث البيانات الوهمية للجنود لمنع تعليق النظام القديم
+            const liteSoldiers = data.map((c: any) => ({
+                course: c.name,
+                batch: c.batch,
+            }));
+            
+            setRawSoldiersData(liteSoldiers); 
+
+            // رسالة تأكيد إضافية في الكونسول للفحص
+            console.log("🚀 النظام جاهز الآن لعرض السرايا التابعة لكل دورة بدقة.");
+        } else {
+            console.error("❌ فشل السيرفر في إرسال البيانات الهرمية.");
+        }
+    } catch (e) { 
+        console.error("❌ خطأ في الاتصال بالباك إند:", e); 
+        toast.error("فشل تحديث خريطة البيانات");
     }
+}
 
     const openEditModalForUser = (user: any) => {
     const scope = user?.extra_permissions?.scope;
@@ -156,19 +187,20 @@ const fetchUsers = async () => {
     }
 
     const dynamicOptions = useMemo(() => {
-        if (selectedScope.courses.length === 0) return { companies: [], platoons: [] };
-        // هنا نقوم بجمع السرايا والفصائل لكل الدورات المختارة دفعة واحدة
-        const filteredSoldiers = rawSoldiersData.filter(s => {
-            return selectedScope.courses.some(courseKey => {
-                const [cName, cBatch] = courseKey.split('||');
-                return s.course === cName && (cBatch ? s.batch === cBatch : true);
-            });
-        });
-        return {
-            companies: Array.from(new Set(filteredSoldiers.map(s => s.company).filter(Boolean))).sort(),
-            platoons: Array.from(new Set(filteredSoldiers.map(s => s.platoon).filter(Boolean))).sort()
-        };
-    }, [selectedScope.courses, rawSoldiersData]);
+    // 1. إذا لم يتم اختيار أي دورة، لا تظهر سرايا أو فصائل
+    if (selectedScope.courses.length === 0) {
+        return { companies: [], platoons: [] };
+    }
+
+    // 2. بدلاً من الفرز في 5000 اسم، نعرض مباشرة الأسماء الفريدة 
+    // التي وصلت من الباك إند وجاهزة في الـ States
+    return {
+        companies: allCompanies, // هذه المصفوفة الصغيرة التي جلبناها للتو
+        platoons: allPlatoons    // هذه المصفوفة الصغيرة التي جلبناها للتو
+    };
+
+    // 🟢 نحدث القائمة فقط إذا تغيرت الدورات المختارة أو البيانات المستلمة
+}, [selectedScope.courses, allCompanies, allPlatoons]);
 
     const filteredUsers = useMemo(() => {
         return users.filter(u => u.name.includes(searchQuery) || u.military_id.includes(searchQuery))
@@ -301,9 +333,9 @@ const fetchUsers = async () => {
         {/* 📸 حاوية الصورة الشخصية بنفس تنسيق إدارة المستخدمين */}
         <div className="w-10 h-10 flex-shrink-0 rounded-full overflow-hidden bg-slate-100 border border-slate-200 relative shadow-sm">
             {u.image_url ? (
-                <img 
-                    src={`${u.image_url}?t=${new Date().getTime()}`} 
+                <img src={u.image_url}
                     alt="" 
+                    loading="lazy"
                     className="object-cover w-full h-full" 
                 />
             ) : (
@@ -411,97 +443,104 @@ const fetchUsers = async () => {
         </div>
                                     <div className="space-y-3">
                                         <Label className="font-bold text-slate-700 flex items-center gap-2 text-sm border-r-4 border-blue-600 pr-2 h-5">1. الدورات المسموحة:</Label>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-3 border rounded-lg bg-slate-50/30">
-                                            {availableCourses.map(c => {
-                                                const uniqueCourseKey = `${c.name}${c.batch ? `||${c.batch}` : ''}`;
-                                                return (
-                                                    <div key={c.id} className="flex items-center gap-3 bg-white p-2 rounded border border-slate-100 shadow-sm hover:border-blue-200 transition-all">
-                                                        <Checkbox 
-                                                            id={`c-${c.id}`} 
-                                                            checked={selectedScope.courses.includes(uniqueCourseKey)} 
-                                                            onCheckedChange={(checked) => {
-                                                                const newCourses = checked 
-                                                                    ? [...selectedScope.courses, uniqueCourseKey] 
-                                                                    : selectedScope.courses.filter(name => name !== uniqueCourseKey);
-                                                                
-                                                                const newCompanies = selectedScope.companies.filter(comp => comp.startsWith(uniqueCourseKey + "->") === false);
-                                                                const newPlatoons = selectedScope.platoons.filter(plat => plat.startsWith(uniqueCourseKey + "->") === false);
-                                                                
-                                                                setSelectedScope({...selectedScope, courses: newCourses, companies: newCompanies, platoons: newPlatoons})
-                                                            }} 
-                                                        />
-                                                        <label htmlFor={`c-${c.id}`} className="text-[12px] font-bold cursor-pointer flex-1">{c.name} <span className="text-blue-600 text-[10px] italic">({c.batch || 'عام'})</span></label>
-                                                    </div>
-                                                )
-                                            })}
-                                        </div>
+                                        {/* 1. قائمة الدورات المتاحة للاختيار */}
+<div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-3 border rounded-lg bg-slate-50/30">
+    {availableCourses.map((c: any) => (
+        <div key={c.id} className="flex items-center gap-3 bg-white p-2 rounded border border-slate-100 shadow-sm hover:border-blue-200 transition-all">
+            <Checkbox 
+                id={`c-${c.id}`} 
+                checked={selectedScope.courses.includes(c.id)} 
+                onCheckedChange={(checked) => {
+                    const newCourses = checked 
+                        ? [...selectedScope.courses, c.id] 
+                        : selectedScope.courses.filter(id => id !== c.id);
+                    
+                    // تنظيف السرايا والفصائل عند إلغاء الدورة
+                    const newCompanies = selectedScope.companies.filter(comp => !comp.startsWith(c.id + "->"));
+                    const newPlatoons = selectedScope.platoons.filter(plat => !plat.startsWith(c.id + "->"));
+                    
+                    setSelectedScope({...selectedScope, courses: newCourses, companies: newCompanies, platoons: newPlatoons});
+                }} 
+            />
+            <label htmlFor={`c-${c.id}`} className="text-[12px] font-bold cursor-pointer flex-1">
+                {c.name} <span className="text-blue-600 text-[10px] italic">({c.batch || 'عام'})</span>
+            </label>
+        </div>
+    ))}
+</div>
                                     </div>
 
                                     {selectedScope.courses.length > 0 && (
                                         <div className="space-y-4">
                                             <Label className="font-bold text-slate-700 flex items-center gap-2 text-sm border-r-4 border-orange-500 pr-2 h-5">2. تخصيص السرايا والفصائل حسب كل دورة:</Label>
-                                            <div className="space-y-4">
-                                                {selectedScope.courses.map(courseKey => {
-                                                    const [cName, cBatch] = courseKey.split('||');
-                                                    const courseSoldiers = rawSoldiersData.filter(s => s.course === cName && (cBatch ? s.batch === cBatch : true));
-                                                    const companies = Array.from(new Set(courseSoldiers.map(s => s.company).filter(Boolean))).sort();
-                                                    const platoons = Array.from(new Set(courseSoldiers.map(s => s.platoon).filter(Boolean))).sort();
+                                           {/* 2. تخصيص السرايا والفصائل لكل دورة مختارة */}
+<div className="space-y-4">
+    {selectedScope.courses.map((courseId: string) => {
+        // البحث عن بيانات الدورة من المصفوفة التي جلبناها من السيرفر
+        const courseData = availableCourses.find((a: any) => a.id === courseId);
+        
+        // إذا لم يجد البيانات (لحظة التحميل) لا يعرض شيئاً
+        if (!courseData) return null;
 
-                                                    return (
-                                                        <div key={courseKey} className="bg-white border-r-4 border-r-slate-300 rounded-xl p-4 shadow-sm border border-slate-100 space-y-4 transition-all">
-                                                            <div className="flex justify-between items-center border-b pb-2">
-                                                                <span className="font-black text-slate-800 text-sm">{cName} {cBatch && <span className="text-blue-600 font-bold text-xs pr-1">({cBatch})</span>}</span>
-                                                            </div>
-                                                            
-                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                                <div className="space-y-2">
-                                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">السرايا:</span>
-                                                                    <div className="flex flex-wrap gap-2">
-                                                                        {companies.map(comp => {
-                                                                            const compKey = `${courseKey}->${comp}`;
-                                                                            return (
-                                                                                <div key={comp} className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 hover:bg-blue-50 transition-colors">
-                                                                                    <Checkbox 
-                                                                                        id={`comp-${compKey}`}
-                                                                                        checked={selectedScope.companies.includes(compKey)}
-                                                                                        onCheckedChange={(checked) => {
-                                                                                            const newComps = checked ? [...selectedScope.companies, compKey] : selectedScope.companies.filter(v => v !== compKey);
-                                                                                            setSelectedScope({...selectedScope, companies: newComps});
-                                                                                        }}
-                                                                                    />
-                                                                                    <label htmlFor={`comp-${compKey}`} className="text-[11px] font-bold cursor-pointer text-slate-700">{comp}</label>
-                                                                                </div>
-                                                                            )
-                                                                        })}
-                                                                    </div>
-                                                                </div>
+        return (
+            <div key={courseId} className="bg-white border-r-4 border-r-blue-500 rounded-xl p-4 shadow-sm border border-slate-100 space-y-4 mb-4">
+                <div className="flex justify-between items-center border-b pb-2">
+                    <span className="font-black text-slate-800 text-sm">
+                        {courseData.name} {courseData.batch && <span className="text-blue-600 font-bold text-[10px] pr-1">({courseData.batch})</span>}
+                    </span>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* قسم السرايا */}
+                    <div className="space-y-2">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">السرايا:</span>
+                        <div className="flex flex-wrap gap-2">
+                            {courseData.companies.map((comp: string) => {
+                                const compKey = `${courseId}->${comp}`;
+                                return (
+                                    <div key={compKey} className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 hover:bg-blue-50 transition-colors">
+                                        <Checkbox 
+                                            id={`comp-${compKey}`}
+                                            checked={selectedScope.companies.includes(compKey)}
+                                            onCheckedChange={(checked) => {
+                                                const newComps = checked ? [...selectedScope.companies, compKey] : selectedScope.companies.filter(v => v !== compKey);
+                                                setSelectedScope({...selectedScope, companies: newComps});
+                                            }}
+                                        />
+                                        <label htmlFor={`comp-${compKey}`} className="text-[11px] font-bold cursor-pointer text-slate-700">{comp}</label>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
 
-                                                                <div className="space-y-2">
-                                                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">الفصائل:</span>
-                                                                    <div className="flex flex-wrap gap-2">
-                                                                        {platoons.map(plat => {
-                                                                            const platKey = `${courseKey}->${plat}`;
-                                                                            return (
-                                                                                <div key={plat} className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 hover:bg-orange-50 transition-colors">
-                                                                                    <Checkbox 
-                                                                                        id={`plat-${platKey}`}
-                                                                                        checked={selectedScope.platoons.includes(platKey)}
-                                                                                        onCheckedChange={(checked) => {
-                                                                                            const newPlats = checked ? [...selectedScope.platoons, platKey] : selectedScope.platoons.filter(v => v !== platKey);
-                                                                                            setSelectedScope({...selectedScope, platoons: newPlats});
-                                                                                        }}
-                                                                                    />
-                                                                                    <label htmlFor={`plat-${platKey}`} className="text-[11px] font-bold cursor-pointer text-slate-700">{plat}</label>
-                                                                                </div>
-                                                                            )
-                                                                        })}
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
+                    {/* قسم الفصائل */}
+                    <div className="space-y-2">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">الفصائل:</span>
+                        <div className="flex flex-wrap gap-2">
+                            {courseData.platoons.map((plat: string) => {
+                                const platKey = `${courseId}->${plat}`;
+                                return (
+                                    <div key={platKey} className="flex items-center gap-1.5 bg-slate-50 px-2 py-1.5 rounded-lg border border-slate-100 hover:bg-orange-50 transition-colors">
+                                        <Checkbox 
+                                            id={`plat-${platKey}`}
+                                            checked={selectedScope.platoons.includes(platKey)}
+                                            onCheckedChange={(checked) => {
+                                                const newPlats = checked ? [...selectedScope.platoons, platKey] : selectedScope.platoons.filter(v => v !== platKey);
+                                                setSelectedScope({...selectedScope, platoons: newPlats});
+                                            }}
+                                        />
+                                        <label htmlFor={`plat-${platKey}`} className="text-[11px] font-bold cursor-pointer text-slate-700">{plat}</label>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    })}
+</div>
                                         </div>
                                     )}
                                 </div>

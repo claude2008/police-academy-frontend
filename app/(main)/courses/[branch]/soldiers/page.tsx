@@ -727,6 +727,7 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
     // 🟢 نستخدم الرابط السحابي المخزن في قاعدة البيانات
     src={soldier.image_url || "/placeholder-user.png"} 
     className="w-full h-full object-cover" 
+    loading="lazy"
     onError={(e:any) => {
         // إذا فشل التحميل، نضع الصورة الافتراضية بدلاً من إخفائها
         e.target.src = "/placeholder-user.png";
@@ -793,7 +794,7 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                                 <div className="-mt-12 md:-mt-16 z-10 flex-shrink-0 mx-auto md:mx-0">
                                     <div className="w-32 h-32 md:w-40 md:h-40 rounded-2xl bg-white p-1.5 shadow-lg">
                                         <div className="w-full h-full rounded-xl bg-slate-200 overflow-hidden relative border border-slate-100">
-                                            <img src={selectedSoldier.image_url || "/placeholder-user.png"} className="w-full h-full object-cover" onError={(e:any) => { e.target.src = "/placeholder-user.png"; }} />
+                                            <img src={selectedSoldier.image_url || "/placeholder-user.png"} className="w-full h-full object-cover" loading="lazy" onError={(e:any) => { e.target.src = "/placeholder-user.png"; }} />
                                         </div>
                                     </div>
                                 </div>
@@ -828,7 +829,7 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                     {/* 1. Header Card (Print) */}
                     <div className="hidden print-profile-card">
                         <div className="w-32 h-32 flex-shrink-0 ml-6 border border-black p-1 print:w-32 print:h-32">
-                            <img src={selectedSoldier.image_url || "/placeholder-user.png"} className="w-full h-full object-cover" onError={(e:any) => { e.target.src = "/placeholder-user.png"; }} />
+                            <img src={selectedSoldier.image_url || "/placeholder-user.png"} className="w-full h-full object-cover" loading="lazy" onError={(e:any) => { e.target.src = "/placeholder-user.png"; }} />
                         </div>
                         <div className="flex-1 text-right space-y-2">
                             <div className="flex gap-2 text-sm border-b border-gray-300 pb-1">

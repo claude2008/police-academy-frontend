@@ -70,6 +70,32 @@ const SETTINGS_TABS_KEYS = [
     { id: "disciplinary_regulations", label: "لائحة الجزاءات" },
     { id: "military_standards", label: "معايير  التدريب العسكري" },
 ];
+// 🟢 دالة ضغط الصور الذكية
+const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 600; // أبعاد مثالية لصور الموظفين واضحة وخفيفة
+                const scaleSize = MAX_WIDTH / img.width;
+                canvas.width = MAX_WIDTH;
+                canvas.height = img.height * scaleSize;
+
+                const ctx = canvas.getContext('2d');
+                ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                
+                // جودة 0.6 تعطي توازناً ممتازاً بين الوضوح وحجم الملف
+                const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+                resolve(compressedBase64);
+            };
+        };
+        reader.onerror = (error) => reject(error);
+    });
+};
 export default function UsersManagementPage() {
     const router = useRouter()
     
@@ -314,56 +340,50 @@ const handleUserPhotoUpload = async (userId: number, e: React.ChangeEvent<HTMLIn
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-        const base64String = reader.result as string;
-        
-        // 1. نبدأ التوست ونخزن المعرف في t
-        const t = toast.loading("جاري رفع الصورة للسحابة...");
+    // 1. بدء التوست وتخزين المعرف للتحكم به لاحقاً (id: t)
+    const t = toast.loading("جاري معالجة وضغط الصورة...");
 
-        // 🟢 الكود المحدث والمؤمن
+    try {
+        // 2. التحقق من التوكن قبل البدء (خطوة أمان)
         const token = localStorage.getItem("token");
-
-        // 🛡️ خطوة أمنية: لا ترسل الطلب أصلاً إذا لم يكن هناك توكن
         if (!token) {
-            // ✅ تم إضافة { id: t } لاستبدال التحميل بالخطأ
-            toast.error("انتهت جلسة العمل، يرجى تسجيل الدخول مرة أخرى", { id: t });
+            toast.error("انتهت جلسة العمل، يرجى إعادة تسجيل الدخول", { id: t });
             return;
         }
 
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/photo`, {
-                method: "PUT",
-                headers: { 
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${token}` // ✅ التوكن هنا هو الحارس
-                },
-                body: JSON.stringify({ image_base64: base64String })
-            });
+        // 3. 🛡️ الخطوة الأهم: الضغط الذكي في جهاز المستخدم
+        // الآن السيرفر لن يستلم 5MB، بل سيستلم 50KB فقط!
+        const compressedBase64 = await compressImage(file);
 
-            if (res.status === 403) {
-                // ✅ تم إضافة { id: t }
-                toast.error("ليس لديك صلاحية لتعديل صور المستخدمين", { id: t });
-                return;
-            }
+        // 4. إرسال الطلب للسيرفر بالنسخة المضغوطة
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/${userId}/photo`, {
+            method: "PUT",
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}` 
+            },
+            body: JSON.stringify({ image_base64: compressedBase64 })
+        });
 
-            if (res.ok) {
-                const data = await res.json();
-                // ✅ تم إضافة { id: t } لإغلاق التحميل بنجاح
-                toast.success("تم تحديث الصورة بنجاح ✅", { id: t });
-                fetchUsers();
-                // هنا يمكنك تحديث الحالة (State) في الصفحة
-            } else {
-                const errorData = await res.json();
-                // ✅ تم إضافة { id: t }
-                toast.error(errorData.detail || "فشل رفع الصورة", { id: t });
-            }
-        } catch (error) {
-            // ✅ تم إضافة { id: t } في حالة انقطاع الاتصال
-            toast.error("حدث خطأ في الاتصال بالسيرفر", { id: t });
+        // 5. معالجة الردود بناءً على حالة السيرفر
+        if (res.status === 403) {
+            toast.error("ليس لديك صلاحية لتعديل صور المستخدمين", { id: t });
+            return;
         }
-    };
-    reader.readAsDataURL(file);
+
+        if (res.ok) {
+            toast.success("تم تحديث الصورة بنجاح ✅", { id: t });
+            // تحديث القائمة فوراً لتعكس الصورة الجديدة
+            fetchUsers(); 
+        } else {
+            const errorData = await res.json();
+            toast.error(errorData.detail || "فشل رفع الصورة", { id: t });
+        }
+
+    } catch (error) {
+        console.error("Upload Error:", error);
+        toast.error("حدث خطأ في الاتصال أو معالجة الصورة", { id: t });
+    }
 };
 
 // 1. دالة تفتح نافذة التأكيد فقط
@@ -663,11 +683,13 @@ if (isLoadingAuth) {
                                             <TableCell className="text-center">
     <div className="w-10 h-10 mx-auto rounded-full overflow-hidden bg-slate-100 border border-slate-200 relative">
         {user.image_url ? (
-            <img 
-                src={`${user.image_url}?t=${new Date().getTime()}`} 
-                alt="" 
-                className="object-cover w-full h-full" 
-            />
+            // ابحث عن هذا السطر واستبدله بـ:
+<img 
+    src={user.image_url} // 🟢 بدون ?t= لكي يتم حفظها في ذاكرة المتصفح (Cache)
+    alt="" 
+    loading="lazy"
+    className="object-cover w-full h-full" 
+/>
         ) : (
             <div className="w-full h-full flex items-center justify-center text-slate-400 bg-slate-50">
                 <User className="w-5 h-5" />

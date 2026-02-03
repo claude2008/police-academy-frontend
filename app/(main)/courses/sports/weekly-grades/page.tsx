@@ -623,55 +623,66 @@ useEffect(() => {
                             <div className="border rounded-lg bg-white shadow-sm overflow-hidden relative flex flex-col">
                                 <div className="overflow-x-auto min-h-[400px]" dir="rtl">
                                     <Table className="border-collapse w-max min-w-full text-right">
-                                        <TableHeader className="bg-slate-100 sticky top-0 z-20 shadow-sm">
-                                            <TableRow>
-                                                <TableHead className="w-[40px] text-center border p-1 bg-slate-100 sticky right-0 z-30">
-                                                    <Checkbox checked={soldiers.length > 0 && selectedSoldiers.size === soldiers.length} onCheckedChange={(checked: any) => { if(checked) setSelectedSoldiers(new Set(soldiers.map(s => s.id))); else setSelectedSoldiers(new Set()); }} />
-                                                </TableHead>
-                                                <TableHead className="w-[50px] text-center border p-1 bg-slate-100 sticky right-[40px] z-30 hidden md:table-cell">الصورة</TableHead>
-                                                <TableHead className="w-[120px] md:w-[180px] text-right border p-1 bg-slate-100 sticky right-[40px] md:right-[90px] z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">الاسم</TableHead>
-                                                <TableHead className="w-[50px] min-w-[50px] md:w-[80px] md:min-w-[80px] text-center border bg-blue-50 text-blue-900 font-bold p-1"><span className="text-[10px] md:text-xs">السلوك</span></TableHead>
-                                                <TableHead className="w-[35px] min-w-[35px] md:w-[80px] md:min-w-[80px] text-center border bg-yellow-50 text-yellow-900 font-bold p-0"><span className="text-[9px] md:text-xs">الجهد</span></TableHead>
-                                                <TableHead className="w-[40px] min-w-[40px] md:w-[80px] md:min-w-[80px] text-center border bg-green-50 text-green-900 font-bold p-0"><span className="text-[8px] md:text-xs tracking-tighter">الاستيعاب</span></TableHead>
-                                                {/* 👇 تم ترتيب الأسطر هنا لمنع المسافات الزائدة */}
-                                                {daysList.map(day => (
-                                                    <TableHead key={day.toString()} className="w-[50px] text-center border p-1 min-w-[50px]">
-                                                        <div className="flex flex-col items-center">
-                                                            <span className="text-[10px] font-bold">{format(day, "EEE", { locale: ar })}</span>
-                                                            <span className="text-[9px] text-slate-400">{format(day, "d/M")}</span>
-                                                        </div>
-                                                    </TableHead>
-                                                ))}
-                                                <TableHead className="w-[60px] md:w-[80px] text-center border bg-slate-800 text-white font-bold p-1 static md:sticky md:left-0 z-20">المجموع</TableHead>
-                                                <TableHead className="w-[100px] md:w-[150px] text-center border p-1">ملاحظات</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {paginatedSoldiers.map((soldier, idx) => {
-                                                const total = (Number(soldier.scores.b) + Number(soldier.scores.e) + Number(soldier.scores.c)) / 3;
-                                                return (
-                                                    <TableRow key={soldier.id} className="hover:bg-slate-50 group h-12">
-                                                        <TableCell className="p-1 border text-center sticky right-0 bg-white group-hover:bg-slate-50 z-10">
-                                                            <Checkbox checked={selectedSoldiers.has(soldier.id)} onCheckedChange={(checked: any) => { const newSet = new Set(selectedSoldiers); if(checked) newSet.add(soldier.id); else newSet.delete(soldier.id); setSelectedSoldiers(newSet); }} />
-                                                        </TableCell>
-                                                        <TableCell className="p-1 border text-center sticky right-[40px] bg-white group-hover:bg-slate-50 z-10 hidden md:table-cell">
-                                                            <div className="w-10 h-10 rounded-full overflow-hidden bg-slate-100 border border-slate-200 mx-auto shadow-sm">
-    <img 
-    // 🟢 نستخدم الرابط المخزن في قاعدة البيانات (image_url) بدلاً من الرابط المحلي القديم
-    src={soldier.image_url ? `${soldier.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
-    alt={soldier.name}
-    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-    onError={(e) => { 
-        // إذا فشل الرابط السحابي، تظهر الصورة الافتراضية فوراً
-        (e.target as HTMLImageElement).src = "/placeholder-user.png";
-    }} 
-/>
-</div>
-                                                        </TableCell>
-                                                        <TableCell className="p-1 border text-right font-medium text-xs sticky right-[40px] md:right-[90px] bg-white group-hover:bg-slate-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate max-w-[120px] md:max-w-none">{soldier.name}</TableCell>
-                                                        <TableCell className="p-1 border text-center font-bold text-blue-700 bg-blue-50/50 text-xs md:text-sm">{soldier.scores.b}</TableCell>
-                                                        <TableCell className="p-0 border text-center bg-yellow-50/50"><Input inputMode="decimal" className="h-8 w-full text-center text-[10px] md:text-sm font-bold p-0 border-transparent hover:border-slate-300 focus:bg-white" value={soldier.scores.e} onChange={(e) => handleScoreChange(soldier.id, 'e', e.target.value)} /></TableCell>
-                                                        <TableCell className="p-0 border text-center bg-green-50/50"><Input inputMode="decimal" className="h-8 w-full text-center text-[10px] md:text-sm font-bold p-0 border-transparent hover:border-slate-300 focus:bg-white" value={soldier.scores.c} onChange={(e) => handleScoreChange(soldier.id, 'c', e.target.value)} /></TableCell>
+    <TableHeader className="bg-slate-100 sticky top-0 z-20 shadow-sm">
+        <TableRow>
+            <TableHead className="w-[40px] text-center border p-1 bg-slate-100 sticky right-0 z-30">
+                <Checkbox checked={soldiers.length > 0 && selectedSoldiers.size === soldiers.length} onCheckedChange={(checked: any) => { if(checked) setSelectedSoldiers(new Set(soldiers.map(s => s.id))); else setSelectedSoldiers(new Set()); }} />
+            </TableHead>
+            
+            {/* 📸 عمود الصورة: الآن يظهر على الهاتف أيضاً وتم تعديل الـ sticky */}
+            <TableHead className="w-[50px] text-center border p-1 bg-slate-100 sticky right-[40px] z-30">الصورة</TableHead>
+            
+            {/* 📝 عمود الاسم: تم تعديل المسافة (right-[90px]) ليفسح مجالاً للصورة */}
+            <TableHead className="w-[120px] md:w-[180px] text-right border p-1 bg-slate-100 sticky right-[90px] z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">الاسم</TableHead>
+            
+            <TableHead className="w-[50px] min-w-[50px] md:w-[80px] md:min-w-[80px] text-center border bg-blue-50 text-blue-900 font-bold p-1"><span className="text-[10px] md:text-xs">السلوك</span></TableHead>
+            <TableHead className="w-[35px] min-w-[35px] md:w-[80px] md:min-w-[80px] text-center border bg-yellow-50 text-yellow-900 font-bold p-0"><span className="text-[9px] md:text-xs">الجهد</span></TableHead>
+            <TableHead className="w-[40px] min-w-[40px] md:w-[80px] md:min-w-[80px] text-center border bg-green-50 text-green-900 font-bold p-0"><span className="text-[8px] md:text-xs tracking-tighter">الاستيعاب</span></TableHead>
+            
+            {daysList.map(day => (
+                <TableHead key={day.toString()} className="w-[50px] text-center border p-1 min-w-[50px]">
+                    <div className="flex flex-col items-center">
+                        <span className="text-[10px] font-bold">{format(day, "EEE", { locale: ar })}</span>
+                        <span className="text-[9px] text-slate-400">{format(day, "d/M")}</span>
+                    </div>
+                </TableHead>
+            ))}
+            <TableHead className="w-[60px] md:w-[80px] text-center border bg-slate-800 text-white font-bold p-1 static md:sticky md:left-0 z-20">المجموع</TableHead>
+            <TableHead className="w-[100px] md:w-[150px] text-center border p-1">ملاحظات</TableHead>
+        </TableRow>
+    </TableHeader>
+
+    <TableBody>
+        {paginatedSoldiers.map((soldier, idx) => {
+            const total = (Number(soldier.scores.b) + Number(soldier.scores.e) + Number(soldier.scores.c)) / 3;
+            return (
+                <TableRow key={soldier.id} className="hover:bg-slate-50 group h-12">
+                    <TableCell className="p-1 border text-center sticky right-0 bg-white group-hover:bg-slate-50 z-10">
+                        <Checkbox checked={selectedSoldiers.has(soldier.id)} onCheckedChange={(checked: any) => { const newSet = new Set(selectedSoldiers); if(checked) newSet.add(soldier.id); else newSet.delete(soldier.id); setSelectedSoldiers(newSet); }} />
+                    </TableCell>
+                    
+                    {/* 📸 خلية الصورة: تظهر على الهاتف وتم تفعيل lazy loading */}
+                    <TableCell className="p-1 border text-center sticky right-[40px] bg-white group-hover:bg-slate-50 z-10">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full overflow-hidden bg-slate-100 border border-slate-200 mx-auto shadow-sm relative">
+                            <img 
+                                // ✅ حذفنا التوقيت الزمني لضمان الحفظ في الكاش (توفير هائل في البيانات)
+                                src={soldier.image_url || "/placeholder-user.png"} 
+                                alt={soldier.name}
+                                // ✅ تفعيل التحميل الكسول
+                                loading="lazy" 
+                                className="w-full h-full object-cover"
+                                onError={(e) => { (e.target as HTMLImageElement).src = "/placeholder-user.png"; }} 
+                            />
+                        </div>
+                    </TableCell>
+
+                    <TableCell className="p-1 border text-right font-medium text-[10px] md:text-xs sticky right-[90px] bg-white group-hover:bg-slate-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate max-w-[100px] md:max-w-none">
+                        {soldier.name}
+                    </TableCell>
+
+                    <TableCell className="p-1 border text-center font-bold text-blue-700 bg-blue-50/50 text-xs md:text-sm">{soldier.scores.b}</TableCell>
+                    <TableCell className="p-0 border text-center bg-yellow-50/50"><Input inputMode="decimal" className="h-8 w-full text-center text-[10px] md:text-sm font-bold p-0 border-transparent hover:border-slate-300 focus:bg-white" value={soldier.scores.e} onChange={(e) => handleScoreChange(soldier.id, 'e', e.target.value)} /></TableCell>
+                    <TableCell className="p-0 border text-center bg-green-50/50"><Input inputMode="decimal" className="h-8 w-full text-center text-[10px] md:text-sm font-bold p-0 border-transparent hover:border-slate-300 focus:bg-white" value={soldier.scores.c} onChange={(e) => handleScoreChange(soldier.id, 'c', e.target.value)} /></TableCell>
                                                         {/* 👇 تم ترتيب الأسطر هنا أيضاً */}
                                                         {daysList.map(day => {
                                                             const dayAtt = soldier.attendance.filter((a: any) => isSameDay(parseISO(a.date), day));
