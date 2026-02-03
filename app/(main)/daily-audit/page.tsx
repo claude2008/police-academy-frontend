@@ -701,8 +701,8 @@ const handlePrint = () => {
 
                     <div className="grid grid-cols-3 gap-6 pt-16 text-center border-t-2 border-dashed border-slate-200 mt-10">
                         {[
-                            { label: "  مشرف التدريب", key: "supervisor" },
-                            { label: "  ضابط التدريب", key: "officer" },
+                            { label: "  ضابط التدريب الرياضي", key: "supervisor" },
+                            { label: "  ضابط التدريب العسكري", key: "officer" },
                             { label: "رئيس قسم التدريب العسكري والرياضي", key: "head" }
                         ].map((item) => {
                             const approval = attendanceData.approvals?.[item.key];

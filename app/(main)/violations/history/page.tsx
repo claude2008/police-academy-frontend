@@ -731,8 +731,8 @@ const confirmDeleteAll = async () => {
                     {/* 🟢 قسم الاعتماد والتوقيعات الإلكترونية المحدث */}
                    <div className="grid grid-cols-3 gap-6 pt-16 text-center border-t-2 border-dashed border-black mt-10">
     {[
-        { label: "supervisor", defaultName: "مشرف التدريب" },
-        { label: "officer", defaultName: "ضابط التدريب" },
+        { label: "supervisor", defaultName: "ضابط التدريب الرياضي" },
+        { label: "officer", defaultName: "ضابط التدريب العسكري" },
         { label: "head", defaultName: "رئيس قسم التدريب العسكري والرياضي" }
     ].map((item) => {
         const approval = approvals[item.label];

@@ -139,33 +139,41 @@ useEffect(() => {
   };
 
   // ابحث عن الدالة وحدثها كالتالي:
-const fetchTodaySessions = async () => {
+// 🟢 التعديل: جعل الدالة تستقبل الدورة والدفعة كبارامترات
+const fetchTodaySessions = async (courseName?: string, batchName?: string) => {
+    // نستخدم القيم الممررة أو نأخذ من الـ State كاحتياط
+    const targetCourse = courseName || selectedSoldier?.course;
+    const targetBatch = batchName || selectedSoldier?.batch;
+
+    if (!targetCourse) return;
+
     try {
         const today = format(new Date(), "yyyy-MM-dd");
-        // أضفنا التاريخ لكي نعرف هل حصص "اليوم" معتمدة أم لا
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates/today-sessions?course=${selectedSoldier?.course}&batch=${selectedSoldier?.batch}&date=${today}`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates/today-sessions?course=${targetCourse}&batch=${targetBatch}&date=${today}`, {
             headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
         });
         if (res.ok) {
             const data = await res.json();
-            setAvailablePeriods(data); // البيانات الآن تحتوي على حقل is_approved لكل حصة
+            setAvailablePeriods(data);
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Error fetching sessions:", e); }
 };
 
   const handleSearchSoldier = async () => {
-    // 1. التطهير القسري (Forced Normalization) 
-    // نقرأ القيمة ونحولها فوراً مهما كان مصدرها (هاتف، تاب، حاسوب)
+    // 1. التطهير القسري وتحويل الأرقام لضمان الدقة
     const rawInput = searchTerm.trim();
-    
-    // تحويل الأرقام العربية إلى إنجليزية يدوياً داخل الدالة لضمان الصفاء
     const cleanQuery = rawInput.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
 
     if (!cleanQuery) return;
 
     setLoading(true);
+    
+    // 🟢 خطوة احترافية: تصفير قائمة الحصص السابقة فوراً بمجرد الضغط على بحث
+    // هذا يمنع المستخدم من اختيار حصة قديمة بالخطأ أثناء انتظار البحث الجديد
+    setAvailablePeriods([]);
+    setSelectedPeriod("");
+
     try {
-      // 2. استخدام encodeURIComponent لضمان عدم ضياع أي رمز أثناء الانتقال من الهاتف للسيرفر
       const url = `${process.env.NEXT_PUBLIC_API_URL}/soldiers/search?query=${encodeURIComponent(cleanQuery)}`;
       
       const res = await fetch(url, {
@@ -175,14 +183,24 @@ const fetchTodaySessions = async () => {
       if (res.ok) {
         const data = await res.json();
         if (data && data.length > 0) {
-          // ✅ النجاح
-          setSelectedSoldier(data[0]);
+          // جلب بيانات الجندي الأول في نتائج البحث
+          const foundSoldier = data[0]; 
+
+          // ✅ 1. تحديث بيانات الجندي في الواجهة
+          setSelectedSoldier(foundSoldier);
           setViolationSearch(""); 
-          setSelectedPeriod("");
-          toast.success("تم العثور على المجند");
+
+          // ✅ 2. التحديث السحري: جلب حصص الجندي "المكتشف للتو" فوراً
+          // نمرر البيانات مباشرة من المتغير foundSoldier وليس من الـ State
+          // لضمان السرعة وتجنب تضارب البيانات القديمة
+          if (typeof fetchTodaySessions === 'function') {
+             fetchTodaySessions(foundSoldier.course, foundSoldier.batch);
+          }
+
+          toast.success("تم العثور على المجند وتزامن الحصص ✅");
         } else {
-          // ❌ الفشل (الرقم غير موجود فعلاً)
           toast.error(`الرقم (${cleanQuery}) غير مسجل أو الدورة مؤرشفة`);
+          setSelectedSoldier(null);
         }
       }
     } catch (e) {
