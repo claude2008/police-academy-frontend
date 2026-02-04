@@ -12,6 +12,16 @@ import {
     Loader2, Eye, Dumbbell, Swords, FileText, Calculator, 
     Download, Printer, CheckCircle2 ,Trash2 // 👈 أضف هذه هنا
 } from "lucide-react"
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { toast } from "sonner" // 👈 تأكد من أنك تستخدم مكتبة sonner كما في الملفات الأخرى
 import { format, parseISO } from "date-fns"
 import { ar } from "date-fns/locale"
@@ -24,7 +34,7 @@ export default function DashboardView() {
     const [filterCompany, setFilterCompany] = useState("all")
     const [subject, setSubject] = useState("لياقة بدنية")
     const [filterOptions, setFilterOptions] = useState<any>({ courses: [], batches: [], companies: [] })
-    
+    const [reportToDelete, setReportToDelete] = useState<number | null>(null);
     const [dashboardData, setDashboardData] = useState<any[]>([])
     const [viewMode, setViewMode] = useState<'cards' | 'details' | 'report-view' | 'final-grades'>('cards')
     const [filterPeriod, setFilterPeriod] = useState("all")
@@ -345,6 +355,31 @@ const handleSaveFinalGrades = async () => {
         setLoadingDetails(false);
     }
 };
+const executeDeleteReport = async () => {
+    if (!reportToDelete) return;
+    
+    const toastId = toast.loading("جاري حذف الأسبوع والدرجات...");
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports/${reportToDelete}`, {
+            method: "DELETE",
+            headers: { 
+                "Authorization": `Bearer ${localStorage.getItem("token")}` 
+            }
+        });
+
+        if (res.ok) {
+            toast.success("تم الحذف بنجاح ✅", { id: toastId });
+            // تحديث القائمة فوراً في الواجهة لحذف السطر
+            setWeeksList(prev => prev.filter(w => w.id !== reportToDelete));
+            setReportToDelete(null);
+        } else {
+            const err = await res.json();
+            toast.error(err.detail || "فشل الحذف", { id: toastId });
+        }
+    } catch (e) {
+        toast.error("خطأ في الاتصال بالسيرفر", { id: toastId });
+    }
+};
     const handleViewDetails = (platoonItem: any) => { setSelectedPlatoon(platoonItem); setViewMode('details'); fetchWeeksList(platoonItem.platoon); }
     const handleBackToCards = () => { setViewMode('cards'); setSelectedPlatoon(null); setWeeksList([]); }
     const handleBackToWeeks = () => { setViewMode('details'); setSelectedReport(null); setReportGrades([]); setFinalMatrix(null); }
@@ -560,10 +595,26 @@ const handleSaveFinalGrades = async () => {
             {formatDateSafe(week.last_update)}
         </TableCell>
         <TableCell className="text-center">
-            <Button size="sm" variant="outline" onClick={() => handleViewReportGrades(week.id)}>
-                عرض الدرجات
-            </Button>
-        </TableCell>
+    <div className="flex items-center justify-center gap-2">
+        {/* زر العرض الموجود مسبقاً */}
+        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => handleViewReportGrades(week.id)}>
+            عرض الدرجات
+        </Button>
+
+        {/* 🔴 زر الحذف الجديد (يظهر فقط للأدوار المخولة) */}
+        <Button 
+            size="icon" 
+            variant="ghost" 
+            className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors"
+            onClick={(e) => {
+                e.stopPropagation(); // لمنع تداخل الضغطات
+                setReportToDelete(week.id);
+            }}
+        >
+            <Trash2 className="w-4 h-4" />
+        </Button>
+    </div>
+</TableCell>
     </TableRow>
 ))}
 
@@ -812,6 +863,37 @@ const handleSaveFinalGrades = async () => {
                     </div>
                 </div>
             )}
+            {/* نافذة تأكيد الحذف */}
+<AlertDialog open={reportToDelete !== null} onOpenChange={() => setReportToDelete(null)}>
+    <AlertDialogContent dir="rtl" className="max-w-[400px] rounded-2xl border-none shadow-2xl bg-white">
+        <AlertDialogHeader className="text-right">
+            <div className="bg-red-50 w-12 h-12 rounded-full flex items-center justify-center mb-4">
+                <Trash2 className="w-6 h-6 text-red-600" />
+            </div>
+            <AlertDialogTitle className="text-xl font-black text-slate-800">
+                حذف سجل الأسبوع نهائياً؟
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-600 font-bold leading-relaxed pt-2">
+                هل أنت متأكد من حذف هذا الأسبوع؟ 
+                <br />
+                <span className="text-red-500 text-xs mt-2 block">
+                    ⚠️ سيتم مسح كافة درجات الطلاب المرتبطة بهذا الأسبوع من قاعدة البيانات ولا يمكن التراجع!
+                </span>
+            </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter className="flex-row-reverse gap-3 mt-6">
+            <AlertDialogAction 
+                onClick={executeDeleteReport}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold h-11 rounded-xl"
+            >
+                نعم، احذف الكل
+            </AlertDialogAction>
+            <AlertDialogCancel className="flex-1 h-11 rounded-xl border-slate-200 text-slate-500 font-medium mt-0">
+                تراجع
+            </AlertDialogCancel>
+        </AlertDialogFooter>
+    </AlertDialogContent>
+</AlertDialog>
         </div>
         </ProtectedRoute>
     )
