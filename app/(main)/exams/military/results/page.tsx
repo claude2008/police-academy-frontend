@@ -1299,11 +1299,14 @@ const saveTrainerScoresToDB = async () => {
     {/* 2️⃣ السطر الثاني: الدورة + الدفعة (عمودين) */}
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* فلتر الدورة */}
-      <div className="space-y-1">
+     <div className="space-y-1">
     <Select value={courseFilter} onValueChange={(v) => {setCourseFilter(v); setBatchFilter("all"); setCurrentPage(1);}}>
         <SelectTrigger className="h-10 bg-white font-bold border-slate-200">
-            {/* 🟢 placeholder ذكي يتغير حسب الحالة */}
-            <SelectValue placeholder={coursesList.length === 0 ? "لا توجد صلاحيات" : "-- اختر الدورة --"} />
+            {/* 🟢 placeholder ذكي: إذا كان أونر والقائمة فارغة، يقول "لا توجد بيانات" وليس "لا تملك صلاحية" */}
+            <SelectValue placeholder={
+                loading ? "جاري التحميل..." : 
+                (coursesList.length === 0 ? (userRole === 'owner' ? "لا توجد سجلات" : "لا تملك صلاحيات") : "-- اختر الدورة --")
+            } />
         </SelectTrigger>
         <SelectContent dir="rtl">
             {coursesList.length > 0 ? (
@@ -1312,18 +1315,23 @@ const saveTrainerScoresToDB = async () => {
                     {coursesList.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
                 </>
             ) : (
-                <SelectItem value="none" disabled className="text-red-500 font-bold">لا تملك صلاحيات</SelectItem>
+                // 🟢 رسالة التنبيه داخل القائمة
+                <SelectItem value="none" disabled className="text-slate-500 font-bold">
+                    {userRole === 'owner' ? "لا توجد سجلات اختبارات حالياً" : "عفواً، لا تملك صلاحية عرض هذا النطاق"}
+                </SelectItem>
             )}
         </SelectContent>
     </Select>
 </div>
 
         {/* فلتر الدفعة */}
-       <div className="space-y-1">
+      <div className="space-y-1">
     <Select value={batchFilter} onValueChange={(v) => {setBatchFilter(v); setCurrentPage(1);}}>
         <SelectTrigger className="h-10 bg-white font-bold border-slate-200">
-            {/* 🟢 placeholder ذكي يتغير حسب الحالة */}
-            <SelectValue placeholder={batchesList.length === 0 ? "لا توجد دفعات" : "-- اختر الدفعة --"} />
+            <SelectValue placeholder={
+                loading ? "جاري التحميل..." : 
+                (batchesList.length === 0 ? (userRole === 'owner' ? "لا توجد دفعات" : "لا تملك صلاحيات") : "-- اختر الدفعة --")
+            } />
         </SelectTrigger>
         <SelectContent dir="rtl">
             {batchesList.length > 0 ? (
@@ -1332,7 +1340,9 @@ const saveTrainerScoresToDB = async () => {
                     {batchesList.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
                 </>
             ) : (
-                <SelectItem value="none" disabled className="text-red-500 font-bold">لا تملك صلاحيات</SelectItem>
+                <SelectItem value="none" disabled className="text-slate-500 font-bold">
+                    {userRole === 'owner' ? "لا توجد دفعات مسجلة" : "نطاق الدفعات غير مسموح"}
+                </SelectItem>
             )}
         </SelectContent>
     </Select>

@@ -56,8 +56,8 @@ const [activeCard, setActiveCard] = useState<string | null>(null);
     const targetBatch = searchParams.get('batch');
 const [isDeleting, setIsDeleting] = useState(false);
     const [customTitles, setCustomTitles] = useState({
-    supervisor: "مشرف التدريب",
-    officer: "ضابط التدريب",
+    supervisor: " ضابط التدريب الرياضي",
+    officer: "ضابط التدريب العسكري",
     head: "رئيس قسم التدريب العسكري والرياضي"
 });
     // 🟢 تحديث منطق التجميع ليشمل محرر المخالفة

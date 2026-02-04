@@ -667,7 +667,7 @@ if (feature === 'others') {
         </button>
 
         <button onClick={() => executeAction('history')} className="w-full p-4 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-slate-100">
-            <FileText className="w-5 h-5"/> سجل المخالفات العام
+            <FileText className="w-5 h-5"/> سجل المخالفات المعتمد
         </button>
     </div>
 )}

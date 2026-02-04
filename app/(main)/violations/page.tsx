@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react"
 import { 
   Search, RefreshCw, Printer, Plus, 
-  Trash2, User, ShieldAlert, CheckCircle2, Info, Save, Clock
+  Trash2, User, ShieldAlert, CheckCircle2, Info, Save, Clock,Loader2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -159,56 +159,65 @@ const fetchTodaySessions = async (courseName?: string, batchName?: string) => {
     } catch (e) { console.error("Error fetching sessions:", e); }
 };
 
-  const handleSearchSoldier = async () => {
-    // 1. التطهير القسري وتحويل الأرقام لضمان الدقة
+ const handleSearchSoldier = async () => {
     const rawInput = searchTerm.trim();
     const cleanQuery = rawInput.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
 
     if (!cleanQuery) return;
 
     setLoading(true);
-    
-    // 🟢 خطوة احترافية: تصفير قائمة الحصص السابقة فوراً بمجرد الضغط على بحث
-    // هذا يمنع المستخدم من اختيار حصة قديمة بالخطأ أثناء انتظار البحث الجديد
     setAvailablePeriods([]);
     setSelectedPeriod("");
 
     try {
-      const url = `${process.env.NEXT_PUBLIC_API_URL}/soldiers/search?query=${encodeURIComponent(cleanQuery)}`;
-      
-      const res = await fetch(url, {
-        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-      });
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/search?query=${encodeURIComponent(cleanQuery)}`, {
+            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+        });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.length > 0) {
-          // جلب بيانات الجندي الأول في نتائج البحث
-          const foundSoldier = data[0]; 
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.length > 0) {
+                const foundSoldier = data[0];
 
-          // ✅ 1. تحديث بيانات الجندي في الواجهة
-          setSelectedSoldier(foundSoldier);
-          setViolationSearch(""); 
+                // 🛡️ [حارس النطاق الذكي]
+                const user = JSON.parse(localStorage.getItem("user") || "{}");
+                const scope = user?.extra_permissions?.scope;
 
-          // ✅ 2. التحديث السحري: جلب حصص الجندي "المكتشف للتو" فوراً
-          // نمرر البيانات مباشرة من المتغير foundSoldier وليس من الـ State
-          // لضمان السرعة وتجنب تضارب البيانات القديمة
-          if (typeof fetchTodaySessions === 'function') {
-             fetchTodaySessions(foundSoldier.course, foundSoldier.batch);
-          }
+                if (user.role !== 'owner' && scope?.is_restricted) {
+                    const currentKeyPrefix = `${foundSoldier.course}||${foundSoldier.batch}->`;
+                    const allowedCompanies = scope.companies || [];
+                    const allowedPlatoons = scope.platoons || [];
 
-          toast.success("تم العثور على المجند وتزامن الحصص ✅");
-        } else {
-          toast.error(`الرقم (${cleanQuery}) غير مسجل أو الدورة مؤرشفة`);
-          setSelectedSoldier(null);
+                    // التحقق: هل السرية والفصيل ضمن المسموح؟
+                    const isCompanyAllowed = allowedCompanies.includes(`${currentKeyPrefix}${foundSoldier.company}`);
+                    const isPlatoonAllowed = allowedPlatoons.includes(`${currentKeyPrefix}${foundSoldier.platoon}`);
+
+                    if (!isCompanyAllowed || !isPlatoonAllowed) {
+                        toast.error("عفواً، هذا المجند خارج النطاق المصرح لك بالوصول إليه 🔒");
+                        setSelectedSoldier(null);
+                        setLoading(false);
+                        return; // وقف العملية هنا
+                    }
+                }
+
+                // ✅ إذا اجتاز الفحص أو كان "أونر"
+                setSelectedSoldier(foundSoldier);
+                setViolationSearch(""); 
+                if (typeof fetchTodaySessions === 'function') {
+                    fetchTodaySessions(foundSoldier.course, foundSoldier.batch);
+                }
+                toast.success("تم العثور على المجند ✅");
+            } else {
+                toast.error("لم يتم العثور على نتائج");
+                setSelectedSoldier(null);
+            }
         }
-      }
     } catch (e) {
-      toast.error("فشل الاتصال بالسيرفر");
+        toast.error("خطأ في الاتصال");
     } finally {
-      setLoading(false);
+        setLoading(false);
     }
-  };
+};
 
   const groupedQueue = useMemo(() => {
     const groups: { [key: string]: any } = {};
@@ -350,24 +359,21 @@ const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       body: JSON.stringify({ violations: payload })
     });
 
-    if (res.ok) {
-      toast.success("تم الحفظ في قاعدة البيانات ✅");
-      setIsSaved(true);
-      localStorage.setItem("is_queue_saved", "true");
+   if (res.ok) {
+    toast.success("تم الحفظ والترحيل لقاعدة البيانات بنجاح ✅");
 
-      // 🟢 التعديل الجوهري هنا:
-      // نقوم بتحديث القائمة المعروضة أمام المستخدم بحيث:
-      // 1. تبقى أسماء الطلاب والمخالفات كما هي (للطباعة والمراجعة).
-      // 2. يتم مسح بيانات الصور (Base64) من الذاكرة لأنها رُفعت بالفعل.
-      const cleanedQueue = sessionQueue.map(item => ({
-        ...item,
-        attachments: [] // تفريغ المرفقات محلياً لمنع تكرار الرفع
-      }));
-      
-      setSessionQueue(cleanedQueue);
-      // تحديث الـ LocalStorage أيضاً لضمان عدم تكرارها عند تحديث الصفحة
-      localStorage.setItem("pending_violations", JSON.stringify(cleanedQueue));
-    }
+    // 🧹 تصفير كل شيء فوراً للبدء من جديد
+    setSessionQueue([]); // مسح الجدول
+    setIsSaved(false); // إعادة زر الحفظ لوضعه الطبيعي
+    
+    // مسح الذاكرة المحلية (LocalStorage) لضمان عدم عودة البيانات عند التحديث
+    localStorage.removeItem("pending_violations");
+    localStorage.removeItem("is_queue_saved");
+
+    // اختياري: تصفير بيانات الجندي المختار حالياً لتسهيل البحث عن التالي
+    setSelectedSoldier(null);
+    setSearchTerm("");
+}
   } catch (error) {
     toast.error("حدث خطأ أثناء الحفظ النهائي");
   } finally { 
@@ -686,25 +692,19 @@ if (isSaved && entryToDelete) {
         <Card className="border-none shadow-2xl overflow-hidden rounded-3xl print-section">
           <CardHeader className="bg-slate-900 text-white py-4 px-8 flex flex-row items-center justify-between no-print">
             <CardTitle className="text-lg font-black flex items-center gap-3"><CheckCircle2 className="w-5 h-5 text-green-400"/>  المخالفات</CardTitle>
-            <div className="flex gap-2">
-    {!isSaved ? (
-        <Button 
-            onClick={handleFinalSave} 
-            disabled={sessionQueue.length === 0 || isSaving}
-            className="bg-[#c5b391] hover:bg-[#b4a280] text-slate-900 font-black px-8 rounded-xl"
-        >
-            {isSaving ? <RefreshCw className="animate-spin ml-2"/> : <Save className="ml-2"/>}
-            حفظ السجلات ({sessionQueue.length})
-        </Button>
-    ) : (
-        <Button 
-            onClick={startNewSession} 
-            className="bg-green-600 hover:bg-green-700 text-white font-black px-8 rounded-xl animate-in zoom-in-95"
-        >
-            <CheckCircle2 className="ml-2 w-5 h-5"/>
-            تم الحفظ - اضغط لبدء رصد جديد
-        </Button>
-    )}
+           <div className="flex gap-2">
+    <Button 
+        onClick={handleFinalSave} 
+        disabled={sessionQueue.length === 0 || isSaving}
+        className="bg-[#c5b391] hover:bg-[#b4a280] text-slate-900 font-black px-8 rounded-xl shadow-lg transition-all active:scale-95"
+    >
+        {isSaving ? (
+            <Loader2 className="animate-spin ml-2 w-5 h-5"/>
+        ) : (
+            <Save className="ml-2 w-5 h-5"/>
+        )}
+        ترحيل وحفظ السجلات ({sessionQueue.length})
+    </Button>
 </div>
           </CardHeader>
           <CardContent className="p-0">

@@ -716,24 +716,25 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
     </div>
 </div>
 
-                       <div className="text-center mb-6 mt-2">
-    <div className="text-center mb-6 mt-2">
-    <div className="inline-block min-w-[350px] border-2 border-black rounded-xl overflow-hidden shadow-sm">
-        {/* السطر العلوي: العنوان الثابت */}
-        <h1 className="text-xl font-black bg-[#c5b391] text-black py-2 border-b-2 border-black [-webkit-print-color-adjust:exact]">
+                      
+   {/* --- العنوان الرئيسي المحسن للهاتف والكمبيوتر --- */}
+<div className="text-center mb-6 mt-2 px-2"> {/* أضفنا px-2 لضمان مسافة جانبية على الهاتف */}
+    <div className="inline-block w-full max-w-[400px] border-2 border-black rounded-xl overflow-hidden shadow-sm">
+        {/* السطر العلوي: العنوان - قمنا بتصغير الخط قليلاً للهاتف باستخدام text-lg md:text-xl */}
+        <h1 className="text-lg md:text-xl font-black bg-[#c5b391] text-black py-2 border-b-2 border-black [-webkit-print-color-adjust:exact]">
             كشف الحالات والمخالفات
         </h1>
         
-        {/* السطر السفلي: إضافة كلمة "التكميل:" قبل اسم الحصة */}
-        <div className="bg-white py-1.5 px-6 flex justify-center items-center gap-1.5">
-            <p className="text-lg font-black text-slate-800">
+        {/* السطر السفلي: اسم الحصة - استخدمنا flex-wrap لضمان عدم خروج النص إذا كان طويلاً */}
+        <div className="bg-white py-2 px-4 flex flex-wrap justify-center items-center gap-1.5">
+            <p className="text-sm md:text-lg font-black text-slate-800 leading-tight">
                 <span className="text-[#8a7a5b]">التكميل: </span>
                 {selectedSession.name}
             </p>
         </div>
     </div>
 </div>
-</div>
+
 {/* 🟢 جدول القوة الشامل والمحدث */}
 {/* 🟢 حاوية الجدول: تضمن عدم وجود هوامش زائدة عند الطباعة */}
 <div className="overflow-x-auto rounded-xl border-2 border-[#c5b391] shadow-md mb-8 print:border-black print:rounded-none print:shadow-none print:m-0 print:w-full">
