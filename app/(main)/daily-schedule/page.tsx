@@ -200,19 +200,33 @@ const fetchSoldiers = async () => {
         }
 
         // 2. 🟢 التعديل الجوهري: معالجة بيانات الحصص والأقفال
-        if (dRes.ok) {
-            const responseData = await dRes.json();
-            
-            /* ملاحظة: سنقوم بتحديث الباك إند ليرسل كائن يحتوي على:
-               { data: {...}, approved_sessions: ["0", "1"] }
-            */
-            
-            // تحديث بيانات الحضور (المربعات الملونة)
-            setAttendanceData(responseData.data || responseData); 
+        // داخل دالة fetchSoldiers في ملف DailySchedulePage.tsx
+if (dRes.ok) {
+    const responseData = await dRes.json();
+    
+    // 1. تحديث بيانات المربعات الملونة (الحالات والمخالفات)
+    setAttendanceData(responseData.data || responseData); 
 
-            // تحديث قائمة الحصص المعتمدة (الأقفال)
-            setLockedSessions(responseData.approved_sessions || []);
-        }
+    // 2. 🔒 منطق القفل الذكي والموحد:
+    // نأخذ المصفوفة الموحدة 'approved_sessions' التي أرسلها الباك إند
+    // مع وضع احتياط للمسميات الأخرى لضمان عدم حدوث خطأ
+    const unifiedApproved = responseData.approved_sessions || [];
+    const supervisorApproved = responseData.supervisor_approved_sessions || [];
+    const officerApproved = responseData.officer_approved_sessions || [];
+    
+    // دمج كل المصادر الممكنة في قائمة واحدة وحذف التكرار
+    const allLocked = Array.from(new Set([
+        ...unifiedApproved, 
+        ...supervisorApproved, 
+        ...officerApproved
+    ]));
+    
+    // تحويل الأرقام إلى نصوص لضمان المطابقة مع sIdx في الجدول
+    setLockedSessions(allLocked.map(String)); 
+
+    // 🔍 سطر للفحص (يظهر في الكونسول فقط) للتأكد من وصول الأرقام
+    console.log("🔒 الحصص المقفلة المستلمة من السيرفر:", allLocked);
+}
 
     } catch (e) { 
         toast.error("فشل التحديث"); 
@@ -632,7 +646,36 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
                     <div className={`${status.color} rounded px-1 py-0.5 text-[9px] font-black border border-current/20 shadow-sm text-center truncate max-w-[100px] mx-auto flex items-center gap-1`}>
                         {/* 🟢 إظهار أيقونة قفل صغيرة إذا كانت معتمدة */}
                         {isLocked && <Lock className="w-2 h-2 text-current opacity-60" />}
-                        {record.status === "other" && record.note ? record.note : status.label}
+                       <div className={`${status.color} rounded px-1 py-0.5 text-[9px] font-black border border-current/20 shadow-sm text-center truncate max-w-[100px] mx-auto flex items-center gap-1`}>
+    {isLocked && <Lock className="w-2 h-2 text-current opacity-60" />}
+    
+    {(() => {
+        // 1. تحديد النص الأساسي (الملاحظة لحالة أخرى، أو التسمية العادية)
+        const mainLabel = record.status === "other" && record.note ? record.note : status.label;
+        
+        // 2. تحديد الحصانة (الحالات التي لا نريد إظهار "1ي" لها)
+        const excludedFromOneDay = ["absent", "clinic", "late_parade", "late_class"];
+        
+        // 3. منطق عرض المدة:
+        // نظهر الرقم إذا كانت (المدة أكبر من 1) 
+        // أو إذا كانت (المدة تساوي 1 والحالة ليست من ضمن المستثنين)
+        let showDuration = false;
+        const durationValue = parseInt(record.duration) || 1;
+
+        if (durationValue > 1) {
+            showDuration = true;
+        } else if (durationValue === 1 && !excludedFromOneDay.includes(record.status)) {
+            showDuration = true;
+        }
+
+        return (
+            <span>
+                {mainLabel}
+                {showDuration && <span className="mr-0.5 text-[8px] opacity-80">({durationValue}ي)</span>}
+            </span>
+        );
+    })()}
+</div>
                     </div>
                 ) : (
                     // 🟢 إذا كانت الحصة معتمدة وهي فارغة، نظهر القفل بدل علامة +

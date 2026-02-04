@@ -289,7 +289,7 @@ const [draftsPage, setDraftsPage] = useState(1);
       if (!dayToDelete) return;
 
       const user = JSON.parse(localStorage.getItem('user') || '{}');
-      if (!["owner", "manager", "admin"].includes(user.role)) {
+      if (!["owner", "manager", "admin", "assistant_admin"].includes(user.role)) {
           toast.error("عفواً، هذه الصلاحية للمدير فقط");
           setDayToDelete(null);
           return;

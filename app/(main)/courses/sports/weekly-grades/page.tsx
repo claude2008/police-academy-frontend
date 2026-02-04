@@ -100,58 +100,70 @@ export default function WeeklyGradesPage() {
 
     // --- Effects ---
    useEffect(() => {
-        const fetchFilters = async () => {
-            try {
-                const params = new URLSearchParams()
-                if (filterCourse !== 'all') params.append('course', filterCourse)
-                if (filterBatch !== 'all') params.append('batch', filterBatch)
-                if (filterCompany !== 'all') params.append('company', filterCompany)
-                
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${params.toString()}`)
-                
-                if (res.ok) {
-                    let data = await res.json();
+       const fetchFilters = async () => {
+    try {
+        const params = new URLSearchParams();
+        if (filterCourse !== 'all') params.append('course', filterCourse);
+        if (filterBatch !== 'all') params.append('batch', filterBatch);
+        if (filterCompany !== 'all') params.append('company', filterCompany);
 
-                    // 🟢 [تطبيق قيود النطاق الذكية]
-                    const user = JSON.parse(localStorage.getItem("user") || "{}");
-                    const scope = user?.extra_permissions?.scope;
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${params.toString()}`);
 
-                    if (user.role !== 'owner' && scope?.is_restricted) {
-                        const allowedCourses = scope.courses || [];
-                        const allowedCompanies = scope.companies || [];
-                        const allowedPlatoons = scope.platoons || [];
+        if (res.ok) {
+            let data = await res.json();
 
-                        // 1. فلترة الدورات المسموحة
-                        data.courses = data.courses.filter((courseName: string) => {
-                            return allowedCourses.some((ac: any) => ac.startsWith(courseName));
-                        });
+            // 🟢 [تطبيق قيود النطاق الذكية المحدثة]
+            const user = JSON.parse(localStorage.getItem("user") || "{}");
+            const scope = user?.extra_permissions?.scope;
 
-                        // 2. فلترة السرايا والفصائل بناءً على الدورة والدفعة المختارة حالياً
-                        if (filterCourse !== "all" && filterBatch !== "all") {
-                            const currentKeyPrefix = `${filterCourse}||${filterBatch}->`;
-                            
-                            // فلترة السرايا
-                            data.companies = data.companies.filter((companyName: string) => {
-                                return allowedCompanies.includes(`${currentKeyPrefix}${companyName}`);
-                            });
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedCourses = scope.courses || [];
+                const allowedCompanies = scope.companies || [];
+                const allowedPlatoons = scope.platoons || [];
 
-                            // فلترة الفصائل
-                            data.platoons = data.platoons.filter((platoonName: string) => {
-                                return allowedPlatoons.includes(`${currentKeyPrefix}${platoonName}`);
-                            });
-                        } else {
-                            // إذا لم يتم اختيار دورة/دفعة، نفرغ السرايا والفصائل للأمان
-                            data.companies = [];
-                            data.platoons = [];
-                        }
-                    }
+                // 1. فلترة الدورات المسموحة
+                data.courses = data.courses.filter((courseName: string) => {
+                    return allowedCourses.some((ac: any) => ac.startsWith(courseName));
+                });
 
-                    setFilterOptions(data);
+                // 2. 🛡️ منطق الفلترة الذكي للسرايا والفصائل (حل مشكلة الدورة بدون دفعة)
+                if (filterCourse !== "all") {
+                    
+                    // تحديد معرف الدورة (ID) المستخدم في النطاق:
+                    // إذا كان المستخدم قد اختار دفعة محددة نستخدم (الدورة||الدفعة)
+                    // إذا لم يحدد دفعة (all) أو الدورة ليس لها دفعات أصلاً، نستخدم (اسم الدورة) فقط
+                    const courseKeyId = (filterBatch && filterBatch !== "all") 
+                        ? `${filterCourse}||${filterBatch}` 
+                        : filterCourse;
+
+                    const currentKeyPrefix = `${courseKeyId}->`;
+
+                    // فلترة السرايا: نُبقي فقط السرايا التي يملك المستخدم صلاحية عليها في هذه الدورة/الدفعة
+                    data.companies = data.companies.filter((companyName: string) => {
+                        const fullCompKey = `${currentKeyPrefix}${companyName}`;
+                        return allowedCompanies.includes(fullCompKey);
+                    });
+
+                    // فلترة الفصائل: نُبقي فقط الفصائل التي يملك المستخدم صلاحية عليها في هذه الدورة/الدفعة
+                    data.platoons = data.platoons.filter((platoonName: string) => {
+                        const fullPlatKey = `${currentKeyPrefix}${platoonName}`;
+                        return allowedPlatoons.includes(fullPlatKey);
+                    });
+
+                    // 💡 ملاحظة: إذا كانت النتائج صفرية بعد الفلترة، ستبقى القوائم فارغة لمنع المتسللين
+                } else {
+                    // إذا لم يتم اختيار دورة، نفرغ القوائم التابعة
+                    data.companies = [];
+                    data.platoons = [];
                 }
-            } catch (e) { 
-                console.error("Filter error", e); 
             }
+
+            setFilterOptions(data);
         }
+    } catch (e) {
+        console.error("Filter error", e);
+    }
+};
         if (isClient) fetchFilters()
     }, [filterCourse, filterBatch, filterCompany, isClient]);
     useEffect(() => {

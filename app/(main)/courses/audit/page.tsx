@@ -717,19 +717,22 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
 </div>
 
                        <div className="text-center mb-6 mt-2">
-    <div className="inline-block min-w-[300px] border-2 border-black rounded-xl overflow-hidden shadow-sm">
+    <div className="text-center mb-6 mt-2">
+    <div className="inline-block min-w-[350px] border-2 border-black rounded-xl overflow-hidden shadow-sm">
         {/* السطر العلوي: العنوان الثابت */}
         <h1 className="text-xl font-black bg-[#c5b391] text-black py-2 border-b-2 border-black [-webkit-print-color-adjust:exact]">
             كشف الحالات والمخالفات
         </h1>
         
-        {/* السطر السفلي: اسم الحصة المتغير */}
-        <div className="bg-white py-1.5 px-6">
+        {/* السطر السفلي: إضافة كلمة "التكميل:" قبل اسم الحصة */}
+        <div className="bg-white py-1.5 px-6 flex justify-center items-center gap-1.5">
             <p className="text-lg font-black text-slate-800">
+                <span className="text-[#8a7a5b]">التكميل: </span>
                 {selectedSession.name}
             </p>
         </div>
     </div>
+</div>
 </div>
 {/* 🟢 جدول القوة الشامل والمحدث */}
 {/* 🟢 حاوية الجدول: تضمن عدم وجود هوامش زائدة عند الطباعة */}
@@ -933,20 +936,24 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
                                     <TableHeader className="bg-[#c5b391] print:bg-[#c5b391]! [-webkit-print-color-adjust:exact]">
     <TableRow className="print:border-b-2 print:border-black">
         <TableHead className="text-center font-black text-black w-10 border-l border-slate-300 print:border-black">#</TableHead>
-        <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black w-64">البيانات العسكرية</TableHead>
+        <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black w-64 print:w-[250px]">البيانات العسكرية</TableHead>
         
-        {/* 🟢 تم زيادة العرض هنا (min-w) لضمان مساحة كافية للمخالفة */}
-        <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black min-w-[300px] md:min-w-[400px]">
+        {/* 🟢 تصغير عرض عمود المخالفة قليلاً عند الطباعة */}
+        <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black min-w-[200px] md:min-w-[300px] print:w-[200px]">
             المخالفة
         </TableHead>
 
-        <TableHead className="text-center font-black text-black border-l border-slate-300 print:border-black w-[120px] print:w-[100px]">
+        <TableHead className="text-center font-black text-black border-l border-slate-300 print:border-black w-[120px] print:w-[80px]">
             الجزاء
         </TableHead>
-        <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black">الملاحظات</TableHead>
+
+        {/* 🟢 توسيع عرض عمود الملاحظات عند الطباعة */}
+        <TableHead className="text-right font-black text-black border-l border-slate-300 print:border-black print:w-[300px]">
+            الملاحظات
+        </TableHead>
+
         <TableHead className="text-center font-black text-black border-l border-slate-300 print:hidden w-16">المرفق</TableHead>
         
-        {/* 🟢 توحيد مقاس عمود المدخل مع جدول الحالات */}
         <TableHead className="text-center font-black text-black border-l border-slate-300 print:border-black w-24 print:w-20 print:text-[9px]">
             المدخل
         </TableHead>
@@ -977,25 +984,28 @@ const stats = auditData?.stats || { total: 0, cases: 0, present: 0 };
         </div>
     </div>
 </TableCell>
-                                                <TableCell className="text-right border-l border-slate-300 print:border-black p-2 align-top">
-            <div className="whitespace-normal break-words leading-relaxed font-bold text-slate-800 text-xs md:text-sm print:text-[10px]">
-                {row.violation_name}
-            </div>
-        </TableCell>
+                                                <TableCell className="text-right border-l border-slate-300 print:border-black p-2 align-top print:w-[200px]">
+    <div className="whitespace-normal break-words leading-relaxed font-bold text-slate-800 text-xs print:text-[9px]">
+        {row.violation_name}
+    </div>
+</TableCell>
                                                 <TableCell className="text-center border-l border-slate-300 print:border-black p-2 align-middle">
     {/* 🟢 العرض محدد بـ 100 بكسل مع تفعيل الالتفاف */}
     <div className="max-w-[120px] print:max-w-[100px] whitespace-normal break-words leading-tight font-bold text-red-700 text-xs print:text-[9px]">
         {row.violation_penalty}
     </div>
 </TableCell>
-                                                <TableCell className="p-0 border-l border-slate-300 print:border-black">
-                                                    <input 
-                                                        className="w-full h-full px-2 bg-transparent outline-none text-xs font-bold text-slate-700 placeholder:text-slate-300" 
-                                                        defaultValue={row.violation_note}
-                                                        placeholder="ملاحظة..."
-                                                        onBlur={(e) => handleUpdateNote('violation', row.violation_id, e.target.value)}
-                                                    />
-                                                </TableCell>
+                                                <TableCell className="p-0 border-l border-slate-300 print:border-black align-top relative print:w-[300px]">
+    <textarea 
+        className="no-print w-full min-h-[40px] p-2 bg-transparent outline-none text-xs font-bold text-slate-700 resize-none overflow-hidden"
+        dir="rtl"
+        defaultValue={row.violation_note}
+        onBlur={(e) => handleUpdateNote('violation', row.violation_id, e.target.value)}
+    />
+    <div className="hidden print:block p-2 text-[10px] font-bold text-black leading-tight whitespace-normal break-words text-right">
+        {row.violation_note || "-"}
+    </div>
+</TableCell>
                                                 <TableCell className="text-center border-l border-slate-300 print:hidden p-1">
     <div className="flex justify-center gap-1 flex-wrap">
         {row.attachments && row.attachments.length > 0 ? (
