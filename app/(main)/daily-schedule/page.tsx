@@ -55,7 +55,7 @@ export default function DailySchedulePage() {
   const [selectedPlatoon, setSelectedPlatoon] = useState("all")
   const [searchTerm, setSearchTerm] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [itemsPerPage, setItemsPerPage] = useState(50)
   const [isDeleting, setIsDeleting] = useState<number | null>(null);
   const [filterOptions, setFilterOptions] = useState<any>({ courses: [], batches: [] })
   const [templates, setTemplates] = useState<any[]>([])

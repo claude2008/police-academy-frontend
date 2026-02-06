@@ -62,7 +62,7 @@ export default function WeeklyGradesPage() {
     const [existingReportId, setExistingReportId] = useState<number | null>(null)
 
     const [currentPage, setCurrentPage] = useState(1)
-    const [itemsPerPage, setItemsPerPage] = useState(20)
+    const [itemsPerPage, setItemsPerPage] = useState(50)
 
     const [weekTitle, setWeekTitle] = useState("")
     const [subject, setSubject] = useState("لياقة بدنية")

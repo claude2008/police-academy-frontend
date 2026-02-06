@@ -55,7 +55,7 @@ export default function WeightsPage() {
   const [isLoadedFromStorage, setIsLoadedFromStorage] = useState(false)
 
   const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(10) 
+  const [itemsPerPage, setItemsPerPage] = useState(50) 
 
   // 1. عند فتح الصفحة: استرجاع المسودة فوراً (قبل أي شيء)
   useEffect(() => {

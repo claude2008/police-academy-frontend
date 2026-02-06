@@ -433,9 +433,23 @@ const confirmDeleteAll = async () => {
                                 </div>
                                 
                             </div>
-                            <Button onClick={fetchSummaries} size="sm" className="bg-slate-900 text-[#c5b391] h-8">
-                                    <Search className="w-3 h-3 ml-1"/> بحث
-                                </Button>
+                            <Button 
+    onClick={fetchSummaries} 
+    disabled={loading} // 🟢 يمنع الضغط المتكرر أثناء التحميل
+    size="sm" 
+    className={`h-8 transition-all duration-300 ${
+        loading 
+        ? 'bg-slate-400 text-slate-200' // لون هادئ عند التحميل
+        : 'bg-slate-900 text-[#c5b391] hover:bg-slate-800' // اللون الرسمي
+    }`}
+>
+    {loading ? (
+        <Loader2 className="w-3 h-3 ml-1 animate-spin" /> // أيقونة الدوران
+    ) : (
+        <Search className="w-3 h-3 ml-1" />
+    )}
+    {loading ? "جاري البحث..." : "بحث"}
+</Button>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
                             <Select value={selectedCourse} onValueChange={setSelectedCourse}><SelectTrigger className="font-bold h-9"><SelectValue placeholder="كل الدورات" /></SelectTrigger><SelectContent><SelectItem value="all">كل الدورات</SelectItem>{options.courses?.map(c=><SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent></Select>

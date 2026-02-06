@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Printer, RefreshCcw, Users, UserCheck, UserX, Activity, FileText } from "lucide-react"
 import { toast } from "sonner"
+import { Badge } from "@/components/ui/badge"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
@@ -57,7 +58,17 @@ export default function StatisticsPage() {
   const [filterCourse, setFilterCourse] = useState("all")
   const [filterCompany, setFilterCompany] = useState("all")
   const [filterPlatoon, setFilterPlatoon] = useState("all")
-
+// استخراج المعايير من أول سجل متاح
+const testSettings = useMemo(() => {
+    if (data.length > 0) {
+        return {
+            distance: data[0].distance || 3200,
+            baseScore: data[0].base_score || 100,
+            mercyMode: data[0].mercy_mode ? "مفعّـل" : "معطّـل"
+        };
+    }
+    return { distance: 3200, baseScore: 100, mercyMode: "معطّـل" };
+}, [data]);
   const [reportTitle, setReportTitle] = useState("الدفعة....السرية....الفصيل....")
   const [reportSummary, setReportSummary] = useState("")
   const [dataEntryName, setDataEntryName] = useState("")
@@ -179,35 +190,52 @@ useEffect(() => {
         const grade = String(item[cat.gradeKey] || "").trim()
         const notes = String(item.notes || "").trim()
         const status = String(item.status || "").trim()
-        const finalRes = String(item.final_result || "")
+        const finalRes = String(item.final_result || "").trim()
 
-        if (notes.includes("غياب") || status === "Absent") { row.absent++; return }
-        if (notes.includes("إعفاء") || status === "Exempt") { row.exempt++; return }
+        // 1. فرز الحالات الخاصة (الاستبعادات من الحضور الفعلي)
+        if (notes.includes("غياب") || status.toLowerCase() === "absent") { row.absent++; return }
+        if (notes.includes("إعفاء") || status.toLowerCase() === "exempt") { row.exempt++; return }
         if (notes.includes("طبية") || notes.includes("طبي")) { row.medical++; return }
         if (notes.includes("عيادة")) { row.clinic++; return }
-        if (notes.includes("لم يكمل")) { row.rest++; return }
+        if (notes.includes("لم يكمل") || notes.includes("قطع مسار") || notes.includes("قطع")) { 
+    row.rest++; 
+    return; // يخرج هنا فلا يُحسب كناجح أو راسب
+}
         if (notes.includes("إجازة")) { row.vacation++; return }
         if (notes.includes("ملحق")) { row.attached++; return }
 
+        // 2. احتساب الحضور الفعلي لمن لم يكن لديه حالة خاصة
         row.totalPresent++;
 
+        // 3. تصنيف التقديرات (بناءً على النصوص العربية الواردة من السيرفر)
         if (grade.includes("ممتاز")) row.excellent++
         else if (grade.includes("جيد جدا")) row.veryGood++
         else if (grade.includes("جيد")) row.good++
         else if (grade.includes("مقبول")) row.pass++
         
+        // 🟢 4. منطق النجاح والرسوب الجديد (الاعتماد على السيرفر)
         let isPass = false;
-        if (cat.key === 'general') isPass = finalRes === 'Pass' || finalRes === 'ناجح';
-        else isPass = !grade.includes("راسب") && grade !== "";
+        
+        if (cat.key === 'general') {
+          // للاختبار العام: نعتمد حصراً على قرار السيرفر في حقل النتيجة النهائية
+          isPass = finalRes.toLowerCase() === 'pass' || finalRes === 'ناجح';
+        } else {
+          // للاختبارات الفرعية (جري، ضغط، بطن): نعتمد على عدم وجود كلمة "راسب" ووجود تقدير حقيقي
+          isPass = !grade.includes("راسب") && grade !== "" && grade !== "None" && grade !== "nan";
+        }
 
-        if (isPass) row.successCount++
-        else row.failCount++
+        if (isPass) {
+          row.successCount++
+        } else {
+          row.failCount++
+        }
 
+        // 5. احتساب حالات الرأفة بدقة حسب المادة
         if (item.notes && item.notes.includes("رأفة")) {
-            if (cat.key === 'general') row.mercy++;
-            else if (cat.key === 'run' && item.notes.includes("رأفة جري")) row.mercy++;
-            else if (cat.key === 'push' && item.notes.includes("رأفة ضغط")) row.mercy++;
-            else if (cat.key === 'sit' && item.notes.includes("رأفة بطن")) row.mercy++;
+          if (cat.key === 'general') row.mercy++;
+          else if (cat.key === 'run' && item.notes.includes("رأفة جري")) row.mercy++;
+          else if (cat.key === 'push' && item.notes.includes("رأفة ضغط")) row.mercy++;
+          else if (cat.key === 'sit' && item.notes.includes("رأفة بطن")) row.mercy++;
         }
       })
       return row
@@ -287,7 +315,28 @@ useEffect(() => {
                 <Button size="sm" onClick={() => { document.title = reportTitle; window.print(); }} className="bg-slate-900 text-white gap-1 h-9"><Printer className="w-3 h-3" /> طباعة</Button>
             </div>
         </div>
-
+{/* شريط معايير الاختبار - للشاشة */}
+<div className="flex flex-wrap gap-4 print:hidden bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800 mb-4">
+    <div className="flex items-center gap-2">
+        <span className="text-xs font-bold text-blue-700 dark:text-blue-300">المسافة المعتمدة:</span>
+        <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-blue-800 dark:text-blue-400 font-black border-blue-200">
+            {testSettings.distance} متر
+        </Badge>
+    </div>
+    <div className="flex items-center gap-2 border-r pr-4 border-blue-200">
+        <span className="text-xs font-bold text-blue-700 dark:text-blue-300">الدرجة القصوى:</span>
+        <Badge variant="secondary" className="bg-white dark:bg-slate-800 text-blue-800 dark:text-blue-400 font-black border-blue-200">
+            {testSettings.baseScore} درجة
+        </Badge>
+    </div>
+    <div className="flex items-center gap-2 border-r pr-4 border-blue-200">
+        <span className="text-xs font-bold text-blue-700 dark:text-blue-300">نظام الرأفة:</span>
+        <Badge variant={testSettings.mercyMode === "مفعّـل" ? "default" : "outline"} 
+               className={testSettings.mercyMode === "مفعّـل" ? "bg-orange-500 hover:bg-orange-600" : "text-slate-500"}>
+            {testSettings.mercyMode}
+        </Badge>
+    </div>
+</div>
         {/* البطاقات */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-4 print:hidden">
             <Card className="bg-slate-900 dark:bg-slate-950 text-white border-0 shadow-md">
@@ -381,6 +430,19 @@ useEffect(() => {
                 <tr>
                     <td colSpan={20}>
                         <div className="h-1"></div>
+                        <div className="flex flex-col gap-2 border border-black p-2 rounded bg-slate-50 mb-2">
+                <div className="flex justify-around text-sm font-bold border-b border-gray-300 pb-1">
+                    <span>الدورة: {filterCourse !== "all" ? filterCourse : "-"}</span>
+                    <span>الدفعة: {uniqueCourses.length > 0 ? (data.find(d => d['اسم الدورة'] === filterCourse)?.['الدفعة'] || "-") : "-"}</span>
+                </div>
+                <div className="flex justify-around text-[10px] font-black text-blue-900 italic">
+                    <span>المسافة المعتمدة: {testSettings.distance} متر</span>
+                    <span>|</span>
+                    <span>الدرجة القصوى: {testSettings.baseScore} درجة</span>
+                    <span>|</span>
+                    <span>نظام الرأفة: {testSettings.mercyMode}</span>
+                </div>
+            </div>
                         <div className="space-y-2 pb-4">
                             
                             <div className="grid grid-cols-4 gap-4 mb-2">

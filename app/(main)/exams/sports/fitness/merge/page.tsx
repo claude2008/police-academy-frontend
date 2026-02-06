@@ -108,6 +108,21 @@ const [draftsPage, setDraftsPage] = useState(1);
       if (activeTab === 'merge') fetchDrafts();
   }, [activeTab])
 
+        // 🟢 فحص ذكي: هل يوجد أي بيانات حقيقية في عمود السرية؟
+const showCompanyCol = useMemo(() => {
+    return tableData.some(row => 
+        row.company && 
+        !["None", "-", "", "عام", "null", "undefined"].includes(String(row.company).trim())
+    );
+}, [tableData]);
+
+// 🟢 فحص ذكي: هل يوجد أي بيانات حقيقية في عمود الفصيل؟
+const showPlatoonCol = useMemo(() => {
+    return tableData.some(row => 
+        row.platoon && 
+        !["None", "-", "", "عام", "null", "undefined"].includes(String(row.platoon).trim())
+    );
+}, [tableData]);
   // --- API Functions ---
   const fetchFilterOptions = async () => {
     try {
@@ -474,30 +489,63 @@ const handleMerge = async () => {
   };
 
   const handleOfficialList = async () => {
-    if (pageMode === 'raw') { toast.warning("يرجى ضغط 'دمج الرصد' أولاً"); return; }
-    setIsProcessing(true)
-    const activePlatoons = Array.from(new Set(tableData.map(item => `${item.company}||${item.platoon}`)));
+    // 1. التأكد من وجود بيانات مدمجة أولاً
+    if (pageMode === 'raw') { 
+        toast.warning("يرجى ضغط 'دمج الرصد' أولاً"); 
+        return; 
+    }
+
+    setIsProcessing(true);
+    const toastId = toast.loading("جاري استدعاء الكشف الرسمي والمطابقة...");
+
+    // 🟢 2. بناء "مفاتيح الفرز" بشكل ذكي
+    // نقوم بتحويل القيم الفارغة إلى "None" لضمان مطابقة منطق الباك إند (IS NULL)
+    const activePlatoons = Array.from(new Set(
+        tableData.map(item => {
+            const comp = (item.company && item.company !== "عام") ? item.company : "None";
+            const plat = (item.platoon && item.platoon !== "عام") ? item.platoon : "None";
+            return `${comp}||${plat}`;
+        })
+    ));
+
     try {
-     const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/processing/full-official-list`, {
-  method: "POST",
-  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-  body: JSON.stringify({ 
-      active_platoons: activePlatoons, 
-      tested_entries: tableData, 
-      target_date: selectedDate,
-      // 🟢 إرسال الدورة والدفعة المختارة في الفرز العلوي
-      course: dialogCourse,
-      batch: dialogBatch
-  })
-});
-      if (res.ok) {
-        setTableData(await res.json())
-        setPageMode('official')
-        toast.success("تم استدعاء الكشف الرسمي")
-      }
-    } catch (e) { toast.error("فشل الجلب") }
-    finally { setIsProcessing(false) }
-  }
+        // 3. تجهيز الحمولة (Payload) مع تنظيف الدفعة
+        const payload = { 
+            active_platoons: activePlatoons, 
+            tested_entries: tableData, 
+            target_date: selectedDate,
+            course: dialogCourse,
+            // إذا كانت الدفعة فارغة نرسل "None"
+            batch: (dialogBatch && dialogBatch.trim() !== "") ? dialogBatch : "None"
+        };
+
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/processing/full-official-list`, {
+            method: "POST",
+            headers: { 
+                'Content-Type': 'application/json', 
+                'Authorization': `Bearer ${localStorage.getItem('token')}` 
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            
+            // 4. تحديث الجدول بالبيانات الكاملة (المختبرين + الغائبين)
+            setTableData(data);
+            setPageMode('official');
+            toast.success("تم استدعاء الكشف الرسمي بنجاح ✅", { id: toastId });
+        } else {
+            const errData = await res.json();
+            toast.error(errData.detail || "فشل استجابة السيرفر", { id: toastId });
+        }
+    } catch (e) { 
+        console.error("Official List Error:", e);
+        toast.error("حدث خطأ في الاتصال بالخادم", { id: toastId }); 
+    } finally { 
+        setIsProcessing(false); 
+    }
+};
 
   const handleRunImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -544,47 +592,86 @@ const handleMerge = async () => {
     e.target.value = "";
   };
 
-  const exportToExcel = () => {
+ const exportToExcel = () => {
     if (!tableData || tableData.length === 0) return;
+
+    // 1️⃣ دوال مساعدة للتنظيف والتنسيق داخل الملف
     const formatScore = (val: any) => (val === 0 || val === "0" || val === null || val === undefined) ? "" : val;
-    let dataToExport = [];
     
+    const cleanVal = (val: any) => {
+        const s = String(val || "").trim();
+        // إذا كانت القيمة "None" أو فارغة نحولها لشرطة لجمالية الملف
+        if (s.toLowerCase() === "none" || s === "" || s.toLowerCase() === "null") return "-";
+        return s;
+    };
+
+    let dataToExport = [];
+
+    // 2️⃣ بناء المصفوفة بناءً على وضع الصفحة الحالي
     if (isCommitteeMode && (pageMode === 'merged' || pageMode === 'official')) {
-     dataToExport = tableData.map((row, idx) => ({
-      "م": idx + 1, 
-      "الرقم العسكري": row.military_id, 
-      "الإسم": row.name, 
-      "السرية": row.company, 
-      "الفصيل": row.platoon,
-      "الضغط (مدرب)": formatScore(row.trainer_push), 
-      "البطن (مدرب)": formatScore(row.trainer_sit),
-      "ملاحظات المدرب": row.trainer_notes || "", // 🔵 عمود جديد
-      "الضغط (ضابط)": formatScore(row.officer_push), 
-      "البطن (ضابط)": formatScore(row.officer_sit),
-      "ملاحظات الضابط": row.officer_notes || "", // 🔵 عمود جديد
-      "الجري": row.run_time || "", 
-      "الملاحظات النهائية": row.notes || "" // 🔵 ملاحظة الشباحة أو التعديل اليدوي
-    }));
+        // --- [ وضع اللجان: مدمج أو رسمي ] ---
+        dataToExport = tableData.map((row, idx) => ({
+            "م": idx + 1,
+            "الرقم العسكري": row.military_id,
+            "الإسم": row.name,
+            "تاريخ الميلاد": row.dob || "-",
+            "السرية": cleanVal(row.company),
+            "الفصيل": cleanVal(row.platoon),
+            "الضغط (مدرب)": formatScore(row.trainer_push),
+            "البطن (مدرب)": formatScore(row.trainer_sit),
+            "ملاحظات المدرب": row.trainer_notes || "",
+            "الضغط (ضابط)": formatScore(row.officer_push),
+            "البطن (ضابط)": formatScore(row.officer_sit),
+            "ملاحظات الضابط": row.officer_notes || "",
+            "الجري": row.run_time || "",
+            "الملاحظات النهائية": row.notes || ""
+        }));
     } else if (pageMode === 'official' || pageMode === 'merged') {
-      dataToExport = tableData.map((row, idx) => ({
-        "م": idx + 1, "الرقم العسكري": row.military_id, "الإسم": row.name, "السرية": row.company, "الفصيل": row.platoon,
-        "الضغط": formatScore(row.push_count), "البطن": formatScore(row.sit_count), "الجري": row.run_time || "", "الملاحظات": row.notes || ""
-      }));
+        // --- [ الوضع العادي: رسمي أو مدمج ] ---
+        dataToExport = tableData.map((row, idx) => ({
+            "م": idx + 1,
+            "الرقم العسكري": row.military_id,
+            "الإسم": row.name,
+            "تاريخ الميلاد": row.dob || "-",
+            "السرية": cleanVal(row.company),
+            "الفصيل": cleanVal(row.platoon),
+            "الضغط": formatScore(row.push_count),
+            "البطن": formatScore(row.sit_count),
+            "الجري": row.run_time || "",
+            "الملاحظات": row.notes || ""
+        }));
     } else {
-      dataToExport = tableData.map((row, idx) => ({
-        "م": idx + 1, "رقم الشباحة": row.shabaha_number, "اللون": COLOR_MAP[row.shabaha_color] || row.shabaha_color,
-        "الضغط": formatScore(row.push_count), "البطن": formatScore(row.sit_count), "المدخل": row.entered_by, "الوقت": row.entry_time, "ملاحظات": row.notes || ""
-      }));
+        // --- [ وضع البيانات الخام: Raw Mode ] ---
+        dataToExport = tableData.map((row, idx) => ({
+            "م": idx + 1,
+            "رقم الشباحة": row.shabaha_number,
+            "اللون": COLOR_MAP[row.shabaha_color] || row.shabaha_color,
+            "الضغط": formatScore(row.push_count),
+            "البطن": formatScore(row.sit_count),
+            "المدخل": row.entered_by,
+            "الوقت": row.entry_time, // 🟢 يظهر هنا بتوقيت قطر (UTC+3) المعتمد من الباك إند
+            "ملاحظات": row.notes || ""
+        }));
     }
 
+    // 3️⃣ تحويل البيانات إلى ورقة عمل (Worksheet)
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "النتائج");
-    wb.Workbook = { Views: [{ RTL: true }] };
+
+    // 4️⃣ ضبط اتجاه الملف من اليمين لليسار (RTL) ليتناسب مع اللغة العربية
+    if (!wb.Workbook) wb.Workbook = {};
+    if (!wb.Workbook.Views) wb.Workbook.Views = [];
+    if (wb.Workbook.Views.length === 0) wb.Workbook.Views.push({});
+    wb.Workbook.Views[0].RTL = true;
+
+    // 5️⃣ تسمية الملف وتصديره
     const pathName = pageMode === 'raw' ? 'بيانات_خام' : (isCommitteeMode ? 'نتائج_لجان' : 'كشف_رسمي');
-    XLSX.writeFile(wb, `${pathName}_${dialogCourse}_${dialogBatch}_${selectedDate}.xlsx`);
-    toast.success("تم التصدير بنجاح");
-  };
+    const fileName = `${pathName}_${dialogCourse}_${dialogBatch || 'عام'}_${selectedDate}.xlsx`;
+    
+    XLSX.writeFile(wb, fileName);
+    toast.success("تم تصدير ملف الإكسل بنجاح شامل الوقت وتاريخ الميلاد ✅");
+};
 
  const confirmSaveDraft = async () => {
     // 1. التحقق الأساسي (الدورة والعنوان فقط هما الإجباريان دائماً)
@@ -675,6 +762,8 @@ const paginatedDrafts = useMemo(() => {
   // --- Main Render ---
   if (pageMode !== 'list') {
       const dayName = new Date(selectedDate).toLocaleDateString('ar-EG', { weekday: 'long' });
+
+
       return (
         <ProtectedRoute allowedRoles={["owner","assistant_admin"]}>
         <div className="min-h-screen bg-white p-2 md:p-8 flex flex-col space-y-6 pb-10 overflow-x-hidden relative" dir="rtl">
@@ -806,68 +895,104 @@ const paginatedDrafts = useMemo(() => {
                 <h2 className="text-lg font-black py-2 underline underline-offset-8">
                     {pageMode === 'raw' ? 'تقرير بيانات الرصد الخام' : pageMode === 'merged' ? 'مسودة مطابقة نتائج اللياقة' : 'الكشف الرسمي لاختبار اللياقة'}
                 </h2>
-                <div className="flex justify-center gap-8 text-sm font-bold border border-black p-1 rounded bg-slate-50">
-                    <span>الدورة: {dialogCourse || "-"}</span>
-                    <span>الدفعة: {dialogBatch || "-"}</span>
-                </div>
+                {/* في جزء المعلومات العلوية قبل الجدول */}
+<div className="flex justify-center gap-8 text-sm font-bold border border-black p-1 rounded bg-slate-50">
+    <span>الدورة: {dialogCourse || "-"}</span>
+    <span>الدفعة: {dialogBatch || "-"}</span>
+    {/* 🟢 إظهار السرية والفصيل هنا فقط إذا كان لهما بيانات */}
+    {showCompanyCol && <span>السرية: {tableData[0]?.company}</span>}
+    {showPlatoonCol && <span>الفصيل: {tableData[0]?.platoon}</span>}
+</div>
             </div>
 
             <div className="overflow-x-auto">
                 <Table className="w-full border-collapse border border-slate-300 text-sm">
-                    <TableHeader>
-                        {/* 🟢 التعديل: لا تعرض شكل اللجان إذا كنا داخل مسودة محفوظة */}
-{(isCommitteeMode && !selectedDraft) && (pageMode === 'merged' || pageMode === 'official') ? (
-                            <>
-                                <TableRow className="bg-[#c5b391]">
-                                    <TableHead rowSpan={2} className="border border-black text-center text-black font-bold w-10">#</TableHead>
-                                    <TableHead rowSpan={2} className="border border-black text-center text-black font-bold w-20">الرتبة</TableHead>
-                                    <TableHead rowSpan={2} className="border border-black text-center text-black font-bold">الرقم العسكري</TableHead>
-                                    <TableHead rowSpan={2} className="border border-black text-right text-black font-bold">الاسم</TableHead>
-                                    <TableHead rowSpan={2} className="border border-black text-center text-black font-bold">السرية</TableHead>
-                                    <TableHead rowSpan={2} className="border border-black text-center text-black font-bold">الفصيل</TableHead>
-                                    <TableHead colSpan={2} className="border border-black text-center text-black font-bold bg-blue-100">لجنة المدربين</TableHead>
-                                    <TableHead colSpan={2} className="border border-black text-center text-black font-bold bg-green-100">لجنة الضباط</TableHead>
-                                    <TableHead rowSpan={2} className="border border-black text-center text-black font-bold bg-purple-100">الجري</TableHead>
-                                    <TableHead rowSpan={2} className="border border-black text-right text-black font-bold">الملاحظات</TableHead>
-                                </TableRow>
-                                <TableRow className="bg-[#e6dccf]">
-                                    <TableHead className="border border-black text-center font-bold text-[10px]">ضغط</TableHead>
-                                    <TableHead className="border border-black text-center font-bold text-[10px]">بطن</TableHead>
-                                    <TableHead className="border border-black text-center font-bold text-[10px]">ضغط</TableHead>
-                                    <TableHead className="border border-black text-center font-bold text-[10px]">بطن</TableHead>
-                                </TableRow>
-                            </>
-                        ) : (
-                            <TableRow className="bg-[#c5b391]">
-                                <TableHead className="text-center text-black font-bold border border-black w-10">#</TableHead>
-                                {pageMode === 'raw' ? (
-                                    <>
-                                        <TableHead className="text-center text-black font-bold border border-black">رقم الشباحة</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black">اللون</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black">الضغط</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black">البطن</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black">المدخل</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black">الوقت</TableHead>
-                                        <TableHead className="text-right text-black font-bold border border-black">ملاحظات</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black w-20 no-print">إجراء</TableHead>
-                                    </>
-                                ) : (
-                                    <>
-                                        <TableHead className="text-center text-black font-bold border border-black w-20">الرتبة</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black">الرقم العسكري</TableHead>
-                                        <TableHead className="text-right text-black font-bold border border-black">الاسم</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black">السرية</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black">الفصيل</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black">تاريخ الميلاد</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black bg-blue-100">الضغط</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black bg-yellow-100">البطن</TableHead>
-                                        <TableHead className="text-center text-black font-bold border border-black bg-purple-100">الجري</TableHead>
-                                        <TableHead className="text-right text-black font-bold border border-black">ملاحظات</TableHead>
-                                    </>
-                                )}
-                            </TableRow>
-                        )}
-                    </TableHeader>
+                   <TableHeader>
+  {/* 🟢 الحالة الأولى: وضع اللجان (isCommitteeMode) - يدعم صفين من الرؤوس */}
+  {(isCommitteeMode && !selectedDraft) && (pageMode === 'merged' || pageMode === 'official') ? (
+    <>
+      <TableRow className="bg-[#c5b391]">
+        <TableHead rowSpan={2} className="border border-black text-center text-black font-bold w-10">#</TableHead>
+        <TableHead rowSpan={2} className="border border-black text-center text-black font-bold w-20">الرتبة</TableHead>
+        <TableHead rowSpan={2} className="border border-black text-center text-black font-bold">الرقم العسكري</TableHead>
+        <TableHead rowSpan={2} className="border border-black text-right text-black font-bold">الاسم</TableHead>
+        
+        {/* الربط الذكي للسرية في وضع اللجان */}
+        {showCompanyCol && (
+          <TableHead rowSpan={2} className="border border-black text-center text-black font-bold">
+            السرية
+          </TableHead>
+        )}
+
+        {/* الربط الذكي للفصيل في وضع اللجان */}
+        {showPlatoonCol && (
+          <TableHead rowSpan={2} className="border border-black text-center text-black font-bold">
+            الفصيل
+          </TableHead>
+        )}
+
+        <TableHead colSpan={2} className="border border-black text-center text-black font-bold bg-blue-100">لجنة المدربين</TableHead>
+        <TableHead colSpan={2} className="border border-black text-center text-black font-bold bg-green-100">لجنة الضباط</TableHead>
+        <TableHead rowSpan={2} className="border border-black text-center text-black font-bold bg-purple-100">الجري</TableHead>
+        <TableHead rowSpan={2} className="border border-black text-right text-black font-bold">الملاحظات</TableHead>
+      </TableRow>
+      
+      {/* السطر الثاني الخاص بالضغط والبطن تحت مسميات اللجان */}
+      <TableRow className="bg-[#e6dccf]">
+        <TableHead className="border border-black text-center font-bold text-[10px]">ضغط</TableHead>
+        <TableHead className="border border-black text-center font-bold text-[10px]">بطن</TableHead>
+        <TableHead className="border border-black text-center font-bold text-[10px]">ضغط</TableHead>
+        <TableHead className="border border-black text-center font-bold text-[10px]">بطن</TableHead>
+      </TableRow>
+    </>
+  ) : (
+    /* 🔵 الحالة الثانية: الوضع العادي (رسمي، مدمج، أو بيانات خام) */
+    <TableRow className="bg-[#c5b391]">
+      <TableHead className="text-center text-black font-bold border border-black w-10">#</TableHead>
+      
+      {pageMode === 'raw' ? (
+        /* وضع البيانات الخام (Raw Mode) */
+        <>
+          <TableHead className="text-center text-black font-bold border border-black">رقم الشباحة</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black">اللون</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black">الضغط</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black">البطن</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black">المدخل</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black">الوقت</TableHead>
+          <TableHead className="text-right text-black font-bold border border-black">ملاحظات</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black w-20 no-print">إجراء</TableHead>
+        </>
+      ) : (
+        /* وضع الكشف الرسمي أو المدمج العادي */
+        <>
+          <TableHead className="text-center text-black font-bold border border-black w-20">الرتبة</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black">الرقم العسكري</TableHead>
+          <TableHead className="text-right text-black font-bold border border-black">الاسم</TableHead>
+          
+          {/* الربط الذكي للسرية في الوضع العادي */}
+          {showCompanyCol && (
+            <TableHead className="text-center text-black font-bold border border-black">
+              السرية
+            </TableHead>
+          )}
+
+          {/* الربط الذكي للفصيل في الوضع العادي */}
+          {showPlatoonCol && (
+            <TableHead className="text-center text-black font-bold border border-black">
+              الفصيل
+            </TableHead>
+          )}
+
+          <TableHead className="text-center text-black font-bold border border-black">تاريخ الميلاد</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black bg-blue-100">الضغط</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black bg-yellow-100">البطن</TableHead>
+          <TableHead className="text-center text-black font-bold border border-black bg-purple-100">الجري</TableHead>
+          <TableHead className="text-right text-black font-bold border border-black">ملاحظات</TableHead>
+        </>
+      )}
+    </TableRow>
+  )}
+</TableHeader>
                     <TableBody>
     {tableData.map((row, idx) => {
         const isDuplicate = duplicateIds.has(row.id);
@@ -893,8 +1018,17 @@ const paginatedDrafts = useMemo(() => {
                                             <TableCell className="text-center border border-black font-bold">{row.rank || "-"}</TableCell>
                                             <TableCell className="text-center border border-black font-bold">{row.military_id}</TableCell>
                                             <TableCell className="text-right border border-black px-2">{row.name}</TableCell>
-                                            <TableCell className="text-center border border-black">{row.company}</TableCell>
-                                            <TableCell className="text-center border border-black">{row.platoon}</TableCell>
+                                            {showCompanyCol && (
+    <TableCell className="text-center border border-black">
+        {row.company && row.company !== "None" ? row.company : "-"}
+    </TableCell>
+)}
+
+{showPlatoonCol && (
+    <TableCell className="text-center border border-black">
+        {row.platoon && row.platoon !== "None" ? row.platoon : "-"}
+    </TableCell>
+)}
                                             <TableCell className="text-center border border-black bg-blue-50 font-bold">{row.trainer_push ?? "-"}</TableCell>
                                             <TableCell className="text-center border border-black bg-blue-50 font-bold">{row.trainer_sit ?? "-"}</TableCell>
                                             <TableCell className="text-center border border-black bg-green-50 font-bold">{row.officer_push ?? "-"}</TableCell>
@@ -991,8 +1125,12 @@ const paginatedDrafts = useMemo(() => {
                                                 <TableCell className="text-center border border-black font-bold">{row.rank || "-"}</TableCell>
                                                 <TableCell className="text-center border border-black font-bold">{row.military_id}</TableCell>
                                                 <TableCell className="text-right border border-black px-2">{row.name}</TableCell>
-                                                <TableCell className="text-center border border-black">{row.company}</TableCell>
-                                                <TableCell className="text-center border border-black">{row.platoon}</TableCell>
+                                                {showCompanyCol && (
+            <TableCell className="text-center border border-black">{row.company || "-"}</TableCell>
+        )}
+        {showPlatoonCol && (
+            <TableCell className="text-center border border-black">{row.platoon || "-"}</TableCell>
+        )}
                                                 <TableCell className="text-center border border-black">{row.dob || "-"}</TableCell>
                                                 <TableCell className="text-center border border-black font-bold">{row.push_count || "-"}</TableCell>
                                                 <TableCell className="text-center border border-black font-bold">{row.sit_count || "-"}</TableCell>

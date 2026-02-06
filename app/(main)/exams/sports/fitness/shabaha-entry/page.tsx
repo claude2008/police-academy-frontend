@@ -69,7 +69,7 @@ export default function ShabahaEntryPage() {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(10) // 🟢 القيمة الافتراضية
+  const [itemsPerPage, setItemsPerPage] = useState(50) // 🟢 القيمة الافتراضية
   const [totalItems, setTotalItems] = useState(0)
   const [assignmentsMap, setAssignmentsMap] = useState<any>({});
   // Note Modal
@@ -434,27 +434,79 @@ const handlePrintPDF = async () => {
   }
 }
 
- const handleExportExcel = () => {
-  const exportData = soldiers.map((s, index) => {
-      // ✅ جلب البيانات المحفوظة (أرقام، ألوان، ملاحظات) لكي لا تظهر فارغة
-      const saved = assignmentsMap[s.id] || {}; 
-      return {
-          "م": index + 1,
-          "الرقم العسكري": s.military_id,
-          "الاسم": s.name,
-          "رقم الشباحة": saved.shabaha_number || "", // ✅ القيمة المحفوظة
-          "اللون": SHABAHA_COLORS.find(c => c.value === saved.shabaha_color)?.name || "", // ✅ تحويل كود اللون لاسم عربي
-          "رقم الشريحة": saved.chip_number || "",
-          "الملاحظات": saved.notes || "",
-          "مدخل البيانات": displayName, // ✅ العمود الجديد
-          "تاريخ الاستخراج": format(new Date(), "yyyy-MM-dd HH:mm") // ✅ العمود الجديد
-      };
-  });
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "الشباحات");
-    XLSX.writeFile(wb, generateFileName("xlsx"));
-  }
+ const handleExportExcel = async () => {
+    // 1. فحص أمان: هل اختار المستخدم مساراً؟
+    if (isSearchDisabled) {
+        toast.warning("يرجى اختيار الدورة والمسار كاملاً قبل التصدير");
+        return;
+    }
+
+    setIsLoading(true);
+    const toastId = toast.loading("جاري تحضير ملف الإكسل لكامل المسار...");
+
+    try {
+        // 2. جلب "كافة" الجنود في هذا المسار بدون تقيد بالصفحة (Limit = totalItems)
+        const query = new URLSearchParams({
+            skip: "0",
+            limit: totalItems.toString(), // نجلب الجميع
+            course: filters.course,
+            batch: filters.batch || "all",
+            company: filters.company || "all",
+            platoon: filters.platoon || "all",
+            search: search // لكي يحترم البحث إذا كان المستخدم يبحث عن اسم معين
+        });
+
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${query.toString()}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+
+        if (res.ok) {
+            const result = await res.json();
+            const allSoldiers = result.data || [];
+
+            // 3. تحويل البيانات للصيغة المطلوبة للإكسل (باستخدام القائمة الكاملة)
+            const exportData = allSoldiers.map((s: any, index: number) => {
+                const saved = assignmentsMap[s.id] || {};
+                return {
+                    "م": index + 1,
+                    "الرقم العسكري": s.military_id,
+                    "الاسم": s.name,
+                    "الرتبة": s.rank || "-",
+                    "الدورة": s.course,
+                    "الدفعة": s.batch || "-",
+                    "السرية": s.company || "-",
+                    "الفصيل": s.platoon || "-",
+                    "رقم الشباحة": saved.shabaha_number || "",
+                    "اللون": SHABAHA_COLORS.find(c => c.value === saved.shabaha_color)?.name || "",
+                    "رقم الشريحة": saved.chip_number || "",
+                    "الملاحظات": saved.notes || "",
+                    "تاريخ الاستخراج": format(new Date(), "yyyy-MM-dd HH:mm")
+                };
+            });
+
+            // 4. بناء ملف الإكسل وتنزيله
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "كشف الشباحات الكامل");
+            
+            // ضبط اتجاه الورقة للعربية (RTL)
+            if (!wb.Workbook) wb.Workbook = {};
+            if (!wb.Workbook.Views) wb.Workbook.Views = [];
+            if (wb.Workbook.Views.length === 0) wb.Workbook.Views.push({});
+            wb.Workbook.Views[0].RTL = true;
+
+            XLSX.writeFile(wb, generateFileName("xlsx"));
+            toast.success("تم تصدير الكشف الكامل بنجاح ✅", { id: toastId });
+        } else {
+            toast.error("فشل جلب البيانات من الخادم", { id: toastId });
+        }
+    } catch (e) {
+        console.error(e);
+        toast.error("حدث خطأ تقني أثناء التصدير", { id: toastId });
+    } finally {
+        setIsLoading(false);
+    }
+};
 
   // --- الواجهة ---
   return (

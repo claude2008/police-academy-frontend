@@ -527,33 +527,43 @@ if (isSaved && entryToDelete) {
               </div>
 
               {/* حقل البحث الضخم والمرتفع - متناسق تماماً */}
+{/* حقل البحث المطور - مرن وتفاعلي */}
 <div className="mt-auto pt-4 no-print"> 
   <div className="relative flex items-center group">
     
-    {/* 1. أيقونة البحث - تم زيادة حجمها قليلاً لتناسب الارتفاع الجديد */}
+    {/* أيقونة البحث */}
     <div className="absolute right-4 z-10 text-slate-400">
       <Search className="w-6 h-6" /> 
     </div>
 
-    {/* 2. مربع الإدخال - h-16 لزيادة الارتفاع، نص كبير text-xl */}
+    {/* 1️⃣ تعديل حقل الإدخال: دعم النص والأرقام معاً */}
     <Input 
-  type="text"
-  inputMode="decimal" // 📱 يظهر لوحة الأرقام فوراً في الهاتف
-  placeholder="الرقم العسكري أو الاسم..."
-  className="pr-12 pl-32 h-14 rounded-[20px] bg-white/90 border-none shadow-inner font-black text-xl focus-visible:ring-2 focus-visible:ring-slate-900 transition-all placeholder:text-slate-400/70" 
- value={searchTerm} 
-  onChange={(e) => setSearchTerm(convertArabicNumbers(e.target.value))} 
-  onKeyDown={(e) => e.key === 'Enter' && handleSearchSoldier()}
-  // أضف هذا السطر لضمان عدم قيام الهاتف بتصحيح الأرقام تلقائياً
-  autoComplete="off"
-/>
+      type="text"
+      inputMode="text" // 🟢 تم التغيير لفتح لوحة مفاتيح النصوص (للبحث بالاسم)
+      placeholder="الرقم العسكري أو الاسم..."
+      className="pr-12 pl-32 h-14 rounded-[20px] bg-white/90 border-none shadow-inner font-black text-xl focus-visible:ring-2 focus-visible:ring-slate-900 transition-all placeholder:text-slate-400/70" 
+      value={searchTerm} 
+      onChange={(e) => setSearchTerm(convertArabicNumbers(e.target.value))} 
+      onKeyDown={(e) => e.key === 'Enter' && !loading && handleSearchSoldier()}
+      autoComplete="off"
+    />
 
-    {/* 3. زر البحث - تم استخدام top-2 و bottom-2 لضمان الارتفاع المتناسق داخلياً */}
+    {/* 2️⃣ تعديل الزر: الإغلاق التلقائي وتغيير اللون أثناء التحميل */}
     <Button 
       onClick={handleSearchSoldier} 
-      className="absolute left-2 top-2 bottom-2 bg-slate-900 text-[#c5b391] px-8 font-black text-lg rounded-[14px] hover:bg-slate-800 transition-all z-10 shadow-md"
+      disabled={loading} // 🟢 يغلق الزر فوراً عند الضغط
+      className={cn(
+        "absolute left-2 top-2 bottom-2 px-8 font-black text-lg rounded-[14px] transition-all z-10 shadow-md",
+        loading 
+          ? "bg-slate-400 text-slate-200 cursor-not-allowed" // 🟢 لونه يصبح رمادي عند التحميل
+          : "bg-slate-900 text-[#c5b391] hover:bg-slate-800 active:scale-95" // اللون الرسمي
+      )}
     >
-      بـحـث
+      {loading ? (
+        <Loader2 className="w-5 h-5 animate-spin" /> // 🟢 إظهار علامة التحميل داخل الزر
+      ) : (
+        "بـحـث"
+      )}
     </Button>
   </div>
 </div>

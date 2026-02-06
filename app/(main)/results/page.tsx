@@ -83,6 +83,8 @@ export default function ResultsPage() {
   const [examName, setExamName] = useState("اختبار نهائي")
   const [subjectName, setSubjectName] = useState("المادة: لياقة بدنية")
   
+  const [distance, setDistance] = useState<any>("---");
+const [mercyMode, setMercyMode] = useState<boolean>(false);
   // التوقيعات
   const [rightTitle, setRightTitle] = useState("مدخل البيانات")
   const [rightName, setRightName] = useState("")
@@ -104,7 +106,7 @@ export default function ResultsPage() {
   const [filterResult, setFilterResult] = useState("all")
 
   const [currentPage, setCurrentPage] = useState(1)
-  const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [itemsPerPage, setItemsPerPage] = useState(50)
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null)
   // هذا السطر يحدد شكل مكان التوقيع: (تم حذف الحدود المتقطعة لضمان التساوي والنظافة)
 const signatureBoxClass = "mt-2 w-40 h-20 flex items-center justify-center overflow-hidden shrink-0";
@@ -125,7 +127,7 @@ const signatureBoxClass = "mt-2 w-40 h-20 flex items-center justify-center overf
     checkSignature();
   }, [])
 
- const fetchResults = async (forcedSettings?: { base_score: number }) => {
+const fetchResults = async (forcedSettings?: { base_score: number, distance?: any, mercy_mode?: boolean }) => {
   setLoading(true)
   try {
     const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/results`)
@@ -134,28 +136,53 @@ const signatureBoxClass = "mt-2 w-40 h-20 flex items-center justify-center overf
       const fetchedData = json.data || []
       setData(fetchedData)
 
-      // 🟢 الأولوية 1: إذا مررنا معايير جديدة يدوياً (عند ضغط زر تحديث)
-      if (forcedSettings && typeof forcedSettings.base_score === 'number') {
+      // 1️⃣ استخراج "الختم" من البيانات إذا كانت موجودة (المرآة اللحظية)
+      let stampedBase = 100;
+      let stampedDistance: any = "---";
+      let stampedMercy = false;
+
+      if (fetchedData.length > 0) {
+        const firstRow = fetchedData[0];
+        stampedBase = Number(firstRow.base_score) || 100;
+        stampedDistance = firstRow.distance || firstRow.base_distance || "---";
+        stampedMercy = firstRow.mercy_mode === true || firstRow.mercy_mode === "true" || !!firstRow.is_mercy_run;
+      }
+
+      // 2️⃣ منطق تحديد ما سيتم عرضه في الشريط العلوي (Priority Logic)
+      
+      // 🟢 الأولوية 1: المعايير القادمة من زر "تحديث" (التغيير اليدوي اللحظي)
+      if (forcedSettings) {
         setBaseScore(forcedSettings.base_score);
-        console.log("✅ تم استخدام المعيار الممرر قسراً:", forcedSettings.base_score);
+        setDistance(forcedSettings.distance || stampedDistance);
+        setMercyMode(forcedSettings.mercy_mode !== undefined ? forcedSettings.mercy_mode : stampedMercy);
+        
+        console.log("🚀 تم عرض معايير التحديث القسري:", forcedSettings);
       } 
-      // 🟢 الأولوية 2: إذا كانت البيانات تحتوي على ختم المعيار (من المسودة)
-      else if (fetchedData.length > 0 && fetchedData[0].base_score) {
-        const internalScore = Number(fetchedData[0].base_score);
-        setBaseScore(internalScore);
-        console.log("📦 تم اكتشاف المعيار من داخل البيانات:", internalScore);
+      
+      // 🟢 الأولوية 2: عرض ما تم استخراجه من "الختم" (في حال فتح الصفحة أو بعد الإدخال اليدوي)
+      else if (fetchedData.length > 0) {
+        setBaseScore(stampedBase);
+        setDistance(stampedDistance);
+        setMercyMode(stampedMercy);
+        
+        console.log("📦 تم عرض المعايير من واقع ختم البيانات الحالي:", { stampedDistance, stampedMercy });
       } 
-      // 🟢 الأولوية 3: الحالة الافتراضية (من الإعدادات العامة)
+      
+      // 🟢 الأولوية 3: جلب الإعدادات العامة (فقط إذا كانت القائمة فارغة تماماً)
       else {
         const settingsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`)
         if (settingsRes.ok) {
           const settings = await settingsRes.json()
           setBaseScore(settings.base_score)
+          setDistance(settings.distance)
+          setMercyMode(settings.mercy_mode === true || settings.mercy_mode === "true")
+          console.log("⚙️ قائمة فارغة: عرض الإعدادات الافتراضية للنظام");
         }
       }
     }
   } catch (error) { 
-    toast.error("فشل جلب البيانات") 
+    console.error("Fetch Error:", error);
+    toast.error("فشل في مزامنة بيانات المعايير") 
   } finally { 
     setLoading(false) 
   }
@@ -221,21 +248,21 @@ const handleSaveToArchive = async () => {
 
 const handleRecalculate = async () => {
   setLoading(true)
-  // تنظيف الكونسول للمراقبة
+  // تنظيف الكونسول للمراقبة الاحترافية
   console.clear();
-  console.log("%c🚀 بدء عملية التحديث", "color: orange; font-weight: bold; font-size: 14px;");
+  console.log("%c🚀 بدء عملية التحديث الشاملة والمزامنة", "color: orange; font-weight: bold; font-size: 14px;");
 
   try {
-    // أ. جلب أحدث إعدادات من السيرفر (بدون كاش)
+    // أ. جلب أحدث إعدادات من السيرفر (بدون كاش لضمان أحدث القيم)
     const settingsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/settings`, {
       cache: 'no-store',
       headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
     })
     
     const latestSettings = await settingsRes.json()
-    console.log("1️⃣ الإعدادات الجديدة المعتمدة:", latestSettings);
+    console.log("1️⃣ الإعدادات التي سيتم الحساب بناءً عليها:", latestSettings);
 
-    // ب. تجهيز البيانات للإرسال
+    // ب. تجهيز البيانات للإرسال للسيرفر
     const payload = {
       distance: Number(latestSettings.distance),
       pass_rate: Number(latestSettings.pass_rate),
@@ -254,17 +281,22 @@ const handleRecalculate = async () => {
     })
 
     if (res.ok) { 
-      // 🟢 الخطوة الذكية: نمرر المعيار الجديد لدالة الجلب فوراً
-      // هذا يجبر الجدول على تغيير شكله (إظهار/إخفاء الأعمدة) في نفس لحظة وصول البيانات
-      await fetchResults({ base_score: Number(latestSettings.base_score) }); 
+      // 🟢 الخطوة الذهبية: تمرير "كامل" المعايير الجديدة لدالة الجلب
+      // هذا يضمن تحديث "شريط المعايير" العلوي (المسافة، الرأفة، الدرجة) في نفس اللحظة
+      await fetchResults({ 
+        base_score: Number(latestSettings.base_score),
+        distance: latestSettings.distance,
+        mercy_mode: latestSettings.mercy_mode 
+      }); 
       
-      toast.success(`تم تحديث الحسابات بنجاح (المعيار: ${latestSettings.base_score})`) 
+      toast.success(`تم تحديث الحسابات والمعايير بنجاح`) 
+      console.log("✅ تمت المزامنة بنجاح بين الحسابات وواجهة المستخدم");
     } else { 
       toast.error("فشل التحديث من السيرفر") 
     }
   } catch (e) { 
-    console.error(e);
-    toast.error("فشل الاتصال") 
+    console.error("❌ خطأ أثناء التحديث:", e);
+    toast.error("فشل الاتصال بالخادم") 
   } finally { 
     setLoading(false) 
   }
@@ -639,7 +671,32 @@ const screenVisibleColumns = useMemo(() => {
             </div>
             </CardContent>
         </Card>
+{/* 🏷️ شريط المعايير الحالي (عرض توضيحي للمستخدم) */}
+<div className="flex flex-wrap gap-4 mb-4 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800 animate-in fade-in duration-500 print:hidden">
+  <div className="flex items-center gap-2">
+    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+    <span className="text-xs font-medium text-slate-500">المسافة المعتمدة:</span>
+    <span className="text-xs font-bold text-slate-900 dark:text-white">{distance} متر</span>
+  </div>
+  
+  <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 hidden md:block"></div>
 
+  <div className="flex items-center gap-2">
+    <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+    <span className="text-xs font-medium text-slate-500">الدرجة القصوى:</span>
+    <span className="text-xs font-bold text-slate-900 dark:text-white">{baseScore} درجة</span>
+  </div>
+
+  <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 hidden md:block"></div>
+
+  <div className="flex items-center gap-2">
+    <div className={`w-2 h-2 rounded-full ${mercyMode ? 'bg-green-500' : 'bg-red-400'}`}></div>
+    <span className="text-xs font-medium text-slate-500">نظام الرأفة:</span>
+    <span className={`text-xs font-bold ${mercyMode ? 'text-green-600' : 'text-red-500'}`}>
+      {mercyMode ? "مفعّل" : "معطّل"}
+    </span>
+  </div>
+</div>
         {/* الفلاتر */}
         <Card className="border-t-4 border-t-blue-600 shadow-sm print:hidden">
   <CardContent className="p-4 space-y-4">

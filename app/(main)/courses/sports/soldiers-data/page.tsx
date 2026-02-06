@@ -438,81 +438,124 @@ const confirmPhotoDelete = async () => {
   }
 
  const handleAddSoldier = async () => {
-    if (!newSoldier.name || !newSoldier.militaryId) { 
-        toast.error("بيانات ناقصة"); 
+    // 🛡️ التحقق من الحقول الإجبارية (الاسم، الرقم، والدورة)
+    if (!newSoldier.name || !newSoldier.militaryId || !newSoldier.course) { 
+        toast.error("بيانات ناقصة", {
+            description: "يرجى التأكد من إدخال الاسم، الرقم العسكري، واسم الدورة."
+        }); 
         return; 
     }
+
     try {
         const payload = {
-            military_id: normalizeInput(newSoldier.militaryId), 
-            name: newSoldier.name, 
-            rank: newSoldier.rank || "مستجد",
-            course: newSoldier.course, 
-            batch: newSoldier.batch, 
-            company: newSoldier.company, 
-            platoon: newSoldier.platoon,
-            nationality: newSoldier.nationality, 
+            military_id: normalizeInput(newSoldier.militaryId).trim(), 
+            name: newSoldier.name.trim(), 
+            rank: newSoldier.rank?.trim() || "مستجد",
+            
+            // 🟢 الدورة إجبارية
+            course: newSoldier.course.trim(), 
+            
+            // 🟢 تحويل الفراغات إلى null لضمان عدم ظهور كلمة "عام"
+            batch: newSoldier.batch?.trim() || null, 
+            company: newSoldier.company?.trim() || null, 
+            platoon: newSoldier.platoon?.trim() || null,
+            nationality: newSoldier.nationality?.trim() || null, 
+            
             dob: newSoldier.dob || null, 
-            phone: normalizeInput(newSoldier.phone),
-            height: Number(normalizeInput(newSoldier.height)) || 0, 
-            initial_weight: Number(normalizeInput(newSoldier.weight)) || 0
+            phone: normalizeInput(newSoldier.phone).trim() || null,
+            height: Number(normalizeInput(String(newSoldier.height))) || 0, 
+            initial_weight: Number(normalizeInput(String(newSoldier.weight))) || 0
         };
+
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/`, { 
             method: "POST", 
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("token")}`
+            },
             body: JSON.stringify(payload) 
         });
+
         if (res.ok) {
-            toast.success("تم الحفظ بنجاح");
+            toast.success("تم حفظ بيانات المجند بنجاح ✅");
             setIsAddOpen(false);
+            
+            // إعادة تعيين النموذج للوضع الفارغ
             setNewSoldier({ 
                 name: "", militaryId: "", rank: "", nationality: "", 
                 phone: "", course: "", batch: "", company: "", 
                 platoon: "", dob: "", height: "", weight: "" 
             });
+
+            // تحديث البيانات في الواجهة
             fetchSoldiers();
-            fetchCourses(); // تحديث البطاقات
+            fetchCourses(); 
             fetchFilters();
         } else { 
             const errorData = await res.json();
             toast.error(errorData.detail || "فشل الحفظ"); 
         }
     } catch (e) { 
+        console.error("Error adding soldier:", e);
         toast.error("فشل الاتصال بالسيرفر"); 
     }
 };
 
  const handleSaveChanges = async () => {
     if (!editingSoldier) return;
+
+    // 🛡️ 1. فحص الحقول الإجبارية قبل الإرسال
+    if (!editingSoldier.name?.trim() || !editingSoldier.military_id?.trim() || !editingSoldier.course?.trim()) {
+        toast.error("بيانات ناقصة", {
+            description: "لا يمكن ترك الاسم أو الرقم العسكري أو الدورة فارغة."
+        });
+        return;
+    }
+
     setIsSaving(true);
     try {
+        // 2. بناء الحمولة (Payload) مع تحويل الفراغات إلى null
         const payload = {
-            military_id: normalizeInput(editingSoldier.military_id),
-            name: editingSoldier.name || "", 
-            rank: editingSoldier.rank || "", 
-            phone: normalizeInput(editingSoldier.phone) || "",
-            course: editingSoldier.course || "", 
-            batch: editingSoldier.batch || "",
-            company: editingSoldier.company || "", 
-            platoon: editingSoldier.platoon || "",
+            military_id: normalizeInput(editingSoldier.military_id).trim(),
+            name: editingSoldier.name.trim(),
+            rank: editingSoldier.rank?.trim() || "مستجد",
+            
+            // الحقول التي نريدها أن تظهر فارغة (Null) بدلاً من "عام"
+            course: editingSoldier.course.trim(), 
+            batch: editingSoldier.batch?.trim() || null,
+            company: editingSoldier.company?.trim() || null, 
+            platoon: editingSoldier.platoon?.trim() || null,
+            
+            nationality: editingSoldier.nationality?.trim() || null,
+            phone: normalizeInput(editingSoldier.phone)?.trim() || null,
             dob: editingSoldier.dob || null, 
-            nationality: editingSoldier.nationality || "",
+            
+            // ضمان تحويل الطول والوزن لأرقام بشكل صحيح
             height: Number(normalizeInput(String(editingSoldier.height))) || 0, 
             initial_weight: Number(normalizeInput(String(editingSoldier.initial_weight))) || 0
         };
+
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/${editingSoldier.id}`, { 
             method: 'PUT', 
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("token")}`
+            },
             body: JSON.stringify(payload) 
         });
+
         if (response.ok) {
-            toast.success("تم التعديل بنجاح");
+            toast.success("تم تحديث بيانات المجند بنجاح ✅");
             setIsEditOpen(false); 
-            fetchSoldiers(); 
+            fetchSoldiers(); // إعادة جلب البيانات لتحديث الجدول
+            fetchCourses();  // تحديث البطاقات في حال تغير اسم الدورة
         } else { 
             const errorBody = await response.json();
             toast.error(errorBody.detail || "فشل التعديل");
         }
     } catch (error) { 
-        toast.error("خطأ في الاتصال بالسيرفر");
+        console.error("Save Error:", error);
+        toast.error("حدث خطأ في الاتصال بالسيرفر");
     } finally { 
         setIsSaving(false); 
     }

@@ -56,6 +56,7 @@ const downloadTemplate = (type: 'fitness' | 'trainer') => {
         'الدفعة', 
         'السرية', 
         'الفصيل', 
+        'الرتبة', // 👈 العمود الجديد
         'الرقم العسكري', 
         'الإسم', 
         'تاريخ الميلاد', 
@@ -73,7 +74,7 @@ const downloadTemplate = (type: 'fitness' | 'trainer') => {
 
   // 3. ضبط عرض الأعمدة تلقائياً لتكون العناوين واضحة
   const wscols = type === 'fitness' 
-    ? [{wch:15}, {wch:10}, {wch:10}, {wch:10}, {wch:15}, {wch:25}, {wch:15}, {wch:10}, {wch:10}, {wch:10}]
+    ? [{wch:15}, {wch:10}, {wch:10}, {wch:10},{wch:12}, {wch:15}, {wch:25}, {wch:15}, {wch:10}, {wch:10}, {wch:10}]
     : [{wch:15}, {wch:15}];
   ws['!cols'] = wscols;
 
@@ -232,7 +233,7 @@ const handleManualCalculate = async () => {
   }
 
   // --- دالة رفع ملفات المدرب الجديدة ---
-  const handleTrainerUpload = async () => {
+ const handleTrainerUpload = async () => {
     if (!trainerFiles || trainerFiles.length === 0) return
     setTrainerStatus("loading")
 
@@ -245,16 +246,27 @@ const handleManualCalculate = async () => {
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/upload/trainer-scores`, {
         method: "POST",
+        headers: {
+            // تأكد من إرسال التوكن إذا كان المسار محمياً
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
         body: formData,
       })
+      
       const data = await res.json()
       
       if (res.ok) {
         setTrainerStatus("success")
-        // الرسالة التفصيلية الجديدة
-        toast.success("تم دمج الدرجات بنجاح", {
-            description: `تم تحديث درجات المدرب لـ (${data.updated_count}) طالب.`,
-            duration: 5000, // تبقى الرسالة 5 ثوانٍ لقرائتها
+        
+        // 🟢 التعديل الذهبي: تحديث واجهة المستخدم بالبيانات الجديدة المحسوبة
+        // السيرفر الآن يرسل قائمة الطلاب كاملة بعد دمج درجة المدرب وإعادة حساب المجموع
+        if (data.data) {
+            setUploadStats(data); // تحديث الإحصائيات والقائمة المعروضة فوراً
+        }
+
+        toast.success("تم دمج الدرجات وإعادة الحساب بنجاح ✅", {
+            description: `تم تحديث درجات المدرب لـ (${data.updated_count}) طالب وتحديث نتائجهم النهائية.`,
+            duration: 5000,
         })
       } else {
         setTrainerStatus("error")
@@ -266,7 +278,7 @@ const handleManualCalculate = async () => {
       setTrainerStatus("error")
       toast.error("فشل الاتصال بالخادم")
     }
-  }
+}
 
   return (
     <ProtectedRoute allowedRoles={["owner","assistant_admin"]}>
