@@ -121,6 +121,8 @@ const [filterOptions, setFilterOptions] = useState<{ courses: string[], batches:
   const [newTestName, setNewTestName] = useState(""); // لإنشاء اختبار جديد
   // أيام الأسبوع الثابتة للجدول
   const weekDays = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
+  const [templateToDeleteId, setTemplateToDeleteId] = useState<string | null>(null);
+const [isTemplateConfirmOpen, setIsTemplateConfirmOpen] = useState(false);
   // حالات التوقيع
   const [savedSignature, setSavedSignature] = useState<string | null>(null)
   const [userMilId, setUserMilId] = useState<string | null>(null)
@@ -128,6 +130,7 @@ const [filterOptions, setFilterOptions] = useState<{ courses: string[], batches:
 const [isAxisModalOpen, setIsAxisModalOpen] = useState(false);
 const [isAddSectionOpen, setIsAddSectionOpen] = useState(false);
 const [newSectionData, setNewSectionData] = useState({ name: "", key: "" });
+const [showOnlyActive, setShowOnlyActive] = useState(false); // حالة فلترة القوالب
   // إعدادات اللياقة والتفضيلات
   const [calcSettings, setCalcSettings] = useState({
     distance: "3200", pass_rate: 60, base_score: 100, mercy_mode: false, rows_per_page: "10"
@@ -557,6 +560,16 @@ const fetchDisciplinaryRegulations = async () => {
         }
     } catch (e) { console.error("Error fetching regulations"); }
 };
+useEffect(() => {
+  if (showOnlyActive) {
+    const currentTemp = trainingTemplates.find(t => t.id === activeTemplateId);
+    if (currentTemp && !currentTemp.isActive) {
+      // إذا كان القالب الحالي غير نشط، انتقل لأول قالب نشط متاح
+      const firstActive = trainingTemplates.find(t => t.isActive);
+      if (firstActive) setActiveTemplateId(firstActive.id);
+    }
+  }
+}, [showOnlyActive]);
 useEffect(() => {
     setMounted(true);
 
@@ -1289,6 +1302,9 @@ const removeDayRow = (templateId: string, dayName: string) => {
     };
   }));
 };
+// 🔍 تصفية القوالب: إذا كان الخيار مفعلاً، نظهر النشط فقط، وإلا نظهر الكل
+const displayedTemplates = trainingTemplates.filter(t => !showOnlyActive || t.isActive);
+
   if (!mounted) return null
 
 
@@ -2265,15 +2281,34 @@ if (!mounted) return null
     (Array.isArray(currentUser?.extra_permissions) && currentUser?.extra_permissions?.includes("training_program"))) ? (
             <Card className="border-t-4 border-t-amber-500 shadow-md">
               {/* ... (Header كما هو) ... */}
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <div>
-                  <CardTitle className="text-amber-700 flex items-center gap-2"><CalendarDays className="w-5 h-5"/> إدارة البرنامج اليومي</CardTitle>
-                  <CardDescription>تعريف الحصص والتوقيتات للدورات المختلفة (القوالب الأسبوعية).</CardDescription>
-                </div>
-                <Button onClick={createNewTemplate} variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-50">
-                  <Plus className="w-4 h-4 ml-2"/> قالب جديد
-                </Button>
-              </CardHeader>
+              <CardHeader className="flex flex-col md:flex-row items-center justify-between pb-4 gap-4">
+  <div>
+    <CardTitle className="text-amber-700 flex items-center gap-2">
+      <CalendarDays className="w-5 h-5"/> إدارة البرنامج اليومي
+    </CardTitle>
+    <CardDescription>تعريف الحصص والتوقيتات للدورات المختلفة (القوالب الأسبوعية).</CardDescription>
+  </div>
+
+  <div className="flex items-center gap-4">
+    {/* 🛡️ ميزة خاصة بالـ Owner فقط لإخفاء الأرشيف */}
+    {userRole === "owner" && (
+      <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border shadow-sm">
+        <Switch 
+          id="show-active" 
+          checked={showOnlyActive} 
+          onCheckedChange={setShowOnlyActive} 
+        />
+        <Label htmlFor="show-active" className="text-[10px] font-black text-slate-600 cursor-pointer">
+          إخفاء الأرشيف (غير النشط)
+        </Label>
+      </div>
+    )}
+
+    <Button onClick={createNewTemplate} variant="outline" className="border-amber-200 text-amber-700 hover:bg-amber-50 h-9 text-xs font-bold">
+      <Plus className="w-4 h-4 ml-1"/> قالب جديد
+    </Button>
+  </div>
+</CardHeader>
 
               <CardContent className="space-y-6">
                 {trainingTemplates.length === 0 ? (
@@ -2287,12 +2322,17 @@ if (!mounted) return null
                   <Tabs value={activeTemplateId || ""} onValueChange={setActiveTemplateId} className="w-full">
                     {/* ... (TabsList كما هو) ... */}
                     <TabsList className="w-full justify-start overflow-x-auto bg-slate-100 p-1 mb-4">
-                      {trainingTemplates.map(temp => (
-                        <TabsTrigger key={temp.id} value={temp.id} className="min-w-[120px]">
-                          {temp.name || "بدون عنوان"}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
+  {displayedTemplates.map(temp => (
+    <TabsTrigger key={temp.id} value={temp.id} className="min-w-[120px] relative group">
+      {temp.name || "بدون عنوان"}
+      {/* علامة صغيرة لتمييز القالب النشط عن غيره بالنظر */}
+      <div className={cn(
+        "w-1.5 h-1.5 rounded-full absolute top-1 left-1",
+        temp.isActive ? "bg-green-500" : "bg-slate-300"
+      )} />
+    </TabsTrigger>
+  ))}
+</TabsList>
 
                     {trainingTemplates.map(template => (
                       <TabsContent key={template.id} value={template.id} className="space-y-4 animate-in fade-in slide-in-from-top-2"dir="rtl">
@@ -2347,14 +2387,20 @@ if (!mounted) return null
                                 />
                                 <Label className="cursor-pointer text-[10px] whitespace-nowrap">تفعيل الجدول</Label>
                              </div>
-                             <Button 
-  variant="destructive" 
-  size="icon" 
-  onClick={() => handleDeleteTemplate(template.id)} // 👈 الربط هنا
-  className="h-10 w-12 shrink-0"
->
-  <Trash2 className="w-4 h-4"/>
-</Button>
+                             {userRole === "owner" && (
+  <Button 
+    variant="destructive" 
+    size="icon" 
+    onClick={() => {
+      setTemplateToDeleteId(template.id);
+      setIsTemplateConfirmOpen(true);
+    }} 
+    className="h-10 w-12 shrink-0 shadow-sm hover:bg-red-700"
+    title="حذف هذا القالب نهائياً"
+  >
+    <Trash2 className="w-4 h-4"/>
+  </Button>
+)}
                           </div>
                         </div>
 
@@ -2669,6 +2715,36 @@ if (!mounted) return null
     </div>
   </DialogContent>
 </Dialog>
+<AlertDialog open={isTemplateConfirmOpen} onOpenChange={setIsTemplateConfirmOpen}>
+  <AlertDialogContent dir="rtl" className="max-w-[400px] border-t-4 border-t-red-600">
+    <AlertDialogHeader>
+      <AlertDialogTitle className="flex items-center gap-2 text-red-600 font-black">
+        <AlertTriangle className="w-5 h-5" />
+        تأكيد حذف القالب التدريبي
+      </AlertDialogTitle>
+      <AlertDialogDescription className="text-right pt-2 text-slate-600 leading-relaxed font-bold">
+        هل أنت متأكد من حذف هذا الجدول؟ <br/>
+        <span className="text-red-500 text-xs mt-2 block">
+          ⚠️ تنبيه: سيؤدي هذا الإجراء إلى حذف هيكل الجدول من الإعدادات، ولن يؤثر على سجلات الغياب السابقة، لكنك لن تجد هذا القالب لتعديله مستقبلاً.
+        </span>
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter className="flex-row-reverse gap-2 mt-4">
+      <AlertDialogCancel className="flex-1 font-bold">تراجع</AlertDialogCancel>
+      <AlertDialogAction 
+        onClick={() => {
+          if (templateToDeleteId) {
+            handleDeleteTemplate(templateToDeleteId);
+            setTemplateToDeleteId(null);
+          }
+        }} 
+        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black shadow-lg"
+      >
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "نعم، احذف الجدول"}
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
     </div>
     
   </ProtectedRoute>

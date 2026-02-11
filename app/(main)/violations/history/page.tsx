@@ -110,92 +110,156 @@ const groupedRows = useMemo(() => {
         fetchSummaries();
     }, [startDate, endDate]);
 
-   const fetchInitialOptions = async () => {
-        try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`);
-            if (res.ok) {
-                let data = await res.json();
+  const fetchInitialOptions = async () => {
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`);
+        if (res.ok) {
+            let data = await res.json();
 
-                // 🔑 جلب صلاحيات المستخدم الحالي
-                const user = JSON.parse(localStorage.getItem("user") || "{}");
-                const scope = user?.extra_permissions?.scope;
-
-                // 🛡️ تصفية القوائم بناءً على النطاق
-                if (user.role !== 'owner' && scope?.is_restricted) {
-                    const allowedCoursesKeys = scope.courses || []; // بصيغة "اسم الدورة||الدفعة"
-
-                    // 1. تصفية الدورات
-                    const allowedCourseNames = allowedCoursesKeys.map((key: string) => key.split('||')[0]);
-                    data.courses = (data.courses || []).filter((cName: string) => 
-                        allowedCourseNames.includes(cName)
-                    );
-
-                    // 2. تصفية الدفعات
-                    data.batches = (data.batches || []).filter((bName: string) => {
-                        return allowedCoursesKeys.some((key: string) => key.endsWith(`||${bName}`));
-                    });
-                }
-                setOptions(data);
-            }
-        } catch (e) { console.error(e); }
-    };
-
-    const fetchSummaries = async () => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem("token");
+            // 🔑 1. جلب صلاحيات المستخدم الحالي
             const user = JSON.parse(localStorage.getItem("user") || "{}");
             const scope = user?.extra_permissions?.scope;
 
-            const res = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL}/violations/summaries?start_date=${startDate}&end_date=${endDate}`,
-                { headers: { "Authorization": `Bearer ${token}` } }
-            );
-
-            if (res.ok) {
-                let data = await res.json();
-
-                // 🛡️ [تصفية البطاقات بناءً على النطاق المسموح]
-                if (user.role !== 'owner' && scope?.is_restricted) {
-                    const allowedCoursesKeys = scope.courses || [];
-                    data = data.filter((item: any) => {
-                        const key = `${item.course}||${item.batch}`;
-                        return allowedCoursesKeys.includes(key);
-                    });
-                }
-                setDailySummaries(data);
+            // 🛡️ 2. المرحلة الأولى: توحيد كافة مسميات الدفعات في القائمة القادمة من السيرفر
+            // نحول (NULL, "", "None") إلى "لا يوجد" لكي تتطابق مع لغة الصلاحيات
+            if (data.batches) {
+                data.batches = Array.from(new Set(data.batches.map((b: string) => 
+                    (!b || b === "None" || b === "none" || b === "null" || b === "") ? "لا يوجد" : b
+                ))).sort((a: any, b: any) => a.localeCompare(b, 'ar'));
             }
-        } catch (e) { 
-            toast.error("خطأ في الاتصال"); 
-        } finally { 
-            setLoading(false); 
+
+            // 🛡️ 3. تصفية القوائم بناءً على النطاق للمستخدم المقيد
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedKeys = scope.courses || []; // بصيغة "اسم الدورة||الدفعة" أو "اسم الدورة" فقط
+
+                // أ. تصفية الدورات (Courses)
+                const allowedCourseBaseNames = allowedKeys.map((key: string) => key.split('||')[0]);
+                data.courses = (data.courses || []).filter((cName: string) => 
+                    allowedCourseBaseNames.includes(cName)
+                );
+
+                // ب. تصفية الدفعات (Batches) - [المنطق المطور]
+                data.batches = (data.batches || []).filter((bName: string) => {
+                    return allowedKeys.some((key: string) => {
+                        // 🟢 فحص 1: هل يملك صلاحية عامة على الدورة؟ (تفتح له كل دفعاتها)
+                        const isGeneralAccess = !key.includes("||") && allowedCourseBaseNames.includes(key);
+                        
+                        // 🟢 فحص 2: هل يملك صلاحية على هذه الدفعة تحديداً؟
+                        const isSpecificBatchAccess = key.endsWith(`||${bName}`);
+
+                        return isGeneralAccess || isSpecificBatchAccess;
+                    });
+                });
+            }
+            
+            setOptions(data);
         }
-    };
+    } catch (e) { 
+        console.error("🚨 خطأ في جلب خيارات الفلترة:", e); 
+    }
+};
+
+  const fetchSummaries = async () => {
+    setLoading(true);
+    try {
+        const token = localStorage.getItem("token");
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        const scope = user?.extra_permissions?.scope;
+
+        const res = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/violations/summaries?start_date=${startDate}&end_date=${endDate}`,
+            { headers: { "Authorization": `Bearer ${token}` } }
+        );
+
+        // ابحث عن هذا الجزء داخل دالة fetchSummaries
+if (res.ok) {
+    let data = await res.json();
+
+    // 🟢 الخطوة المفقودة (الإصلاح): توحيد مسمى الدفعة في "كل" البيانات القادمة
+    data = data.map((item: any) => ({
+        ...item,
+        // نحول أي قيمة غير واضحة للدفعة إلى "لا يوجد" فوراً ليتعرف عليها النظام
+        batch: (!item.batch || item.batch === "None" || item.batch === "none" || item.batch === "null" || item.batch === "") 
+               ? "لا يوجد" 
+               : item.batch
+    }));
+
+    // 🛡️ الآن، كود حارس النطاق سيعمل على بيانات نظيفة وموحدة أصلاً
+    if (user.role !== 'owner' && scope?.is_restricted) {
+        const allowedKeys = scope.courses || [];
+        data = data.filter((item: any) => {
+            const courseName = item.course;
+            // لم نعد بحاجة لتعريف batchLabel هنا لأننا نظفنا الدفعة في الخطوة السابقة
+            const hasGeneralAccess = allowedKeys.includes(courseName);
+            const hasSpecificAccess = allowedKeys.includes(`${courseName}||${item.batch}`);
+            return hasGeneralAccess || hasSpecificAccess;
+        });
+    }
+
+    // 🏁 الآن setDailySummaries ستخزن بيانات مطابقة تماماً للقوائم المنسدلة
+    setDailySummaries(data);
+
+        }
+    } catch (e) { 
+        console.error("🚨 خطأ في جلب ملخصات المخالفات:", e);
+        toast.error("خطأ في الاتصال بالسيرفر"); 
+    } finally { 
+        setLoading(false); 
+    }
+};
 
   const openViolationReport = async (course: string, batch: string) => {
-    // 🟢 تفعيل حالة التحميل للبطاقة المختارة
+    // 1. تفعيل حالة التحميل للبطاقة المحددة (نستخدم الاسم والبطاقة كمفتاح فريد)
     setActiveCard(course + batch);
     setLoading(true);
 
     try {
         const token = localStorage.getItem("token");
-        // 🟢 التغيير الجوهري: الرابط الجديد الذي يجلب المخالفات المعتمدة فقط
+
+        // 🟢 [التعديل الجوهري]: توحيد مسمى الدفعة قبل إرساله للباك إند
+        // إذا كانت الدفعة "لا يوجد" أو أي مسمى فراغ آخر، نحولها لنص فارغ "" 
+        // لكي يفهم السيرفر أنه يجب البحث عن السجلات التي حقل الدفعة فيها NULL
+        const cleanBatchForApi = (
+            !batch || 
+            batch === "all" || 
+            batch === "None" || 
+            batch === "none" || 
+            batch === "لا يوجد" || 
+            batch === ""
+        ) ? "" : batch;
+
+        // بناء معايير البحث (Query Params) بشكل آمن لضمان تشفير النصوص العربية
+        const queryParams = new URLSearchParams({
+            start_date: startDate,
+            end_date: endDate,
+            course: course,
+            batch: cleanBatchForApi // إرسال المسمى "المطهر"
+        });
+
         const res = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL}/violations/approved-report-details?start_date=${startDate}&end_date=${endDate}&course=${course}&batch=${batch}`,
+            `${process.env.NEXT_PUBLIC_API_URL}/violations/approved-report-details?${queryParams.toString()}`,
             { headers: { "Authorization": `Bearer ${token}` } }
         );
 
         if (res.ok) {
             const data = await res.json();
+            
+            // تحديث بيانات الجدول والتوقيعات
             setReportRows(data.rows || []);
             setApprovals(data.approvals || {});
-            setSelectedReport({ course, batch });
+            
+            // 🛡️ تأمين التقرير المختار: نحفظه بالقيم التي نجحت في جلب البيانات
+            // هذا يضمن أن دوال الاعتماد والإلغاء ستستخدم نفس مسمى الدفعة (نص فارغ)
+            setSelectedReport({ course, batch: cleanBatchForApi }); 
+            
         } else {
-            toast.error("لا توجد مخالفات معتمدة لهذه الدورة في الفترة المختارة");
-            setActiveCard(null); // إعادة البطاقة لشكلها الطبيعي عند الفشل
+            const errorData = await res.json();
+            toast.error(errorData.detail || "عفواً، لا توجد مخالفات معتمدة لهذه الدورة حالياً");
+            setActiveCard(null); // إعادة البطاقة لشكلها الطبيعي
         }
     } catch (e) {
-        toast.error("خطأ في الاتصال");
+        console.error("🚨 خطأ أثناء فتح التقرير:", e);
+        toast.error("خطأ في الاتصال بالسيرفر");
         setActiveCard(null);
     } finally {
         setLoading(false);
@@ -493,7 +557,9 @@ const confirmDeleteAll = async () => {
                     <h3 className={`font-black text-xl mb-1 transition-colors ${isThisCardLoading ? 'text-red-900' : 'text-slate-800'}`}>
                         {report.course}
                     </h3>
-                    <p className="text-slate-500 font-bold">الدفعة: {report.batch && report.batch !== 'none' ? report.batch : '---'}</p>
+                    <p className="text-slate-500 font-bold">
+    الدفعة: {(!report.batch || report.batch === 'none' || report.batch === 'None') ? 'لا يوجد' : report.batch}
+</p>
                     
                     <div className="flex gap-2 mt-2">
                         {isThisCardLoading ? (

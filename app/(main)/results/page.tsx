@@ -369,7 +369,7 @@ const handleRecalculate = async () => {
         )
       })
     }
-    if (filterCourse !== "all") filtered = filtered.filter(i => i['اسم الدورة'] === filterCourse)
+    if (filterCourse !== "all") filtered = filtered.filter(i => i['الدورة'] === filterCourse)
     if (filterCompany !== "all") filtered = filtered.filter(i => i['السرية'] === filterCompany)
     if (filterPlatoon !== "all") filtered = filtered.filter(i => i['الفصيل'] === filterPlatoon)
     if (filterGrade !== "all") filtered = filtered.filter(i => i['grade'] === filterGrade)
@@ -507,7 +507,7 @@ const screenVisibleColumns = useMemo(() => {
       'is_special_row', 'config_details', 'created_at', 'base_score', 
       'soldier_id', 'id', 'military_id', 'name', 'rank', 'average', 
       'grade', 'final_result', 'trainer_score',
-      'batch', 'company', 'platoon', 'course', 'اسم الدورة'
+      'batch', 'company', 'platoon', 'course', 'الدورة'
     ]
 
     // 🟢 استخراج المعيار الفعلي من أول سجل لضمان دقة الشرط

@@ -52,7 +52,7 @@ const downloadTemplate = (type: 'fitness' | 'trainer') => {
   // 1. تحديد العناوين العربية (إضافة الأعمدة التنظيمية في بداية نموذج اللياقة)
   const headers = type === 'fitness' 
     ? [[
-        'اسم الدورة', 
+        'الدورة ', 
         'الدفعة', 
         'السرية', 
         'الفصيل', 
@@ -287,9 +287,9 @@ const handleManualCalculate = async () => {
       
       <Tabs defaultValue="excel" className="w-full" dir="rtl">
         <TabsList className="grid w-full grid-cols-3 max-w-[600px] mb-4">
-          <TabsTrigger value="excel">رفع ملف اللياقة</TabsTrigger>
-          <TabsTrigger value="trainer">درجات المدرب</TabsTrigger>
-          <TabsTrigger value="manual">إدخال يدوي</TabsTrigger>
+          <TabsTrigger value="excel">إدخال خارجي</TabsTrigger>
+          <TabsTrigger value="trainer">درجات المدرب(خارجي)</TabsTrigger>
+          <TabsTrigger value="manual">إدخال داخلي</TabsTrigger>
         </TabsList>
 
         {/* --- 1: رفع ملف اللياقة --- */}

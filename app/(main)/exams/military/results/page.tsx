@@ -56,6 +56,7 @@ const [committeeMapping, setCommitteeMapping] = useState<Record<string, string>>
 const [pendingGroup, setPendingGroup] = useState<any>(null);
     const [deleteTarget, setDeleteTarget] = useState<{id: number, title: string, all_ids: number[]} | null>(null);
     const [activeGroup, setActiveGroup] = useState<{ course: string; batch: string } | null>(null);
+    const [printMode, setPrintMode] = useState<"merged" | "member1" | "member2" | "head">("merged");
     const router = useRouter()
 const searchParams = useSearchParams() // 👈 إضافة هذا
     const targetRecordId = searchParams.get('record_id')
@@ -116,22 +117,22 @@ const fetchRecords = async () => {
         const scope = user?.extra_permissions?.scope;
         const isRestricted = user.role !== 'owner' && scope?.is_restricted;
         
-        // 🟢 [التعديل الذهبي]: تنظيف المصفوفة من الصلاحيات الإدارية
-        // نعتبر أن مفتاح الدورة الحقيقي يجب أن يحتوي على "||" (الخاص بالدفعة)
-        // أو نستبعد الكلمات المحجوزة يدوياً
-        const rawCourses = scope?.courses || [];
-        const userCourses = rawCourses.filter((key: string) => 
-            key !== "fitness_standards" &&  // استبعاد معايير اللياقة
-            key.includes("||")              // استبعاد أي شيء ليس بصيغة (دورة||دفعة)
+        // 1. جلب قوائم الصلاحيات من النطاق
+        const allowedCourses = scope?.courses || [];
+        const allowedPlatoons = scope?.platoons || [];
+
+        // تنظيف القائمة من الأعلام الإدارية فقط مع الإبقاء على أسماء الدورات العامة
+        const userCourses = allowedCourses.filter((key: string) => 
+            key !== "fitness_standards" && 
+            key !== "training_program"
         );
 
-        // 🛑 [نقطة التفتيش المعدلة]
-        // الآن، إذا كان لديه فقط "fitness_standards"، ستصبح userCourses فارغة، وسيتم الحجب
-        if (isRestricted && userCourses.length === 0) {
-            console.log("⛔ وصول محظور: تم استبعاد الصلاحيات الإدارية، ولا توجد دورات.");
+        // 🛑 [نقطة التفتيش]: حجب الوصول إذا كان المستخدم مقيداً ولا يملك أي دورات أو فصائل
+        if (isRestricted && userCourses.length === 0 && allowedPlatoons.length === 0) {
+            console.log("⛔ وصول محظور: لا توجد صلاحيات مسجلة لهذا النطاق.");
             setRecords([]);
             setLoading(false);
-            return; // ✋ إغلاق فوري
+            return;
         }
 
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records`, {
@@ -141,18 +142,58 @@ const fetchRecords = async () => {
         if (res.ok) {
             const rawData = await res.json();
             
-            let processed = rawData.map((r: any) => ({
-                ...r,
-                students_data: typeof r.students_data === 'string' ? JSON.parse(r.students_data) : r.students_data,
-                approvals: typeof r.approvals === 'string' ? JSON.parse(r.approvals) : r.approvals
-            }));
+            // 🧼 المرحلة 1: التطهير والتوحيد (Normalization)
+            // نقوم بتوحيد البيانات فور وصولها وقبل الفلترة لضمان معالجة حالات (لا يوجد / None / NULL)
+            let processed = rawData.map((r: any) => {
+                // فك تشفير البيانات
+                const sData = typeof r.students_data === 'string' ? JSON.parse(r.students_data) : r.students_data;
+                const apps = typeof r.approvals === 'string' ? JSON.parse(r.approvals) : r.approvals;
+                
+                // 🟢 توحيد المسميات: أي قيمة فارغة أو مشوهة تتحول للمسمى الرسمي الموحد
+                const cleanBatch = (r.batch === null || r.batch === "None" || r.batch === "null" || r.batch === "عام" || !r.batch) 
+                    ? "لا يوجد" 
+                    : r.batch;
 
-            // 🛡️ تصفية النتائج
+                const cleanCompany = (r.company === null || r.company === "None" || r.company === "null" || !r.company) 
+                    ? "لا توجد سرايا" 
+                    : r.company;
+
+                const cleanPlatoon = (r.platoon === null || r.platoon === "None" || r.platoon === "null" || !r.platoon) 
+                    ? "لا توجد فصائل" 
+                    : r.platoon;
+
+                return {
+                    ...r,
+                    batch: cleanBatch,
+                    company: cleanCompany,
+                    platoon: cleanPlatoon,
+                    students_data: sData,
+                    approvals: apps
+                };
+            });
+
+            // 🛡️ المرحلة 2: [نظام الفلترة الذكي المطور]
             if (isRestricted) {
                 processed = processed.filter((r: any) => {
-                    const key = `${r.course}${r.batch ? `||${r.batch}` : ''}`;
-                    // نستخدم المصفوفة النظيفة userCourses للمقارنة
-                    return userCourses.includes(key);
+                    const courseName = r.course;
+                    // بما أننا وحدنا الدفعة في المرحلة السابقة، نستخدمها مباشرة لبناء المفتاح
+                    const batchVal = r.batch; 
+                    const courseKeyWithBatch = `${courseName}||${batchVal}`;
+
+                    // 1. فحص الوصول العام للدورة (بالاسم الصافي أو بمفتاح "لا يوجد")
+                    // يغطي حالة: "إعداد مدربي الصاعقة" أو "إعداد مدربي الصاعقة||لا يوجد"
+                    const hasGeneralAccess = userCourses.includes(courseName) || userCourses.includes(courseKeyWithBatch);
+
+                    // 2. فحص الوصول عبر الفصائل (إذا كان مسموحاً له فصيل واحد داخل هذه الدورة)
+                    // يضمن ظهور البطاقة لسيناريو: (لا دفعة + لا سرية + فصيل محدد)
+                    const hasPlatoonAccess = allowedPlatoons.some((pKey: string) => {
+                        // يطابق "اسم الدورة->فصيل" أو "اسم الدورة||لا يوجد->فصيل"
+                        return pKey.startsWith(`${courseName}->`) || 
+                               pKey.startsWith(`${courseKeyWithBatch}->`);
+                    });
+
+                    // السماح بالمرور إذا تحقق أي شرط
+                    return hasGeneralAccess || hasPlatoonAccess;
                 });
             }
 
@@ -160,6 +201,7 @@ const fetchRecords = async () => {
         }
     } catch (e) {
         toast.error("فشل الاتصال بالسيرفر");
+        console.error("Fetch Error:", e);
     } finally {
         setLoading(false);
     }
@@ -573,6 +615,30 @@ const exportToExcel = () => {
 
         return "infantry"; // الافتراضي للمواد العسكرية الأخرى (مشاة، أسلحة..)
     };
+    const handlePrintExecution = () => {
+    const originalTitle = document.title;
+
+    // 1. تأمين المسميات الأساسية
+    const cleanTitle = (selectedRecord.title || "اختبار").split(" - ")[0].replace(/\s+/g, '_');
+    const cleanCourse = (selectedRecord.course || "دورة").replace(/\s+/g, '_');
+    const cleanBatch = (selectedRecord.batch || "بدون_دفعة").replace(/\s+/g, '_');
+    const examDate = selectedRecord.exam_date || "تاريخ_غير_محدد";
+
+    // 2. تحديد لاحقة اسم الملف بناءً على وضع الطباعة (printMode)
+    let printSuffix = "النتيجة_النهائية";
+    if (printMode === "member1") printSuffix = "رصد_عضو_1";
+    if (printMode === "member2") printSuffix = "رصد_عضو_2";
+    if (printMode === "head") printSuffix = "رصد_رئيس_اللجنة";
+
+    // 3. دمج الاسم النهائي للملف
+    document.title = `${printSuffix}_${cleanTitle}_${cleanCourse}_${cleanBatch}_${examDate}`;
+
+    // 4. أمر الطباعة
+    window.print();
+
+    // 5. استعادة العنوان الأصلي للمتصفح
+    setTimeout(() => { document.title = originalTitle; }, 500);
+};
 const courseBatchGroups = useMemo(() => {
     // 🛡️ الحارس: جلب بيانات المستخدم والنطاق فوراً
     const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
@@ -667,9 +733,17 @@ const groupedRecords = useMemo(() => {
     });
 
     const groups: Record<string, any> = {};
+    
     filtered.forEach(r => {
-        // المفتاح الفريد لدمج الفصائل والمقيمين في بطاقة واحدة شاملة
-        const key = `${r.exam_date}-${r.config_id}-${r.course}-${r.batch}`;
+        // 🧼 [التعديل الذهبي]: توحيد مسمى الدفعة لصناعة مفتاح دمج "مُحصن"
+        // هذا السطر يضمن دمج (عضو 1، عضو 2، ورئيس اللجنة) في بطاقة واحدة
+        // حتى لو اختلفت طريقة تسجيل "فراغ" الدفعة بين السجلات.
+        const batchIdentifier = (r.batch === null || r.batch === "None" || r.batch === "null" || r.batch === "" || r.batch === "لا يوجد") 
+            ? "no_batch" 
+            : r.batch;
+
+        // بناء المفتاح الفريد باستخدام المعرف الموحد للدفعة
+        const key = `${r.exam_date}-${r.config_id}-${r.course}-${batchIdentifier}`;
         
         const currentStudentIds = Array.isArray(r.students_data) 
             ? r.students_data.map((s: any) => String(s.military_id)) 
@@ -681,20 +755,21 @@ const groupedRecords = useMemo(() => {
                 all_ids: [r.id],
                 config_id: r.config_id,
                 course: r.course,
-                batch: r.batch,
+                // نترك مسمى الدفعة للعرض كما هو "لا يوجد" الذي نظفناه في fetchRecords
+                batch: r.batch, 
                 exam_date: r.exam_date,
                 unique_students: new Set(currentStudentIds) 
             };
         } else {
-            // تجميع معرفات السجلات (IDs) لتمكين الحذف الجماعي أو الفتح الجماعي
+            // تجميع معرفات السجلات (IDs) لتمكين الحذف الجماعي أو الفتح الجماعي (لحل التعارض)
             if (!groups[key].all_ids.includes(r.id)) {
                 groups[key].all_ids.push(r.id);
             }
             
-            // تحديث حالة الاعتماد (إذا كان أحدهم معتمداً، البطاقة تظهر معتمدة)
+            // تحديث حالة الاعتماد (إذا كان أحد السجلات معتمداً، تظهر البطاقة كمعتمدة)
             if (r.status === 'approved') groups[key].status = 'approved';
             
-            // إضافة الطلاب للمجموعة الفريدة لضمان دقة العدد الإجمالي
+            // إضافة الطلاب للمجموعة الفريدة لضمان دقة العدد الإجمالي (بدون تكرار)
             currentStudentIds.forEach((id: any) => groups[key].unique_students.add(id));
         }
     });
@@ -788,6 +863,17 @@ const saveTrainerScoresToDB = async () => {
         setLoading(false);
     }
 };
+const currentPrintRecord = availableRecords.find(r => r.examiner_role === printMode);
+const memberCriteria = useMemo(() => {
+    if (printMode === "merged") return [];
+    // نأخذ المعايير من أول طالب موجود في سجل العضو المختار
+    const firstStudent = currentPrintRecord?.students_data?.[0];
+    return firstStudent?.scores ? Object.keys(firstStudent.scores).sort() : [];
+}, [printMode, currentPrintRecord]);
+
+// 3. فحص وجود بيانات السرايا والفصائل (لإخفائها إذا كانت فارغة)
+const hasCompanyData = finalReportData.some(s => s.company && s.company !== "لا توجد سرايا" && s.company.trim() !== "");
+const hasPlatoonData = finalReportData.some(s => s.platoon && s.platoon !== "لا توجد فصائل" && s.platoon.trim() !== "");
     // --- بداية الجزء المصحح ---
     if (selectedRecord) {
         const dayName = format(new Date(selectedRecord.exam_date), "EEEE", { locale: ar });
@@ -804,41 +890,71 @@ const saveTrainerScoresToDB = async () => {
         if (score >= 60) return "ثالثة";
         return "راسب";
     };
-   
+
+
+
+
+
         return (
 <ProtectedRoute allowedRoles={["owner","manager","admin","military_officer","military_supervisor"]}>
             <div className="min-h-screen bg-white p-2 md:p-8 flex flex-col space-y-6 pb-10 md:pb-32 overflow-x-hidden relative" dir="rtl">
-               <style jsx global>{`
+              <style jsx global>{`
     @media print {
-        @page { size: A4 portrait; margin: 5mm; }
-        body { zoom: 0.85; -webkit-print-color-adjust: exact; }
-        .no-print { display: none !important; }
-        table { width: 100% !important; border-collapse: collapse !important; }
-        th { background-color: #c5b391 !important; color: black !important; }
-        td, th { border: 1px solid black !important; padding: 4px !important; font-size: 11px !important; }
+        /* 1. التوجيه الديناميكي للورقة: طولي للمدمج، وعرضي لتفاصيل الأعضاء */
+        @page { 
+            size: ${printMode === 'merged' ? 'A4 portrait' : 'A4 landscape'}; 
+            margin: 5mm; 
+        }
+
+        /* 2. إعدادات الجسم العامة */
+        body { 
+            zoom: 0.85; 
+            -webkit-print-color-adjust: exact; 
+        }
         
-        /* 🔑 تعديل التوقيعات عند الطباعة */
+        .no-print { display: none !important; }
+        .force-print { display: table-row !important; }
+
+        /* 3. تنسيق الجدول الأساسي */
+        table { width: 100% !important; border-collapse: collapse !important; }
+        th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; }
+        td { border: 1px solid black !important; padding: 4px !important; }
+
+        /* 4. ذكاء حجم الخط: يصغر تلقائياً إذا كانت المعايير كثيرة */
+        td, th { 
+            font-size: ${printMode !== "merged" && memberCriteria.length > 5 ? '9px' : '11px'} !important; 
+            padding: ${printMode !== "merged" ? '2px' : '4px'} !important;
+        }
+
+        /* 5. معالجة أسماء المعايير الطويلة (التفاف النص) */
+        .criteria-header {
+            white-space: normal !important; /* السماح بالنزول لسطر جديد */
+            word-wrap: break-word !important;
+            line-height: 1.1 !important;
+            min-width: 60px !important;
+            max-width: 110px !important;
+            vertical-align: middle !important;
+            text-align: center !important;
+        }
+
+        /* 6. التوقيعات (الحفاظ على كودك القديم بدقة) */
         .signature-box { 
             background-color: transparent !important; 
             background: none !important; 
             border: none !important; 
             box-shadow: none !important;
-            /* التحكم في ارتفاع المنطقة */
             height: 20px !important; 
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
         }
 
-        /* 🖋️ التحكم في ارتفاع صورة التوقيع نفسها */
         .signature-box img {
-            height: 45px !important; /* غير هذا الرقم لزيادة أو تنقيص حجم التوقيع */
-            width: auto !important;  /* للحفاظ على تناسق أبعاد التوقيع وعدم تمطيطه */
-            max-width: 120px !important; /* لمنع التوقيع من الخروج عن حدود الخلية */
+            height: 45px !important; 
+            width: auto !important;  
+            max-width: 120px !important; 
             object-fit: contain !important;
         }
-
-        .force-print { display: table-row !important; }
     }
 `}</style>
 
@@ -959,18 +1075,40 @@ const saveTrainerScoresToDB = async () => {
                 </Button>
             )}
 
-            {/* زر الطباعة */}
-            <Button 
-                onClick={() => {
-                    const originalTitle = document.title;
-                    document.title = `اختبار_عملي_${selectedRecord.title.split(" - ")[0]}_${selectedRecord.course}_${selectedRecord.batch}_${selectedRecord.exam_date}`;
-                    window.print();
-                    document.title = originalTitle;
-                }} 
-                className="bg-slate-900 h-10 px-3 text-[10px] md:text-xs gap-1 font-bold shadow-md text-white flex-1 md:flex-none"
-            >
-                <Printer className="w-4 h-4" /> طباعة
-            </Button>
+           <div className="flex items-center gap-2 no-print bg-slate-200/50 p-1.5 rounded-lg border border-slate-300">
+    {/* 1. قائمة اختيار نوع الكشف */}
+    <Select value={printMode} onValueChange={(v: any) => setPrintMode(v)}>
+        <SelectTrigger className="w-[180px] h-9 bg-white font-bold text-[11px] border-slate-400">
+            <div className="flex items-center gap-2">
+                <ListFilter className="w-3.5 h-3.5 text-blue-600" />
+                <SelectValue placeholder="نوع الكشف" />
+            </div>
+        </SelectTrigger>
+        <SelectContent dir="rtl">
+            <SelectItem value="merged" className="text-xs font-bold">التقرير النهائي (المدمج)</SelectItem>
+            
+            {/* تعطيل الخيارات إذا لم يكن للعضو سجل فعلي */}
+            <SelectItem value="member1" disabled={!availableRecords.find(r=>r.examiner_role==='member1')} className="text-xs font-bold">
+                كشف رصد: عضو 1
+            </SelectItem>
+            <SelectItem value="member2" disabled={!availableRecords.find(r=>r.examiner_role==='member2')} className="text-xs font-bold">
+                كشف رصد: عضو 2
+            </SelectItem>
+            <SelectItem value="head" disabled={!availableRecords.find(r=>r.examiner_role==='head')} className="text-xs font-bold">
+                كشف رصد: رئيس اللجنة
+            </SelectItem>
+        </SelectContent>
+    </Select>
+
+    {/* 2. زر الطباعة الفعلي */}
+    <Button 
+        onClick={handlePrintExecution}
+        className="bg-slate-900 hover:bg-slate-800 h-9 px-4 text-xs gap-2 font-bold shadow-md text-white transition-all active:scale-95"
+    >
+        <Printer className="w-3 h-3" />
+            طباعة
+        </Button>
+</div>
 
             {/* زر Excel */}
             <Button 
@@ -998,73 +1136,113 @@ const saveTrainerScoresToDB = async () => {
                             <p>تاريخ الاختبار: {selectedRecord.exam_date}</p>
                         </div>
                     </div>
-                    <h1 className="text-lg md:text-xl font-black py-4 underline underline-offset-8 uppercase leading-relaxed">
-                        اختبار عملي: {selectedRecord.title.split(" - ")[0]} - دورة: {selectedRecord.course} / : {selectedRecord.batch}
-                    </h1>
+                   <div className="text-center">
+    {/* يظهر اسم العضو فقط في وضع طباعة الأعضاء */}
+    {printMode !== "merged" && currentPrintRecord && (
+        <p className="text-md font-bold mb-2 bg-slate-100 py-1 rounded-lg">
+            كشف رصد العضو: {currentPrintRecord.creator_name} ({printMode === 'head' ? 'رئيس اللجنة' : printMode === 'member1' ? 'عضو 1' : 'عضو 2'})
+        </p>
+    )}
+    <h1 className="text-lg md:text-xl font-black py-4 underline underline-offset-8 uppercase">
+        اختبار عملي: {selectedRecord.title.split(" - ")[0]} - دورة: {selectedRecord.course} 
+        {selectedRecord.batch !== "لا يوجد" && ` / الدفعة: ${selectedRecord.batch}`}
+    </h1>
+</div>
                 </div>
 
                 {/* الجدول */}
                 <div className="border-2 border-transparent rounded-lg overflow-x-auto shadow-sm">
     <Table className="w-full">
-                     <TableHeader className="bg-[#c5b391]">
+                    <TableHeader className="bg-[#c5b391]">
     <TableRow className="border-b-2 border-black text-black">
+        {/* الأعمدة الثابتة الأساسية */}
         <TableHead className="text-center border-l border-black font-bold w-10">#</TableHead>
         <TableHead className="text-center border-l border-black font-bold w-24">الرتبة</TableHead>
         <TableHead className="text-center border-l border-black font-bold w-32">الرقم العسكري</TableHead>
         <TableHead className="text-right border-l border-black font-bold px-4">الاسم</TableHead>
-        <TableHead className="text-center border-l border-black font-bold">السرية / الفصيل</TableHead>
 
-        {/* 1️⃣ أولاً: استخراج ورسم أعمدة الأهداف ديناميكياً (تظهر فقط في الرماية) */}
-        {isShooting && (() => {
-            const targets = new Set<string>();
-            selectedRecord.students_data.forEach((student: any) => {
-                if (student.scores) Object.keys(student.scores).forEach(key => targets.add(key));
-            });
-            return Array.from(targets).sort().map(targetName => (
-                <TableHead key={targetName} className="text-center border-l border-black font-bold bg-[#bfa87e] w-20">
-                    {targetName}
+        {/* 🟢 تقسيم الأعمدة وإخفاؤها تلقائياً إذا كانت فارغة (طلبك الأخير) */}
+        {hasCompanyData && <TableHead className="text-center border-l border-black font-bold w-20">السرية</TableHead>}
+        {hasPlatoonData && <TableHead className="text-center border-l border-black font-bold w-20">الفصيل</TableHead>}
+
+        {/* ----------------------------------------------------------- */}
+        {/* 🛠️ الحالة الأولى: وضع التقرير المدمج (الوضع الطبيعي الحالي) */}
+        {/* ----------------------------------------------------------- */}
+        {printMode === "merged" ? (
+            <>
+                {/* 1️⃣ أعمدة الرماية الديناميكية (الأهداف) */}
+                {isShooting && (() => {
+                    const targets = new Set<string>();
+                    selectedRecord.students_data.forEach((student: any) => {
+                        if (student.scores) Object.keys(student.scores).forEach(key => targets.add(key));
+                    });
+                    return Array.from(targets).sort().map(targetName => (
+                        <TableHead key={targetName} className="text-center border-l border-black font-bold bg-[#bfa87e] w-20">
+                            {targetName}
+                        </TableHead>
+                    ));
+                })()}
+
+                {/* 2️⃣ أعمدة اللجنة (في حال تعدد الرصد) */}
+                {availableRecords.length > 1 && (
+                    <>
+                        <TableHead className="text-center border-l border-black font-bold bg-[#bfa87e] w-20 px-1">عضو 1</TableHead>
+                        <TableHead className="text-center border-l border-black font-bold bg-[#bfa87e] w-20 px-1">عضو 2</TableHead>
+                        <TableHead className="text-center border-l border-black font-bold bg-[#bfa87e] w-20 px-1">رئيس اللجنة</TableHead>
+                    </>
+                )}
+
+                {/* 3️⃣ عمود النتيجة النهائية المدمجة (المتوسط) */}
+                <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-24">
+                    {availableRecords.length > 1 ? "المتوسط" : (isShooting ? "النتيجة" : "المجموع")}
                 </TableHead>
-            ));
-        })()}
 
-        {/* 🟢 أعمدة اللجنة: تظهر فقط إذا كان هناك أكثر من سجل واحد مرتبط (تعدد رصد) */}
-        {availableRecords.length > 1 && (
+                {/* 4️⃣ إضافات الرماية الثابتة */}
+                {isShooting && (
+                    <>
+                        <TableHead className="text-center border-l border-black font-bold w-24 bg-[#bfa87e]">التصنيف</TableHead>
+                        <TableHead className="text-center border-l border-black font-bold w-28 bg-[#bfa87e]">نسبة الإصابة</TableHead>
+                    </>
+                )}
+            </>
+        ) : (
+            /* ----------------------------------------------------------- */
+            /* 🛠️ الحالة الثانية: وضع طباعة كشف عضو منفرد (المعايير التفصيلية) */
+            /* ----------------------------------------------------------- */
             <>
-                <TableHead className="text-center border-l border-black font-bold bg-[#bfa87e] w-20 px-1">عضو 1</TableHead>
-                <TableHead className="text-center border-l border-black font-bold bg-[#bfa87e] w-20 px-1">عضو 2</TableHead>
-                <TableHead className="text-center border-l border-black font-bold bg-[#bfa87e] w-20 px-1">رئيس اللجنة</TableHead>
+                {/* عرض أعمدة المعايير الخاصة بهذا العضو فقط (سواء رماية أو مواد أخرى) */}
+                {memberCriteria.map(crit => (
+    <TableHead 
+        key={crit} 
+        className="text-center border-l border-black font-bold criteria-header bg-[#bfa87e] px-1"
+    >
+        {crit}
+    </TableHead>
+))}
+                
+                {/* عمود المجموع الخاص بهذا العضو فقط */}
+                <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-24">
+                    المجموع
+                </TableHead>
             </>
         )}
 
-        {/* 2️⃣ ثانياً: عمود النتيجة النهائية (يتبدل مسماه بين المتوسط والمجموع تلقائياً) */}
-        <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-24">
-            {availableRecords.length > 1 
-                ? "المتوسط" 
-                : (isShooting ? "النتيجة" : (showTrainerScore ? "المجموع (90%)" : "المجموع"))
-            }
-        </TableHead>
-
-        {/* 3️⃣ ثالثاً: بقية أعمدة الرماية الثابتة (التصنيف ونسبة الإصابة) */}
-        {isShooting && (
-            <>
-                <TableHead className="text-center border-l border-black font-bold w-24 bg-[#bfa87e]">التصنيف</TableHead>
-                <TableHead className="text-center border-l border-black font-bold w-28 bg-[#bfa87e]">نسبة إصابة الهدف</TableHead>
-            </>
-        )}
-
-        {/* عمود درجة المدرب - يظهر فقط عند الضغط على الزر */}
+        {/* ----------------------------------------------------------- */}
+        {/* الأعمدة الختامية (تظهر في كل الحالات حسب شروطها) */}
+        
+        {/* عمود درجة المدرب */}
         {showTrainerScore && (
             <TableHead className="text-center border-l border-black font-black bg-[#d4c3a1] w-24 animate-in slide-in-from-right-2">
                 درجة المدرب (10%)
             </TableHead>
         )}
 
-        {/* إخفاء عمود التقدير في حال كان الاختبار رماية */}
+        {/* التقدير (يُخفى في الرماية) */}
         {!isShooting && (
             <TableHead className="text-center border-l border-black font-bold w-24">التقدير</TableHead>
         )}
 
-        <TableHead className="text-right font-bold px-4">ملاحظات</TableHead>
+        {printMode === "merged" && <TableHead className="text-right font-bold px-4">ملاحظات</TableHead>}
     </TableRow>
 </TableHeader>
                       <TableBody>
@@ -1073,6 +1251,11 @@ const saveTrainerScoresToDB = async () => {
         const isAbsent = s.isAbsent; 
         const isVisibleOnScreen = idx >= (innerCurrentPage - 1) * innerItemsPerPage && idx < innerCurrentPage * innerItemsPerPage;
         
+        // 🔍 استخراج سجل الطالب لدى العضو المختار حالياً (في وضع طباعة العضو)
+        const studentInMemberRec = printMode !== "merged" 
+            ? currentPrintRecord?.students_data?.find((st: any) => String(st.military_id) === String(s.military_id))
+            : null;
+
         return (
             <TableRow 
                 key={`${s.military_id}-${viewMode}`} 
@@ -1083,84 +1266,116 @@ const saveTrainerScoresToDB = async () => {
                 <TableCell className="border-l border-black">{s.rank}</TableCell>
                 <TableCell className="border-l border-black font-mono">{s.military_id}</TableCell>
                 <TableCell className="text-right border-l border-black px-4 whitespace-nowrap">{s.name}</TableCell>
-                <TableCell className="border-l border-black text-[10px] font-bold">{s.company} / {s.platoon}</TableCell>
+                
+                {/* 🟢 عرض خلايا السرية والفصيل بشكل مستقل (بناءً على الفحص الذكي) */}
+                {hasCompanyData && (
+                    <TableCell className="border-l border-black text-[10px] font-bold">
+                        {s.company || "-"}
+                    </TableCell>
+                )}
+                {hasPlatoonData && (
+                    <TableCell className="border-l border-black text-[10px] font-bold">
+                        {s.platoon || "-"}
+                    </TableCell>
+                )}
 
-                {/* 1️⃣ أولاً: عرض درجات الأهداف (تظهر فقط في الرماية) */}
-                {isShooting && (() => {
-                    const targets = new Set<string>();
-                    selectedRecord.students_data.forEach((student: any) => {
-                        if (student.scores) Object.keys(student.scores).forEach(key => targets.add(key));
-                    });
-                    return Array.from(targets).sort().map(targetName => (
-                        <TableCell key={targetName} className="border-l border-black bg-white/50 text-center">
-                            {isAbsent ? "-" : (s.scores?.[targetName] || 0)}
-                        </TableCell>
-                    ));
-                })()}
-
-                {/* 🟢 خلايا درجات اللجنة: تظهر فقط إذا كان هناك أكثر من سجل واحد مرتبط */}
-                {availableRecords.length > 1 && (
+                {/* 🛠️ الحالة الأولى: وضع التقرير المدمج (الوضع الحالي) */}
+                {printMode === "merged" ? (
                     <>
-                        <TableCell className="border-l border-black bg-slate-50/30 text-center text-blue-700">
-                            {s.member1_score ?? "-"}
+                        {/* 1️⃣ درجات الأهداف (للرماية فقط) */}
+                        {isShooting && (() => {
+                            const targets = new Set<string>();
+                            selectedRecord.students_data.forEach((student: any) => {
+                                if (student.scores) Object.keys(student.scores).forEach(key => targets.add(key));
+                            });
+                            return Array.from(targets).sort().map(targetName => (
+                                <TableCell key={targetName} className="border-l border-black bg-white/50 text-center">
+                                    {isAbsent ? "-" : (s.scores?.[targetName] || 0)}
+                                </TableCell>
+                            ));
+                        })()}
+
+                        {/* 2️⃣ درجات اللجنة (عضو 1، 2، رئيس) */}
+                        {availableRecords.length > 1 && (
+                            <>
+                                <TableCell className="border-l border-black bg-slate-50/30 text-center text-blue-700 font-bold">
+                                    {s.member1_score ?? "-"}
+                                </TableCell>
+                                <TableCell className="border-l border-black bg-slate-50/30 text-center text-blue-700 font-bold">
+                                    {s.member2_score ?? "-"}
+                                </TableCell>
+                                <TableCell className="border-l border-black bg-red-50/20 text-center text-red-700 font-bold">
+                                    {s.head_score ?? "-"}
+                                </TableCell>
+                            </>
+                        )}
+
+                        {/* 3️⃣ النتيجة النهائية (المتوسط) */}
+                        <TableCell className="border-l border-black font-black text-lg bg-slate-100">
+                            {isAbsent ? "-" : s.total}
                         </TableCell>
-                        <TableCell className="border-l border-black bg-slate-50/30 text-center text-blue-700">
-                            {s.member2_score ?? "-"}
-                        </TableCell>
-                        <TableCell className="border-l border-black bg-red-50/20 text-center text-red-700">
-                            {s.head_score ?? "-"}
+
+                        {/* 4️⃣ إضافات الرماية (تصنيف ونسبة إصابة) */}
+                        {isShooting && (
+                            <>
+                                <TableCell className="border-l border-black text-blue-800 font-black bg-white">
+                                    {isAbsent ? "" : getShootingClass(s.total)}
+                                </TableCell>
+                                <TableCell className="border-l border-black font-mono font-bold text-orange-700 bg-white text-center">
+                                    {isAbsent ? "" : (() => {
+                                        const totalHits = Object.values(s.scores || {}).reduce((sum: number, val: any) => sum + (Number(val) || 0), 0);
+                                        const accuracyPercentage = totalShots > 0 ? (totalHits / totalShots) * 100 : 0;
+                                        return `${accuracyPercentage.toFixed(0)}%`;
+                                    })()}
+                                </TableCell>
+                            </>
+                        )}
+                    </>
+                ) : (
+                    /* 🛠️ الحالة الثانية: وضع كشف تفاصيل العضو (طباعة معايير العضو المختار) */
+                    <>
+                        {/* عرض درجة كل معيار لهذا العضو من واقع السجل الخاص به */}
+                        {memberCriteria.map(crit => (
+                            <TableCell key={crit} className="border-l border-black text-center text-[11px] bg-white">
+                                {isAbsent ? "-" : (studentInMemberRec?.scores?.[crit] ?? "-")}
+                            </TableCell>
+                        ))}
+                        
+                        {/* إجمالي درجات هذا العضو فقط */}
+                        <TableCell className="border-l border-black font-black text-lg bg-slate-100">
+                            {isAbsent ? "-" : (studentInMemberRec?.total ?? "-")}
                         </TableCell>
                     </>
                 )}
 
-                {/* 2️⃣ ثانياً: خلية النتيجة النهائية (المتوسط أو المجموع) */}
-                <TableCell className="border-l border-black font-black text-lg bg-slate-100">
-                    {isAbsent ? "-" : s.total}
-                </TableCell>
+                {/* 🏁 الأعمدة الختامية المشتركة */}
 
-                {/* 3️⃣ ثالثاً: بقية خلايا الرماية (التصنيف ونسبة الإصابة) */}
-                {isShooting && (
-                    <>
-                        <TableCell className="border-l border-black text-blue-800 font-black bg-white">
-                            {isAbsent ? "" : getShootingClass(s.total)}
-                        </TableCell>
-
-                        <TableCell className="border-l border-black font-mono font-bold text-orange-700 bg-white text-center">
-                            {isAbsent ? "" : (() => {
-                                const totalHits = Object.values(s.scores || {}).reduce((sum: number, val: any) => {
-                                    return sum + (Number(val) || 0);
-                                }, 0);
-                                const accuracyPercentage = totalShots > 0 ? (totalHits / totalShots) * 100 : 0;
-                                return `${accuracyPercentage.toFixed(0)}%`;
-                            })()}
-                        </TableCell>
-                    </>
-                )}
-
-                {/* خلية درجة المدرب */}
+                {/* درجة المدرب */}
                 {showTrainerScore && (
                     <TableCell className="border-l border-black font-black text-lg text-blue-700 bg-orange-50/30">
-                        {isAbsent ? "-" : (
-                            trainerScores[String(s.military_id)] !== undefined 
-                                ? trainerScores[String(s.military_id)] 
-                                : (s.trainer_score || 0)
-                        )}
+                        {isAbsent ? "-" : (trainerScores[String(s.military_id)] ?? s.trainer_score ?? 0)}
                     </TableCell>
                 )}
 
+                {/* التقدير (يُخفى في الرماية) */}
                 {!isShooting && (
                     <TableCell className="border-l border-black">
-                        {isAbsent ? "-" : g.result}
+                        {isAbsent ? "-" : (printMode === "merged" ? g.result : getGradeInfo(studentInMemberRec?.total, s.notes).result)}
                     </TableCell>
                 )}
 
-                <TableCell className="text-right border-l border-black px-2 no-print min-w-[150px]">
-                    {renderNoteCell(s)}
-                </TableCell>
-
-                <TableCell className="text-right px-2 hidden print:table-cell text-[10px]">
-                    {tempNotes[s.military_id] || s.notes || (isAbsent ? "" : "-")}
-                </TableCell>
+                {/* الملاحظات (تظهر على الشاشة وتسمح بالتعديل) */}
+                {/* 🟢 إخفاء خلايا الملاحظات أيضاً */}
+{printMode === "merged" && (
+    <>
+        <TableCell className="text-right border-l border-black px-2 no-print min-w-[150px]">
+            {renderNoteCell(s)}
+        </TableCell>
+        <TableCell className="text-right px-2 hidden print:table-cell text-[10px]">
+            {tempNotes[s.military_id] || s.notes || (isAbsent ? "" : "-")}
+        </TableCell>
+    </>
+)}
             </TableRow>
         );
     })}

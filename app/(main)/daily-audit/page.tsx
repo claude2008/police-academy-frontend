@@ -52,89 +52,122 @@ export default function DailyAuditPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
 const searchParams = useSearchParams();
+const [userRole, setUserRole] = useState<string | null>(null);
     // 🟢 استخراج المعلمات من الرابط (التاريخ، الدورة، الدفعة)
     const targetDate = searchParams.get('date');
     const targetCourse = searchParams.get('course');
     const targetBatch = searchParams.get('batch');
     const [options, setOptions] = useState({ courses: [], batches: [] });
 const [activeCard, setActiveCard] = useState<string | null>(null);
-   useEffect(() => {
+  useEffect(() => {
+    // جلب بيانات المستخدم لتعريف الصلاحيات في الصفحة
+    const userStr = localStorage.getItem("user");
+    if (userStr) {
+        try {
+            const user = JSON.parse(userStr);
+            setUserRole(user.role); // تعبئة الرتبة هنا
+        } catch (e) {
+            console.error("خطأ في قراءة بيانات المستخدم");
+        }
+    }
     fetchInitialOptions();
 }, [date]);
 
    const filteredReports = useMemo(() => {
     return dailySummaries.filter((report: any) => {
-        // نستخدم القيم المختارة من القوائم المنسدلة (selectedCourse / selectedBatch)
+        // توحيد مسميات الدفعة في السجلات للمطابقة
+        const reportBatch = (!report.batch || report.batch === "None" || report.batch === "none") ? "لا يوجد" : report.batch;
+        
         const matchCourse = selectedCourse === "all" || report.course === selectedCourse;
-        const matchBatch = selectedBatch === "all" || report.batch === selectedBatch;
+        const matchBatch = selectedBatch === "all" || reportBatch === selectedBatch;
+        
         return matchCourse && matchBatch;
     });
 }, [dailySummaries, selectedCourse, selectedBatch]);
 
-   const fetchInitialOptions = async () => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem("token");
-            const userStr = localStorage.getItem("user");
-            const user = JSON.parse(userStr || "{}");
-            const scope = user?.extra_permissions?.scope;
+  const fetchInitialOptions = async () => {
+    setLoading(true);
+    try {
+        const token = localStorage.getItem("token");
+        const userStr = localStorage.getItem("user") || "{}";
+        const user = JSON.parse(userStr);
+        const scope = user?.extra_permissions?.scope;
 
-            const [fRes, tRes, sRes] = await Promise.all([
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`),
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates`, {
-                    headers: { "Authorization": `Bearer ${token}` }
-                }),
-                fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/daily-summaries?date=${date}`, {
-                    headers: { "Authorization": `Bearer ${token}` }
-                })
-            ]);
-            
-            if (fRes.ok) {
-                let filterData = await fRes.json();
+        const [fRes, tRes, sRes] = await Promise.all([
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`),
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            }),
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/daily-summaries?date=${date}`, {
+                headers: { "Authorization": `Bearer ${token}` }
+            })
+        ]);
+        
+        // 1️⃣ معالجة خيارات الفلترة (القوائم المنسدلة)
+        if (fRes.ok) {
+            let filterData = await fRes.json();
 
-                // 🔑 جلب صلاحيات المستخدم
-                const user = JSON.parse(localStorage.getItem("user") || "{}");
-                const scope = user?.extra_permissions?.scope;
+            // 🟢 توحيد مسميات الدفعات فوراً (تحويل أي قيمة فارغة أو None إلى "لا يوجد")
+            filterData.batches = Array.from(new Set((filterData.batches || []).map((b: string) => 
+    (!b || b === "None" || b === "none" || b === "") ? "لا يوجد" : b
+))).sort((a: any, b: any) => a.localeCompare(b, 'ar'));
 
-                // 🛡️ تصفية القوائم المنسدلة (الدورة والدفعة)
-                if (user.role !== 'owner' && scope?.is_restricted) {
-                    const allowedCoursesKeys = scope.courses || []; // بصيغة "اسم الدورة||الدفعة"
+            // 🛡️ تطبيق قيود النطاق للمستخدم المقيد على القوائم
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedKeys = scope.courses || []; 
+                const allowedCourseNames = allowedKeys.map((key: string) => key.split('||')[0]);
 
-                    // 1. تصفية الدورات (استخراج الاسم الأول من المفتاح)
-                    const allowedCourseNames = allowedCoursesKeys.map((key: string) => key.split('||')[0]);
-                    filterData.courses = (filterData.courses || []).filter((cName: string) => 
-                        allowedCourseNames.includes(cName)
+                // أ. تصفية قائمة الدورات
+                filterData.courses = (filterData.courses || []).filter((cName: string) => 
+                    allowedCourseNames.includes(cName)
+                );
+
+                // ب. تصفية قائمة الدفعات
+                filterData.batches = filterData.batches.filter((bName: string) => {
+                    return allowedKeys.some((key: string) => 
+                        key.endsWith(`||${bName}`) || // صلاحية لدفعة محددة
+                        !key.includes("||")           // صلاحية عامة للدورة تفتح كل دفعاتها
                     );
-
-                    // 2. تصفية الدفعات (لا تظهر إلا الدفعة التي تشكل مع دورة مسموحة مفتاحاً صحيحاً)
-                    filterData.batches = (filterData.batches || []).filter((bName: string) => {
-                        return allowedCoursesKeys.some((key: string) => key.endsWith(`||${bName}`));
-                    });
-                }
-                
-                setOptions(filterData);
+                });
             }
-
-            if (tRes.ok) setTemplates(await tRes.json());
-            
-            if (sRes.ok) {
-                let summaryData = await sRes.json();
-                // 🟢 [تصفية البطاقات (المجلدات) المتاحة للعرض]
-                if (user.role !== 'owner' && scope?.is_restricted) {
-                    const allowedCourses = scope.courses || [];
-                    summaryData = summaryData.filter((item: any) => {
-                        const key = `${item.course}||${item.batch}`;
-                        return allowedCourses.includes(key);
-                    });
-                }
-                setDailySummaries(summaryData);
-            }
-        } catch (e) { 
-            toast.error("خطأ في جلب البيانات"); 
-        } finally { 
-            setLoading(false); 
+            setOptions(filterData);
         }
-    };
+
+        // 2️⃣ معالجة القوالب (كما هي)
+        if (tRes.ok) setTemplates(await tRes.json());
+        
+        // 3️⃣ معالجة ملخصات اليوم (البطاقات المعروضة)
+        if (sRes.ok) {
+            let summaryData = await sRes.json();
+
+            // 🛡️ تصفية البطاقات الذكية بناءً على الصلاحيات والأسماء الموحدة
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedKeys = scope.courses || [];
+                
+                summaryData = summaryData.filter((item: any) => {
+                    const courseName = item.course;
+                    
+                    // 🟢 توحيد مسمى الدفعة في سجل البطاقة للمطابقة الصحيحة
+                    const reportBatch = (!item.batch || item.batch === "all" || item.batch === "None" || item.batch === "none" || item.batch === "") ? "لا يوجد" : item.batch;
+
+                    // فحص الصلاحية العامة (على اسم الدورة)
+                    const hasGeneralAccess = allowedKeys.includes(courseName);
+
+                    // فحص الصلاحية المخصصة (دورة + دفعة موحدة)
+                    const hasSpecificAccess = allowedKeys.includes(`${courseName}||${reportBatch}`);
+
+                    return hasGeneralAccess || hasSpecificAccess;
+                });
+            }
+            setDailySummaries(summaryData);
+        }
+    } catch (e) { 
+        toast.error("خطأ في جلب البيانات"); 
+        console.error("Fetch Options Error:", e);
+    } finally { 
+        setLoading(false); 
+    }
+};
 // 🔔 موظف الاستقبال لفتح التكميل مباشرة من الإشعارات
 useEffect(() => {
     const handleDeepLink = async () => {
@@ -171,32 +204,55 @@ useEffect(() => {
     handleDeepLink();
 }, [targetDate, targetCourse, targetBatch, dailySummaries, date]); 
 // 🔄 يراقب التغيرات لضمان الفتح حتى لو تأخر تحميل البيانات من السيرفر
-    const openReport = async (course: string, batch: string) => {
-    // 🟢 تفعيل حالة التحميل للبطاقة المحددة
+const openReport = async (course: string, batch: string) => {
     setActiveCard(course + batch); 
     setLoading(true);
 
     try {
         const token = localStorage.getItem("token");
+
+        // 🟢 [التعديل الذهبي]: توحيد لغة التخاطب مع الباك إند
+        // يجب إرسال "None" حرفياً للدورات العامة لكي يجد الباك إند التواقيع المفقودة
+        const cleanBatchForApi = (
+            !batch || 
+            batch === "all" || 
+            batch === "None" || 
+            batch === "none" || 
+            batch === "لا يوجد" || 
+            batch === ""
+        ) ? "None" : batch; // 👈 تم تغيير "" إلى "None"
+
+        const queryParams = new URLSearchParams({
+            date: date,
+            course: course,
+            batch: cleanBatchForApi
+        });
+
         const res = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL}/session/approved-daily-report?date=${date}&course=${course}&batch=${batch}`,
+            `${process.env.NEXT_PUBLIC_API_URL}/session/approved-daily-report?${queryParams.toString()}`,
             { headers: { "Authorization": `Bearer ${token}` } }
         );
 
         if (res.ok) {
             const data = await res.json();
             setAttendanceData(data);
-            setSelectedReport({ course, batch }); 
+            
+            // 🛡️ تأمين المستقبل: نحفظ التقرير المختار مع المسمى "المطهر"
+            // هذا يضمن أن دوال handleApprove و handleUnapprove ستستخدم "" بدلاً من "لا يوجد"
+            // مما يمنع حدوث فشل في الاعتماد بسبب اختلاف المسميات
+            setSelectedReport({ course, batch: cleanBatchForApi }); 
+            
         } else {
+            // في حال فشل الاستجابة (مثلاً لا توجد بيانات)
             toast.error("لا توجد حصص معتمدة لهذه الدورة اليوم");
-            setActiveCard(null); // إلغاء التفعيل في حال الفشل
+            setActiveCard(null); 
         }
     } catch (e) {
-        toast.error("خطأ في الاتصال");
-        setActiveCard(null); // إلغاء التفعيل في حال الخطأ
+        console.error("🚨 فشل فتح التقرير:", e);
+        toast.error("خطأ في الاتصال بالسيرفر");
+        setActiveCard(null); 
     } finally {
         setLoading(false);
-        // لا نلغي activeCard هنا لكي تظل البطاقة بشكلها "النشط" حتى تفتح الصفحة فعلياً
     }
 };
 
@@ -282,40 +338,48 @@ const displayStats = useMemo(() => {
         return;
     }
 
-    // 1. بناء البيانات صفاً بصف
+    // 1. بناء البيانات صفاً بصف مع تنظيف كامل من null و undefined
     const dataForExcel = attendanceData.rows.map((row: any, i: number) => {
-        // أ. البيانات الأساسية في بداية الصف
+        // تنظيف بيانات السرية والفصيل
+        const comp = (row.soldier.company && row.soldier.company !== "null") ? row.soldier.company : "---";
+        const plat = (row.soldier.platoon && row.soldier.platoon !== "null") ? row.soldier.platoon : "---";
+
+        // أ. البيانات الأساسية
         const excelRow: any = {
             "م": i + 1,
             "الرقم العسكري": row.soldier.military_id,
             "الاسم": row.soldier.name,
-            "السرية/الفصيل": `${row.soldier.company} / ${row.soldier.platoon}`,
+            "السرية / الفصيل": `${comp} / ${plat}`,
         };
 
-        // ب. إضافة أعمدة الحصص مع الوقت في العنوان (Header)
+        // ب. إضافة أعمدة الحصص مع معالجة الحالات والمدخلين
         attendanceData.template.forEach((sess: any, index: number) => {
-            // تجهيز نص الوقت إذا وجد (مثال: ح1 05:00-06:00)
             const timeInfo = (sess.startTime && sess.endTime && sess.startTime !== "00:00") 
                 ? ` (${sess.startTime}-${sess.endTime})` 
                 : "";
             
-            const sessionKey = `حصة${index + 1}${timeInfo}`; // هذا سيكون عنوان العمود
-            
+            const sessionKey = `حصة ${index + 1}${timeInfo}`;
             const sessionObj = row.sessions[index];
-    
-    if (sessionObj) {
-        // 🟢 التعديل هنا ليدعم "أخرى" في الإكسل
-        const statusText = (sessionObj.status === "أخرى" && sessionObj.note) 
-            ? sessionObj.note 
-            : sessionObj.status;
 
-        excelRow[sessionKey] = `${statusText} (${sessionObj.created_by})`;
-    } else {
-        excelRow[sessionKey] = "-";
-    }
-});
+            if (sessionObj) {
+                // معالجة حالة "أخرى" مع الملاحظة
+                const statusText = (sessionObj.status === "أخرى" && sessionObj.note) 
+                    ? sessionObj.note 
+                    : (sessionObj.status || "حاضر");
 
-        // ج. البيانات النهائية في نهاية الصف
+                // تنظيف اسم المدخل (إزالة undefined)
+                const creatorText = (sessionObj.created_by && sessionObj.created_by !== "undefined") 
+                    ? ` (${sessionObj.created_by})` 
+                    : "";
+
+                // إذا كان الجندي "حاضر" لا نحتاج لكتابة اسم المدخل بجانبه لجمالية الجدول
+                excelRow[sessionKey] = statusText === "حاضر" ? "حاضر" : `${statusText}${creatorText}`;
+            } else {
+                excelRow[sessionKey] = "حاضر";
+            }
+        });
+
+        // ج. البيانات النهائية
         excelRow["المدة"] = row.duration ? `${row.duration} يوم` : "-";
         excelRow["البداية"] = row.start_date || "-";
 
@@ -325,22 +389,28 @@ const displayStats = useMemo(() => {
     // 2. تحويل البيانات إلى ورقة عمل (Worksheet)
     const ws = XLSX.utils.json_to_sheet(dataForExcel);
 
-    // 3. تحسين شكل الإكسل (توسيع الأعمدة قليلاً لأن العنوان أصبح أطول)
+    // 3. ضبط اتجاه الورقة لتكون من اليمين لليسار (RTL) ليتناسب مع اللغة العربية
+    if (!ws['!views']) ws['!views'] = [];
+    ws['!views'].push({ RTL: true });
+
+    // 4. تحسين شكل الإكسل وتوسيع الأعمدة
     const wscols = [
         { wch: 5 },   // م
         { wch: 15 },  // الرقم العسكري
         { wch: 35 },  // الاسم
-        { wch: 25 },  // السرية
-        ...attendanceData.template.map(() => ({ wch: 20 })), // زيادة العرض لـ 20 لاستيعاب الوقت واسم المدخل
+        { wch: 25 },  // السرية/الفصيل
+        ...attendanceData.template.map(() => ({ wch: 22 })), // عرض الحصص
         { wch: 10 },  // المدة
         { wch: 15 }   // البداية
     ];
     ws['!cols'] = wscols;
 
-    // 4. إنشاء الملف وتحميله
+    // 5. إنشاء الملف وتحميله باسم الدورة والتاريخ
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "كشف التدقيق اليومي");
-    XLSX.writeFile(wb, `تدقيق_${selectedReport.course}_${date}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "كشف الحالات المعتمدة");
+    
+    const fileName = `تدقيق_${selectedReport.course}_${date}.xlsx`.replace(/\s+/g, '_');
+    XLSX.writeFile(wb, fileName);
 };
 // 🟢 دالة الطباعة مع تسمية الملف بشكل ديناميكي
 const handlePrint = () => {
@@ -422,9 +492,10 @@ const handlePrint = () => {
                     <h3 className={`font-black text-xl mb-1 transition-colors ${isThisCardLoading ? 'text-[#8a7a5b]' : 'text-slate-800'}`}>
                         {report.course}
                     </h3>
-                    <p className="text-[#c5b391] font-bold text-sm">
-                        {report.batch && report.batch !== "none" ? report.batch : "بدون دفعة"}
-                    </p>
+                    
+<p className="text-[#c5b391] font-bold text-sm">
+    {(!report.batch || report.batch === "none" || report.batch === "None") ? "لا يوجد" : report.batch}
+</p>
                     
                     <div className="flex gap-2 items-center mt-2">
                         {/* إظهار علامة انتظار إذا كانت جاري التحميل، وإلا إظهار البادج العادي */}
@@ -489,26 +560,59 @@ const handlePrint = () => {
             <div className="min-h-screen bg-white p-4  pb-32 " dir="rtl">
                <style jsx global>{`
     @media print {
-        @page { size: A4 ; margin: 4mm; }
+        @page { 
+            size: A4 landscape; 
+            margin: 5mm; 
+        }
+
         .no-print { display: none !important; }
-        body { background: white !important; padding: 0 !important; }
         
-        /* 🟢 السماح للجدول بتحديد العرض بناءً على المحتوى مع الالتزام بعرض الورقة */
+        body { 
+            background: white !important; 
+            padding: 0 !important; 
+            margin: 0 !important;
+            -webkit-print-color-adjust: exact;
+        }
+
+        /* 1. جعل الجدول يملأ العرض وضبط الخط */
         table { 
             width: 100% !important; 
-            table-layout: auto !important; 
+            table-layout: fixed !important; /* استخدام fixed لتوزيع الأعمدة بدقة */
             border-collapse: collapse !important;
+            font-size: 9px !important;
         }
-        
-        th, td { 
-            word-wrap: break-word !important; 
-            padding: 4px 2px !important; 
-            line-height: 1.2 !important;
-        }
-        
-        /* منع انقسام الصفوف بين ورقتين */
-        tr { page-break-inside: avoid !important; }
 
+        /* 2. محاذاة كل البيانات للمنتصف */
+        th, td { 
+            border: 1px solid black !important;
+            text-align: center !important; /* محاذاة أفقية للمنتصف */
+            vertical-align: middle !important; /* محاذاة رأسية للمنتصف */
+            padding: 2px !important;
+            word-wrap: break-word !important;
+            overflow: hidden !important;
+        }
+
+        /* 3. تقليص عرض عمود التسلسل (#) */
+        table tr th:first-child,
+        table tr td:first-child {
+            width: 25px !important; /* عرض صغير جداً لعمود # */
+        }
+
+        /* 4. توسيع عمود الاسم قليلاً لأنه يحتاج مساحة */
+        table tr th:nth-child(2),
+        table tr td:nth-child(2) {
+            width: 180px !important;
+            text-align: right !important; /* الأسماء يفضل بقاؤها لليمين قليلاً لجمالية القراءة */
+            padding-right: 5px !important;
+        }
+
+        /* 5. ضبط محاذاة التواقيع */
+        .grid-cols-3 {
+            display: grid !important;
+            grid-template-columns: repeat(3, 1fr) !important;
+            margin-top: 20px !important;
+            text-align: center !important;
+        }
     }
 `}</style>
 
@@ -542,9 +646,16 @@ const handlePrint = () => {
 
                     <div className="text-center">
                         <h1 className="text-2xl font-black bg-[#c5b391] py-4 border-2 border-black rounded-xl shadow-inner">
-                            التكميل اليومي لـ {selectedReport.course} 
-                            {selectedReport.batch && selectedReport.batch !== "all" && selectedReport.batch !== "none" ? ` - ${selectedReport.batch}` : ""}
-                        </h1>
+    التكميل اليومي لـ {selectedReport.course} 
+    {/* 🟢 التعديل: شرط صارم لإخفاء None */}
+    {(selectedReport.batch && 
+      selectedReport.batch !== "all" && 
+      selectedReport.batch.toLowerCase() !== "none" && 
+      selectedReport.batch.toLowerCase() !== "null" && 
+      selectedReport.batch !== "لا يوجد") 
+        ? ` - ${selectedReport.batch}` 
+        : ""}
+</h1>
                     </div>
 
                   
@@ -659,10 +770,29 @@ const handlePrint = () => {
 </TableCell>
                                         {/* ✅ ضع هذا الكود مكانه تماماً */}
 {row.sessions.map((sessionObj: any, sIdx: number) => {
-    // عرض الحالة (مثلاً: طبية) أو "-" إذا كان حاضراً
+    // 🔍 1. جلب بيانات الحصة من القالب (Template) للتأكد من الاعتماد
+    const sessionTemplate = attendanceData.template?.[sIdx];
+    
+    // 🛡️ 2. فحص هل الحصة معتمدة من الضابط أو بالنيابة؟
+    // (هذا هو الشرط الذي كان يحمي البيانات سابقاً)
+    const isSessionApproved = sessionTemplate?.is_officer_approved || sessionTemplate?.is_proxy_approval;
+
     const status = sessionObj?.status || "حاضر";
     const isPresent = status === "حاضر";
 
+    // 🛑 3. المنطق: إذا كانت الحصة غير معتمدة، نعرض "-" دائماً (كأنه حاضر)
+    if (!isSessionApproved) {
+        return (
+            <TableCell 
+                key={sIdx} 
+                className="text-center p-0 font-black text-[10px] border-l border-black min-w-[60px] text-slate-300 opacity-40"
+            >
+                -
+            </TableCell>
+        );
+    }
+
+    // 🟢 4. إذا كانت معتمدة، نعرض الحالة الحقيقية (طبية، غياب، إلخ)
     return (
         <TableCell 
             key={sIdx} 
@@ -699,66 +829,74 @@ const handlePrint = () => {
                         </Table>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-6 pt-16 text-center border-t-2 border-dashed border-slate-200 mt-10">
-                        {[
-                            { label: "  ضابط التدريب الرياضي", key: "supervisor" },
-                            { label: "  ضابط التدريب العسكري", key: "officer" },
-                            { label: "رئيس قسم التدريب العسكري والرياضي", key: "head" }
-                        ].map((item) => {
-                            const approval = attendanceData.approvals?.[item.key];
-                            return (
-                                <div key={item.key} className="flex flex-col items-center gap-2">
-                                    <p className="font-black text-sm underline underline-offset-8 mb-4">{item.label}</p>
-                                    {approval ? (
-                                        <div className="relative group flex flex-col items-center">
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
-                                                className="no-print absolute -top-4 -right-8 text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6"
-                                                onClick={() => handleUnapprove(item.key)}
-                                            >
-                                                <RotateCcw className="w-3 h-3" />
-                                            </Button>
-                                            <p className="font-black text-[14px] text-blue-900">{approval.rank} / {approval.name}</p>
-                                          {/* كود عرض التوقيع المعدل */}
-<div className="h-10 mt-0.5 print:h-14 print:mt-0 flex justify-center"> 
-    <img 
-        // 🟢 رابط سوبابيز المباشر (تأكد من استبدال YOUR_PROJECT_URL برابط مشروعك)
-        src={`https://cynkoossuwenqxksbdhi.supabase.co/storage/v1/object/public/Signatures/${approval.mil_id}.png`} 
-        
-        className="h-full print:max-h-14 object-contain mix-blend-multiply" 
-        
-        // معالجة ذكية للصيغة (png -> jpg -> jpeg)
-        onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            if (target.src.includes('.png')) {
-                target.src = target.src.replace('.png', '.jpg');
-            } else if (target.src.includes('.jpg')) {
-                 target.src = target.src.replace('.jpg', '.jpeg');
-            } else {
-                target.style.display = 'none';
-            }
-        }} 
-    />
-</div>
-                                        </div>
-                                    ) : (
-                                        <div className="no-print">
-                                            <p className="italic text-slate-300 text-[10px] mb-2">بانتظار الاعتماد...</p>
-                                            <Button 
-                                                size="sm" 
-                                                variant="outline" 
-                                                className="border-[#c5b391] text-[#c5b391] hover:bg-[#c5b391]/10 font-bold text-xs"
-                                                onClick={() => handleApprove(item.key)}
-                                            >
-                                                اعتماد الآن
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                   <div className="grid grid-cols-3 gap-6 pt-16 text-center border-t-2 border-dashed border-slate-200 mt-10">
+    {[
+        { label: "ضابط التدريب الرياضي", key: "supervisor" }, // برمجياً هو supervisor ولكن يظهر كضابط
+        { label: "ضابط التدريب العسكري", key: "officer" },    // برمجياً هو officer ويظهر كضابط
+        { label: "رئيس قسم التدريب العسكري والرياضي", key: "head" }
+    ].map((item) => {
+        const approval = attendanceData.approvals?.[item.key];
+        return (
+            <div key={item.key} className="flex flex-col items-center gap-2">
+                {/* العنوان المحدث */}
+                <p className="font-black text-sm underline underline-offset-8 mb-4">
+                    {item.label}
+                </p>
+                
+                {approval ? (
+                    <div className="relative group flex flex-col items-center">
+                        {/* 🛡️ زر إلغاء الاعتماد يظهر فقط للاونر أو المدير لزيادة الأمان */}
+                        {(userRole === "owner" || userRole === "manager" || userRole === "military_officer" || userRole === "sports_officer") && (
+                            <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className="no-print absolute -top-4 -right-8 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6"
+                                onClick={() => handleUnapprove(item.key)}
+                            >
+                                <RotateCcw className="w-3 h-3" />
+                            </Button>
+                        )}
+                        
+                        {/* عرض الرتبة والاسم */}
+                        <p className="font-black text-[14px] text-blue-900">
+                            {approval.rank} / {approval.name}
+                        </p>
+
+                        {/* كود عرض التوقيع مع المعالجة الذكية للصيغ */}
+                        <div className="h-10 mt-0.5 print:h-14 print:mt-0 flex justify-center"> 
+                            <img 
+                                src={`https://cynkoossuwenqxksbdhi.supabase.co/storage/v1/object/public/Signatures/${approval.mil_id}.png`} 
+                                className="h-full print:max-h-14 object-contain mix-blend-multiply" 
+                                onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    if (target.src.includes('.png')) {
+                                        target.src = target.src.replace('.png', '.jpg');
+                                    } else if (target.src.includes('.jpg')) {
+                                        target.src = target.src.replace('.jpg', '.jpeg');
+                                    } else {
+                                        target.style.display = 'none';
+                                    }
+                                }} 
+                            />
+                        </div>
                     </div>
+                ) : (
+                    <div className="no-print">
+                        <p className="italic text-slate-300 text-[10px] mb-2">بانتظار اعتماد الضابط...</p>
+                        <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="border-[#c5b391] text-[#c5b391] hover:bg-[#c5b391]/10 font-bold text-xs"
+                            onClick={() => handleApprove(item.key)}
+                        >
+                            اعتماد الضابط
+                        </Button>
+                    </div>
+                )}
+            </div>
+        );
+    })}
+</div>
                 </div>
             </div>
         </ProtectedRoute>

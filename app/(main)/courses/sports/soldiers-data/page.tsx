@@ -143,7 +143,7 @@ const canDeletePhoto = useMemo(() => {
     fetchCourses();
   }, [])
 
-  const fetchCourses = async () => {
+ const fetchCourses = async () => {
       try {
           const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/courses/summary`, {
               headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
@@ -152,15 +152,19 @@ const canDeletePhoto = useMemo(() => {
           if (res.ok) {
               let data = await res.json();
               
-              // 🟢 [تطبيق قيود النطاق]
+              // 🟢 [التعديل الذهبي]: توحيد منطق البطاقات مع الصلاحيات
               const user = JSON.parse(localStorage.getItem("user") || "{}");
               const scope = user?.extra_permissions?.scope;
 
               if (user.role !== 'owner' && scope?.is_restricted) {
                   const allowedCourses = scope.courses || [];
                   data = data.filter((c: any) => {
-                      const key = `${c.name}${c.batch ? `||${c.batch}` : ''}`;
-                      return allowedCourses.includes(key);
+                      // 1. توحيد الدفعة لإنتاج مفتاح مطابق للـ JSON
+                      const cBatch = (c.batch && c.batch.trim() !== "" && c.batch !== "all") ? c.batch : "لا يوجد";
+                      const key = `${c.name}||${cBatch}`;
+                      
+                      // 2. فحص السماح (بالاسم الكامل أو الاسم الصافي للأمان)
+                      return allowedCourses.includes(key) || allowedCourses.includes(c.name);
                   });
               }
               setCoursesList(data);
@@ -195,16 +199,26 @@ const canDeletePhoto = useMemo(() => {
 
                 // 2. فلترة السرايا بناءً على الدورة المختارة حالياً
                 // المفتاح في الـ Scope هو: "الدورة||الدفعة->السرية"
-                if (filterCourse !== "all" && filterBatch !== "all") {
-                    const currentKeyPrefix = `${filterCourse}||${filterBatch}->`;
+               // 2. فلترة السرايا والفصائل بناءً على الدورة المختارة
+                if (filterCourse !== "all") {
+                    // 🟢 تحديد "مفتاح الدفعة" للبحث في الصلاحيات
+                    // إذا كان المستخدم لم يحدد دفعة بعد (all)، نبحث في صلاحيات "لا يوجد"
+                    const effectiveBatch = (filterBatch === "all" || !filterBatch || filterBatch === "") 
+                        ? "لا يوجد" 
+                        : filterBatch;
+
+                    const currentKeyPrefix = `${filterCourse}||${effectiveBatch}->`;
                     
+                    // فلترة السرايا
                     data.companies = data.companies.filter((companyName: string) => {
-                        return allowedCompanies.includes(`${currentKeyPrefix}${companyName}`);
+                        const key = `${currentKeyPrefix}${companyName}`;
+                        return allowedCompanies.includes(key);
                     });
 
-                    // 3. فلترة الفصائل بناءً على الدورة المختارة حالياً
+                    // 3. فلترة الفصائل
                     data.platoons = data.platoons.filter((platoonName: string) => {
-                        return allowedPlatoons.includes(`${currentKeyPrefix}${platoonName}`);
+                        const key = `${currentKeyPrefix}${platoonName}`;
+                        return allowedPlatoons.includes(key);
                     });
                 }
             }
@@ -241,48 +255,52 @@ const canDeletePhoto = useMemo(() => {
           };
           const queryString = buildQuery(params);
           const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${queryString}`)
-         if (res.ok) {
-      const responseData = await res.json();
-      let rawData = responseData.data || responseData;
-      
-// 🟢 [تطبيق قيود النطاق الكاملة على نتائج الجدول]
-const user = JSON.parse(localStorage.getItem("user") || "{}");
-const scope = user?.extra_permissions?.scope;
+        if (res.ok) {
+        const responseData = await res.json();
+        let rawData = responseData.data || responseData;
 
-if (user.role !== 'owner' && scope?.is_restricted) {
-    const allowedCourses: string[] = scope.courses || [];
-    const allowedCompanies: string[] = scope.companies || [];
-    const allowedPlatoons: string[] = scope.platoons || [];
+        // 🟢 [التعديل الذهبي]: تطبيق قيود النطاق بذكاء (معالجة لا يوجد)
+        const user = JSON.parse(localStorage.getItem("user") || "{}");
+        const scope = user?.extra_permissions?.scope;
 
-    rawData = rawData.filter((s: any) => {
-        const courseKey = `${s.course}${s.batch ? `||${s.batch}` : ''}`;
-        
-        const isCourseAllowed = allowedCourses.includes(courseKey);
-        if (!isCourseAllowed) return false;
+        if (user.role !== 'owner' && scope?.is_restricted) {
+            const allowedCourses: string[] = scope.courses || [];
+            const allowedCompanies: string[] = scope.companies || [];
+            const allowedPlatoons: string[] = scope.platoons || [];
 
-        const companyKey = `${courseKey}->${s.company}`;
-        // 🛡️ إضافة النوع (string) لـ c هنا لحل الخطأ الأول
-        const hasCompanyScopeForThisCourse = allowedCompanies.some((c: string) => c.startsWith(courseKey + "->"));
-        
-        if (hasCompanyScopeForThisCourse) {
-            if (!allowedCompanies.includes(companyKey)) return false;
+            rawData = rawData.filter((s: any) => {
+                // 1. توحيد الدفعة: إذا كانت null أو empty نحولها لـ "لا يوجد"
+                const sBatch = (s.batch && s.batch.trim() !== "" && s.batch !== "all") ? s.batch : "لا يوجد";
+                
+                // بناء المفاتيح كما هي مخزنة في الـ JSON بالضبط
+                const courseKey = `${s.course}||${sBatch}`;
+                
+                // فحص صلاحية الدورة (ندعم المفتاح الكامل أو اسم الدورة الصافي للأمان)
+                const isCourseAllowed = allowedCourses.includes(courseKey) || allowedCourses.includes(s.course);
+                if (!isCourseAllowed) return false;
+
+                // 2. توحيد السرية والفصيل
+                const sCompany = (s.company && s.company.trim() !== "") ? s.company : "لا يوجد";
+                const sPlatoon = (s.platoon && s.platoon.trim() !== "") ? s.platoon : "لا يوجد";
+
+                const companyKey = `${courseKey}->${sCompany}`;
+                const platoonKey = `${courseKey}->${sPlatoon}`;
+
+                // فحص هل المستخدم مقيد بسرايا معينة لهذه الدورة؟
+                const hasCompanyScope = allowedCompanies.some((c: string) => c.startsWith(courseKey + "->"));
+                if (hasCompanyScope && !allowedCompanies.includes(companyKey)) return false;
+
+                // فحص هل المستخدم مقيد بفصائل معينة لهذه الدورة؟
+                const hasPlatoonScope = allowedPlatoons.some((p: string) => p.startsWith(courseKey + "->"));
+                if (hasPlatoonScope && !allowedPlatoons.includes(platoonKey)) return false;
+
+                return true;
+            });
         }
 
-        const platoonKey = `${courseKey}->${s.platoon}`;
-        // 🛡️ إضافة النوع (string) لـ p هنا لحل الخطأ الثاني
-        const hasPlatoonScopeForThisCourse = allowedPlatoons.some((p: string) => p.startsWith(courseKey + "->"));
-        
-        if (hasPlatoonScopeForThisCourse) {
-            if (!allowedPlatoons.includes(platoonKey)) return false;
-        }
-
-        return true;
-    });
-}
-
-setSoldiers(rawData);
-setTotalCount(responseData.total || rawData.length);
-  }
+        setSoldiers(rawData);
+        setTotalCount(responseData.total || rawData.length);
+    }
       } catch (error) { toast.error("فشل الاتصال بالسيرفر") } 
       finally { setLoading(false) }
   }

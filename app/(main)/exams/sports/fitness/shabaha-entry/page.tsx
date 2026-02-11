@@ -98,10 +98,18 @@ const fetchFilterOptions = async () => {
             return; // توقف هنا ولا تطلب بيانات من السيرفر
         }
 
-        const query = new URLSearchParams()
-        if (filters.course && filters.course !== "all") query.append("course", filters.course)
-        if (filters.batch && filters.batch !== "all") query.append("batch", filters.batch)
-        if (filters.company && filters.company !== "all") query.append("company", filters.company)
+        // --- استبدل بناء الرابط (query) بهذا المنطق الذكي ---
+const query = new URLSearchParams()
+if (filters.course && filters.course !== "all") query.append("course", filters.course)
+
+// 🧼 توحيد إرسال الدفعة للباك إند
+if (filters.batch && filters.batch !== "all") {
+    query.append("batch", filters.batch === "لا يوجد" ? "None" : filters.batch)
+}
+
+if (filters.company && filters.company !== "all") {
+    query.append("company", filters.company === "لا يوجد" ? "None" : filters.company)
+}
         
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?${query.toString()}`, {
             headers: { 'Authorization': `Bearer ${token}` }
@@ -146,44 +154,58 @@ const fetchFilterOptions = async () => {
     } catch (e) { console.error("Error fetching filters", e) }
 }
  const fetchSoldiers = async () => {
-        setIsLoading(true)
-        const user = JSON.parse(localStorage.getItem("user") || "{}");
-        const scope = user?.extra_permissions?.scope;
+    setIsLoading(true)
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    const scope = user?.extra_permissions?.scope;
 
-        try {
-            const query = new URLSearchParams({
-                skip: ((currentPage - 1) * itemsPerPage).toString(),
-                limit: itemsPerPage.toString(),
-                course: filters.course,
-                batch: filters.batch || "all",
-                company: filters.company || "all",
-                platoon: filters.platoon || "all",
-                search: search
-            })
+    try {
+        // 1. 🧼 توحيد الفلاتر قبل إرسالها للسيرفر (تحويل "لا يوجد" إلى "None" ليفهمها الباك إند)
+        const queryParams = {
+            skip: ((currentPage - 1) * itemsPerPage).toString(),
+            limit: itemsPerPage.toString(),
+            course: filters.course,
+            // إذا اختار المستخدم "لا يوجد"، نرسل كلمة "None" للسيرفر ليبحث عن الـ NULL
+            batch: (filters.batch === "لا يوجد" || !filters.batch) ? "None" : filters.batch,
+            company: (filters.company === "لا يوجد" || !filters.company) ? "None" : filters.company,
+            platoon: (filters.platoon === "لا يوجد" || !filters.platoon) ? "None" : filters.platoon,
+            search: search
+        };
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${query.toString()}`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            })
-            
-            if (res.ok) {
-                const data = await res.json()
-                let rawList = data.data || [];
+        const query = new URLSearchParams(queryParams);
 
-                // 🛡️ [تصفية أمنية أخيرة للجنود قبل العرض]
-                if (user.role !== 'owner' && scope?.is_restricted) {
-                    const allowedCourses = scope.courses || [];
-                    rawList = rawList.filter((s: any) => {
-                        const key = `${s.course}${s.batch ? `||${s.batch}` : ''}`;
-                        return allowedCourses.includes(key);
-                    });
-                }
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${query.toString()}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        })
+        
+        if (res.ok) {
+            const data = await res.json()
+            let rawList = data.data || [];
 
-                setSoldiers(rawList)
-                setTotalItems(data.total)
+            // 🛡️ 2. [تصفية أمنية ذكية] تضمن توافق المفاتيح مع الـ JSON الخاص بالصلاحيات
+            if (user.role !== 'owner' && scope?.is_restricted) {
+                const allowedCourses = scope.courses || [];
+                
+                rawList = rawList.filter((s: any) => {
+                    // توحيد مسمى الدفعة للجندي القادم من السيرفر للمطابقة مع الصلاحيات
+                    const sBatch = (s.batch && s.batch !== "None" && s.batch !== "") ? s.batch : "لا يوجد";
+                    
+                    // بناء المفتاح كما هو متوقع في الـ Scope (مثلاً: دورة غطس||لا يوجد)
+                    const courseKey = `${s.course}||${sBatch}`;
+                    
+                    // السماح إذا كان المفتاح بالدفعة موجود، أو اسم الدورة فقط موجود
+                    return allowedCourses.includes(courseKey) || allowedCourses.includes(s.course);
+                });
             }
-        } catch (e) { toast.error("فشل جلب البيانات") }
-        finally { setIsLoading(false) }
+
+            setSoldiers(rawList)
+            setTotalItems(data.total)
+        }
+    } catch (e) { 
+        toast.error("فشل جلب البيانات") 
+    } finally { 
+        setIsLoading(false) 
     }
+}
 
 // هذه الدالة ستُستدعى عند ضغط الزر الأحمر
 const openConfirmDialog = (target: 'shabaha' | 'chip' | 'notes') => {
@@ -381,8 +403,13 @@ const executeSave = async (id: number, field: string, value: string) => {
   }
 // دالة لتوليد الاسم الديناميكي
 const generateFileName = (ext: string) => {
-  // دمج الفلاتر مع استبدال الفراغات بـ "_"
-  const path = `${filters.course}_${filters.batch}_${filters.company}_${filters.platoon}`.replace(/ /g, "_");
+  // 🧼 تأمين الفلاتر لضمان عدم حدوث خطأ replace إذا كانت القيمة null
+  const course = (filters.course || "دورة").replace(/ /g, "_");
+  const batch = (filters.batch || "بدون_دفعة").replace(/ /g, "_");
+  const company = (filters.company || "بدون_سرية").replace(/ /g, "_");
+  const platoon = (filters.platoon || "بدون_فصيل").replace(/ /g, "_");
+
+  const path = `${course}_${batch}_${company}_${platoon}`;
   const date = format(new Date(), "yyyy-MM-dd");
   return `كشف_الشباحات_${path}_${date}.${ext}`;
 }

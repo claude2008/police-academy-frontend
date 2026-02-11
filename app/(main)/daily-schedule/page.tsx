@@ -60,7 +60,7 @@ export default function DailySchedulePage() {
   const [filterOptions, setFilterOptions] = useState<any>({ courses: [], batches: [] })
   const [templates, setTemplates] = useState<any[]>([])
   const [soldiers, setSoldiers] = useState<any[]>([])
-  const [attendanceData, setAttendanceData] = useState<any>({})
+  const [attendanceData, setAttendanceData] = useState<Record<string, any>>({});
   const [modalOpen, setModalOpen] = useState(false)
   const [activeEntry, setActiveEntry] = useState<any>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -69,101 +69,165 @@ export default function DailySchedulePage() {
   const [isCompressing, setIsCompressing] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 const [lockedSessions, setLockedSessions] = useState<string[]>([]);
- useEffect(() => {
-  const fetchOptions = async () => {
-    try {
-        const token = localStorage.getItem("token");
-        const user = JSON.parse(localStorage.getItem("user") || "{}");
-        const scope = user?.extra_permissions?.scope;
-        const isRestricted = user.role !== 'owner' && scope?.is_restricted;
-        const userCourses = scope?.courses || [];
+// أضف هذا السطر في بداية المكون (قبل الـ useEffect)
+const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
+const scope = user?.extra_permissions?.scope;
+const allowedBatchesForSelectedCourse = useMemo(() => {
+    // المصفوفة هنا ستكون نظيفة أصلاً وتحتوي فقط على ما يخص الدورة المختارة
+    const batches = filterOptions.batches || [];
+    return batches;
+}, [filterOptions.batches]);
+useEffect(() => {
+    const fetchOptions = async () => {
+        try {
+            const token = localStorage.getItem("token");
+            
+            // 🟢 إرسال الدورة المختارة للسيرفر لفلترة الدفعات من المصدر
+            const courseParam = selectedCourse && selectedCourse !== "all" ? selectedCourse : "";
+            
+            // 1. جلب الخيارات (مع فلترة الدورة) + القوالب
+            const [fRes, tRes] = await Promise.all([
+                fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options?course=${encodeURIComponent(courseParam)}`),
+                fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates`, {
+                    headers: { "Authorization": `Bearer ${token}` }
+                })
+            ]);
 
-        if (isRestricted && userCourses.length === 0) {
-            setFilterOptions({ courses: [], batches: [] });
-            setTemplates([]);
-            return;
-        }
-
-        const [fRes, tRes] = await Promise.all([
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/filters-options`),
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates`, {
-                headers: { "Authorization": `Bearer ${token}` }
-            })
-        ]);
-
-        if (fRes.ok) {
-            let data = await fRes.json();
-            if (isRestricted) {
-                const allowedNames = userCourses.map((key: string) => key.split('||')[0]);
-                data.courses = (data.courses || []).filter((c: string) => allowedNames.includes(c));
-                data.batches = (data.batches || []).filter((b: string) => 
-                    userCourses.some((key: string) => key.endsWith(`||${b}`))
+            // 2. معالجة خيارات الفلترة
+            if (fRes.ok) {
+                let filterData = await fRes.json();
+                
+                // 🧼 توحيد مسميات الدفعات فوراً
+                // إذا كانت الدورة عامة، السيرفر سيعيد [null]، وهنا نحوله لـ ["لا يوجد"]
+                filterData.batches = (filterData.batches || []).map((b: string) => 
+                    (!b || b === "None" || b === "none" || b === "null" || b === "") ? "لا يوجد" : b
                 );
+                
+                // إزالة التكرار
+                filterData.batches = Array.from(new Set(filterData.batches));
+
+                // 🛡️ تطبيق حارس النطاق للمستخدم المقيد
+                if (user.role !== 'owner' && scope?.is_restricted) {
+                    const userCourses = scope?.courses || [];
+                    
+                    // تصفية الدورات (لتظهر فقط المسموحة)
+                    // (هذا الجزء ثابت ولا يعتمد على selectedCourse)
+                    if (!selectedCourse || selectedCourse === "all") {
+                         const allowedCoursesBaseNames = userCourses.map((key: string) => key.split('||')[0]);
+                         filterData.courses = (filterData.courses || []).filter((c: string) => 
+                             allowedCoursesBaseNames.includes(c)
+                         );
+                    }
+
+                    // تصفية الدفعات (بناءً على الصلاحية + الدورة المختارة)
+                    if (selectedCourse && selectedCourse !== "all") {
+                        filterData.batches = filterData.batches.filter((bName: string) => {
+                            const specificKey = `${selectedCourse}||${bName}`;
+                            return userCourses.includes(selectedCourse) || userCourses.includes(specificKey);
+                        });
+                    }
+                }
+                
+                setFilterOptions((prev: any) => ({
+    ...prev,
+    // نحدث الدورات فقط في البداية، والدفعات تتحدث مع كل تغيير للدورة
+    courses: (selectedCourse && selectedCourse !== "all") ? prev.courses : filterData.courses,
+    batches: filterData.batches
+}));
             }
-            setFilterOptions(data);
+
+            // 3. معالجة القوالب (نفس كودك السابق)
+            if (tRes.ok) {
+                const rawTemplateData = await tRes.json();
+                let processedTemplates = rawTemplateData.map((t: any) => {
+                    const cKey = t.course_key || t.courseId || t.course_name;
+                    const rawBKey = t.batch_key || t.batchId || t.batch_name;
+                    const bKeyClean = (rawBKey === "all" || rawBKey === "None" || !rawBKey || rawBKey === "null" || rawBKey === "none") ? "لا يوجد" : rawBKey;
+                    
+                    return { ...t, course_key: cKey, batch_key: bKeyClean, is_active: t.is_active !== undefined ? t.is_active : t.isActive };
+                });
+                
+                // تطبيق قيود النطاق على القوالب
+                if (user.role !== 'owner' && scope?.is_restricted) {
+                     const userCourses = scope?.courses || [];
+                     processedTemplates = processedTemplates.filter((t: any) => {
+                        const hasGeneralAccess = userCourses.includes(t.course_key);
+                        const hasSpecificAccess = userCourses.includes(`${t.course_key}||${t.batch_key}`);
+                        return hasGeneralAccess || hasSpecificAccess;
+                     });
+                }
+                setTemplates(processedTemplates);
+            }
+
+        } catch (e) {
+            console.error("Error fetching data:", e);
+            toast.error("فشل تحميل البيانات");
         }
+    };
 
-       if (tRes.ok) {
-    let templateData = await tRes.json();
-    
-    if (isRestricted) {
-        templateData = templateData.filter((t: any) => {
-            // 🟢 الإصلاح: تجربة كل المسميات الممكنة للحقول
-            const cKey = t.course_key || t.courseId || t.course_name;
-            const bKey = t.batch_key || t.batchId || t.batch_name;
-            
-            if (!cKey) return false; // إذا لم يجد اسم الدورة أصلاً، نرفض القالب
-
-            const templateKey = bKey ? `${cKey}||${bKey}` : cKey;
-            
-            const isMatch = userCourses.includes(templateKey) || 
-                           userCourses.some((uc: string) => uc.startsWith(cKey + "||"));
-            
-            return isMatch;
-        });
-    }
-    setTemplates(templateData);
-}
-
-    } catch (e) { console.error("Error in fetchOptions:", e); }
-};
     fetchOptions();
-  }, [date]); // أضفنا date لضمان التحديث عند تغيير التاريخ
+    
+    // ⚠️ إضافة selectedCourse هنا هي الحل السحري لتحديث قائمة الدفعات تلقائياً
+}, [date, selectedCourse]);
+
 const activeSchedule = useMemo(() => {
+    // 🔍 البحث عن القالب المناسب بناءً على الفلاتر المنظفة
     const template = templates.find(t => {
-        // 🟢 الإصلاح: قراءة مرنة للمسميات
+        // 1️⃣ توحيد بيانات القالب (Template Data)
         const tCourse = t.course_key || t.courseId || t.course_name;
-        const tBatch = t.batch_key || t.batchId || t.batch_name;
         
-        const courseMatch = tCourse === selectedCourse;
+        // 🧼 تنظيف مسمى الدفعة في القالب (تحويل الفراغ أو None إلى "لا يوجد")
+        const tBatchClean = (t.batch_key === "all" || t.batch_key === "None" || !t.batch_key || t.batch_key === "null" || t.batch_key === "none") 
+            ? "لا يوجد" 
+            : t.batch_key;
+
+        // 2️⃣ توحيد بيانات الاختيار من الواجهة (UI Selection)
+        const selectedCourseClean = selectedCourse;
         
-        // معالجة الدفعة
-        const currentBatch = (selectedBatch === "all" || selectedBatch === "" || selectedBatch === "none") ? null : selectedBatch;
-        const batchMatch = (tBatch === currentBatch) || (selectedBatch === "all" && (!tBatch || tBatch === "none"));
+        // 🧼 تنظيف مسمى الدفعة المختار (تحويل الفراغ أو all إلى "لا يوجد" للمطابقة)
+        const selectedBatchClean = (selectedBatch === "all" || selectedBatch === "" || selectedBatch === "none" || !selectedBatch) 
+            ? "لا يوجد" 
+            : selectedBatch;
+
+        // 3️⃣ عملية المطابقة (Matching)
+        const courseMatch = tCourse === selectedCourseClean;
         
+        // مطابقة الدفعة: نعتمد على المسميات المنظفة لضمان نجاح دمج (null مع None)
+        const batchMatch = (tBatchClean === selectedBatchClean);
+
         const activeFlag = t.is_active !== undefined ? t.is_active : t.isActive;
 
         return courseMatch && batchMatch && activeFlag === true;
     });
 
+    // 🛑 إذا لم نجد قالباً يطابق الاختيارات، نرجع مصفوفة فارغة
     if (!template) return [];
 
+    // 4️⃣ استخراج بيانات الجدول (تحويل النص إلى كائن JSON إذا لزم الأمر)
     let scheduleData = [];
     try {
         const rawData = template.schedule_data || template.schedule;
         scheduleData = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
-    } catch (e) { return []; }
+    } catch (e) { 
+        console.error("خطأ في معالجة بيانات الجدول:", e);
+        return []; 
+    }
 
     if (!Array.isArray(scheduleData)) return [];
 
+    // 5️⃣ تحديد يوم الأسبوع (مطابقة الاسم العربي لليوم)
     const rawDayName = format(new Date(date), "EEEE", { locale: ar });
     const dayEntry = scheduleData.find((d: any) => d.dayName === rawDayName || d.day === rawDayName);
     
+    // إرجاع الحصص لهذا اليوم أو مصفوفة فارغة
     return dayEntry?.sessions || [];
+
 }, [date, selectedCourse, selectedBatch, templates]);
+
   // ✅ الكود الجديد: يطلب الدورة كشرط أساسي، والدفعة اختيارية
 useEffect(() => { 
     if (selectedCourse) { 
+        setLockedSessions([]); // 👈 أضف هذا السطر فقط (لتنظيف الأقفال القديمة فوراً)
         fetchSoldiers(); 
     } 
 }, [selectedCourse, selectedBatch, selectedCompany, date]);
@@ -174,86 +238,114 @@ const fetchSoldiers = async () => {
     const scope = user?.extra_permissions?.scope;
 
     try {
+        // 🟢 1. توحيد مسمى الدفعة للطلبات (API Normalization)
+        // إذا كان المختار "الكل" أو "لا يوجد"، نرسل نصاً فارغاً ليفهم الباك إند أنه (NULL)
+        const cleanBatchForApi = (selectedBatch === "all" || selectedBatch === "None" || selectedBatch === "none" || selectedBatch === "لا يوجد") ? "" : selectedBatch;
+
         const params = new URLSearchParams({ 
             course: selectedCourse, 
-            batch: selectedBatch, 
+            batch: cleanBatchForApi, 
             limit: "1000" 
         });
 
+        // 2. إرسال الطلبات بالقيم "المطهرة"
         const [sRes, dRes] = await Promise.all([
             fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${params.toString()}`),
-            fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/day-data?date=${date}&course=${selectedCourse}&batch=${selectedBatch}`, { 
+            fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/day-data?date=${date}&course=${selectedCourse}&batch=${cleanBatchForApi}`, { 
                 headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` } 
             })
         ]);
 
-        // 1. معالجة بيانات الجنود (كما هي مع التأمين)
-        if (sRes.ok) {
-            let soldiersData = (await sRes.json()).data || [];
-            if (user.role !== 'owner' && scope?.is_restricted) {
-                const allowedCoursesKeys = scope.courses || [];
-                soldiersData = soldiersData.filter((s: any) => 
-                    allowedCoursesKeys.includes(`${s.course}||${s.batch}`)
-                );
-            }
-            setSoldiers(soldiersData);
-        }
-
-        // 2. 🟢 التعديل الجوهري: معالجة بيانات الحصص والأقفال
-        // داخل دالة fetchSoldiers في ملف DailySchedulePage.tsx
-if (dRes.ok) {
-    const responseData = await dRes.json();
+if (sRes.ok) {
+    let soldiersData = (await sRes.json()).data || [];
     
-    // 1. تحديث بيانات المربعات الملونة (الحالات والمخالفات)
-    setAttendanceData(responseData.data || responseData); 
+    if (user.role !== 'owner' && scope?.is_restricted) {
+        const allowedCoursesKeys = scope.courses || [];
+        
+        soldiersData = soldiersData.filter((s: any) => {
+            const courseName = s.course;
+            
+            // 🟢 توحيد مسمى الدفعة للمطابقة (Normalization)
+            // أي قيمة فارغة في قاعدة البيانات نحولها لـ "لا يوجد" لكي تطابق الصلاحية
+            const soldierBatchLabel = (!s.batch || s.batch === "None" || s.batch === "none" || s.batch === "") 
+                ? "لا يوجد" 
+                : s.batch;
 
-    // 2. 🔒 منطق القفل الذكي والموحد:
-    // نأخذ المصفوفة الموحدة 'approved_sessions' التي أرسلها الباك إند
-    // مع وضع احتياط للمسميات الأخرى لضمان عدم حدوث خطأ
-    const unifiedApproved = responseData.approved_sessions || [];
-    const supervisorApproved = responseData.supervisor_approved_sessions || [];
-    const officerApproved = responseData.officer_approved_sessions || [];
-    
-    // دمج كل المصادر الممكنة في قائمة واحدة وحذف التكرار
-    const allLocked = Array.from(new Set([
-        ...unifiedApproved, 
-        ...supervisorApproved, 
-        ...officerApproved
-    ]));
-    
-    // تحويل الأرقام إلى نصوص لضمان المطابقة مع sIdx في الجدول
-    setLockedSessions(allLocked.map(String)); 
+            const hasGeneralAccess = allowedCoursesKeys.includes(courseName);
+            const hasSpecificAccess = allowedCoursesKeys.includes(`${courseName}||${soldierBatchLabel}`);
 
-    // 🔍 سطر للفحص (يظهر في الكونسول فقط) للتأكد من وصول الأرقام
-    console.log("🔒 الحصص المقفلة المستلمة من السيرفر:", allLocked);
+            return hasGeneralAccess || hasSpecificAccess;
+        });
+    }
+    setSoldiers(soldiersData);
 }
 
+        // 🟢 4. معالجة الأقفال (كما هي، منطقك فيها ممتاز)
+        if (dRes.ok) {
+            const responseData = await dRes.json();
+            setAttendanceData(responseData.data || responseData); 
+
+            const allLocked = Array.from(new Set([
+                ...(responseData.approved_sessions || []), 
+                ...(responseData.supervisor_approved_sessions || []), 
+                ...(responseData.officer_approved_sessions || [])
+            ]));
+            
+            setLockedSessions(allLocked.map(String)); 
+            console.log("🔒 الحصص المقفلة المحدثة:", allLocked);
+        }
+
     } catch (e) { 
-        toast.error("فشل التحديث"); 
+        toast.error("فشل تحديث البيانات"); 
         console.error(e);
     } finally { 
         setLoading(false); 
     }
 };
 
-  const platoonsList = useMemo(() => {
-      const list = new Set(soldiers.filter(s => selectedCompany === "all" || s.company === selectedCompany).map(s => s.platoon));
-      return Array.from(list).filter(Boolean).sort();
-  }, [soldiers, selectedCompany]);
-
-// 🟢 التعديل الأول: استخراج الدفعات التي تنتمي للدورة المختارة فقط
+// 1. استخراج الدفعات (كما هي مع إضافة حماية من القيم النصية "null")
 const availableBatches = useMemo(() => {
-    const batches = new Set(soldiers.map(s => s.batch));
-    return Array.from(batches).filter(b => b && b !== "none" && b !== "").sort();
+    const batches = new Set(soldiers.map(s => {
+        // توحيد كل أشكال الفراغ إلى مسمى واحد
+        if (!s.batch || s.batch === "None" || s.batch === "none" || s.batch === "null" || s.batch === "") return "لا يوجد";
+        return s.batch;
+    }));
+    return Array.from(batches).sort((a: any, b: any) => a.localeCompare(b, 'ar'));
 }, [soldiers]);
-// 🟢 التعديل الجديد: استخراج السرايا الموجودة فعلياً في هذه الدورة والدفعة فقط
+
+// 2. 🟢 التعديل الذكي: السرايا (تعتمد على الدفعة المختارة)
 const availableCompanies = useMemo(() => {
-    const companies = new Set(soldiers.map(s => s.company));
-    // تنظيف القائمة من الفراغات وترتيبها
-    return Array.from(companies).filter(c => c && c !== "none" && c !== "").sort();
-}, [soldiers]);
- // 🟢 1. الفرز الذكي (يعتمد عليه الإجمالي والجدول)
-// 🟢 1. الفرز الذكي (يعتمد عليه الإجمالي والجدول)
+    // نفلتر الجنود أولاً بناءً على الدفعة المختارة قبل استخراج السرايا
+    const filteredByBatch = soldiers.filter(s => {
+        const batchLabel = (!s.batch || s.batch === "None" || s.batch === "none" || s.batch === "") ? "لا يوجد" : s.batch;
+        return selectedBatch === "all" || batchLabel === selectedBatch;
+    });
+
+    const companies = new Set(filteredByBatch.map(s => {
+        if (!s.company || s.company === "None" || s.company === "none" || s.company === "") return "لا يوجد";
+        return s.company;
+    }));
+    
+    return Array.from(companies).sort((a: any, b: any) => a.localeCompare(b, 'ar'));
+}, [soldiers, selectedBatch]); // 👈 أضفنا selectedBatch هنا لجعل القائمة تفاعلية
+
+// 3. 🟢 التعديل الذكي: الفصائل (تعتمد على الدفعة والسرية المختارة)
+const platoonsList = useMemo(() => {
+    const filteredByComp = soldiers.filter(s => {
+        // فحص الدفعة
+        const batchLabel = (!s.batch || s.batch === "None" || s.batch === "none" || s.batch === "") ? "لا يوجد" : s.batch;
+        const matchBatch = selectedBatch === "all" || batchLabel === selectedBatch;
+        
+        // فحص السرية
+        const compLabel = (!s.company || s.company === "None" || s.company === "") ? "لا يوجد" : s.company;
+        const matchComp = selectedCompany === "all" || compLabel === selectedCompany;
+
+        return matchBatch && matchComp;
+    });
+
+    const platoons = new Set(filteredByComp.map(s => s.platoon || "لا يوجد"));
+    return Array.from(platoons).sort((a: any, b: any) => a.localeCompare(b, 'ar'));
+}, [soldiers, selectedBatch, selectedCompany]); // 👈 أضفنا التبعيات هنا
 const filteredSoldiers = useMemo(() => {
     return soldiers.filter(s => {
         const matchSearch = (s.name || "").includes(searchTerm) || (s.military_id || "").includes(searchTerm);
@@ -272,77 +364,132 @@ const paginatedSoldiers = useMemo(() => {
     return filteredSoldiers.slice(start, start + itemsPerPage);
 }, [filteredSoldiers, currentPage, itemsPerPage]);
 
-  // 🟢🟢🟢 دالة الحفظ المصلحة (المنطق الزمني السليم) 🟢🟢🟢
 const saveStatus = async () => { 
-    if (!activeEntry.status) return toast.error("اختر الحالة");
+    if (!activeEntry.status) return toast.error("يرجى اختيار الحالة أولاً");
     
     setLoading(true);
     const token = localStorage.getItem("token");
 
     try {
-        // 1. تنظيف السجلات القديمة
+        // --- 1. المرحلة الأمنية الأولى: محاولة تنظيف القديم ---
         if (activeEntry.group_id) {
-            await fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/delete-group/${activeEntry.group_id}`, {
+            console.log("🧹 محاولة تنظيف السلسلة...");
+            const delRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/delete-group/${activeEntry.group_id}`, {
                 method: "DELETE",
                 headers: { "Authorization": `Bearer ${token}` }
             });
+
+            if (!delRes.ok && delRes.status === 403) {
+                console.warn("⚠️ السلسلة مقفلة جزئياً، سنقوم بتحديث الحصص المتاحة فقط.");
+            } else if (!delRes.ok) {
+                const errorData = await delRes.json();
+                setLoading(false);
+                return toast.error(errorData.detail || "حدث خطأ أثناء تحديث البيانات");
+            }
         }
 
-        // 2. إعداد المتغيرات
+        // --- 2. تجهيز المتغيرات الأساسية ---
         const durationCount = parseInt(activeEntry.duration) || 1;
         const statusInfo = STATUS_OPTIONS.find(o => o.id === activeEntry.status);
         const isSingleSession = activeEntry.isSingleSession === true;
+        
         const newGroupId = isSingleSession ? null : (activeEntry.group_id || `GRP-${Date.now()}-${activeEntry.soldier.id}`);
         const loopDuration = isSingleSession ? 1 : durationCount;
         const baseStartDate = activeEntry.start_date || date; 
 
-        // ✅ الإصلاح الأول: تحديد نوع مصفوفة الوعود بشكل صريح
-        const allPromises: Promise<Response>[] = [];
+        let skippedAdditionsCount = 0;
+        let successCount = 0;
 
+        console.log(`🚀 بدء الحفظ التسلسلي لـ ${loopDuration} أيام...`);
+
+        // --- 3. المرحلة التنفيذية: الإرسال التسلسلي ---
         for (let i = 0; i < loopDuration; i++) {
             const targetDate = format(addDays(new Date(baseStartDate), i), "yyyy-MM-dd");
             
-            // ✅ الإصلاح الثاني والثالث: تحديد نوع البرامترات (session و idx)
-            activeSchedule.forEach((session: any, idx: number) => {
-                const isCurrentSession = String(idx) === activeEntry.sessionId;
-                let shouldSave = false;
+            for (const [idx, session] of activeSchedule.entries()) {
+                const sIdxStr = String(idx); // هذا هو المعرف الصحيح للحصة
+                const isCurrentSession = sIdxStr === activeEntry.sessionId;
 
+                // أ. فحص الحماية من الكتابة فوق المعتمد
+                const hasExistingRecord = attendanceData[`${activeEntry.soldier.id}-${sIdxStr}`] || 
+                                          attendanceData[`${activeEntry.soldier.id}-slot-${sIdxStr}`];
+
+                if (lockedSessions.includes(sIdxStr) && !hasExistingRecord) {
+                    skippedAdditionsCount++;
+                    continue; 
+                }
+
+                // ب. تحديد هل يجب حفظ هذه الحصة؟
+                let shouldSave = false;
                 if (isSingleSession) {
                     if (isCurrentSession && i === 0) shouldSave = true;
                 } else {
                     if (statusInfo?.propagate || i > 0 || isCurrentSession) shouldSave = true;
                 }
-                
+
+                // ج. تنفيذ طلب الحفظ
                 if (shouldSave) {
-                    allPromises.push(
-                        fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/attendance/save`, {
+                    try {
+                        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/attendance/save`, {
                             method: "POST",
                             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
                             body: JSON.stringify({
                                 soldier_id: activeEntry.soldier.id,
                                 date: targetDate, 
-                                session_id: String(idx),
+                                session_id: sIdxStr,
                                 status: activeEntry.status,
                                 duration: isSingleSession ? 1 : durationCount, 
                                 start_date: baseStartDate, 
                                 note: activeEntry.note || "",
                                 group_id: newGroupId
                             })
-                        })
-                    );
+                        });
+
+                        // 🔴 فحص إذا كانت الحصة معتمدة (مقفولة) من الباك إند
+                        if (res.status === 400) {
+                            const errorData = await res.json();
+                            if (errorData.detail?.includes("approved")) {
+                                toast.error(`الحصة ${sIdxStr} مقفولة نهائياً. فك الاعتماد أولاً.`);
+                                continue; // نتخطى هذه الحصة ونكمل الباقي
+                            }
+                        }
+
+                       if (res.ok) {
+    successCount++;
+    // 🟢 أضفنا (: any) هنا لإيقاف اعتراض TypeScript
+    setAttendanceData((prev: any) => ({
+        ...prev,
+        [`${activeEntry.soldier.id}-${sIdxStr}`]: { 
+            status: activeEntry.status, 
+            note: activeEntry.note 
+        }
+    }));
+
+                        } else {
+                            console.error(`❌ خطأ في حصة ${sIdxStr} يوم ${targetDate}`);
+                        }
+                    } catch (fetchErr) {
+                        console.error(`📡 عطل في الشبكة أثناء حفظ حصة ${sIdxStr}:`, fetchErr);
+                    }
                 }
-            });
+            }
         }
 
-        await Promise.all(allPromises);
+        // --- 4. إنهاء العملية وإظهار النتائج ---
+        if (successCount > 0) {
+            toast.success(`تم حفظ ${successCount} سجلات بنجاح ✅`);
+        }
         
-        toast.success("تم التحديث بنجاح");
+        if (skippedAdditionsCount > 0) {
+            toast.info(`تم حماية ${skippedAdditionsCount} حصص معتمدة من التعديل`);
+        }
+
         fetchSoldiers(); 
         setModalOpen(false); 
 
     } catch (e) { 
-        console.error(e);
-        toast.error("فشل التحديث"); 
+        console.error("🚨 خطأ جسيم في دالة saveStatus:", e);
+        toast.error("حدث خطأ تقني غير متوقع"); 
     } finally { 
         setLoading(false); 
     }
@@ -429,11 +576,14 @@ const deleteStatus = async () => {
 
 // دالة التنفيذ النهائي للحذف (استبدل القديمة أو أضفها)
 const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_today') => {
+    // 1. التحقق الأساسي من وجود معرف السجل
     if (!activeEntry?.id) return;
     setLoading(true);
 
     try {
         const token = localStorage.getItem("token");
+        
+        // 2. تحديد الرابط (Endpoint) بناءً على نمط الحذف المختار
         let url = `${process.env.NEXT_PUBLIC_API_URL}/session/delete/attendance/${activeEntry.id}`;
         
         if (mode === 'group_full' && activeEntry.group_id) {
@@ -443,6 +593,7 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
             url = `${process.env.NEXT_PUBLIC_API_URL}/session/terminate-group/${activeEntry.group_id}?from_date=${date}`;
         }
 
+        // 3. إرسال طلب الحذف للسيرفر
         const res = await fetch(url, { 
             method: "DELETE", 
             headers: { "Authorization": `Bearer ${token}` } 
@@ -450,24 +601,31 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
 
         const responseData = await res.json();
 
+        // 4. معالجة الرد الناجح
         if (res.ok) {
-            toast.success("تم تنفيذ الإجراء بنجاح");
+            // نأخذ نص النجاح من الباك إند (مثلاً: "تم حذف سلسلة الحالات بالكامل...")
+            toast.success(responseData.message || "تم تنفيذ الإجراء بنجاح ✅");
+            
+            // تحديث الجدول فوراً ليعكس الحذف
             fetchSoldiers();
-            setModalOpen(false); // إغلاق النافذة عند النجاح
-        } else {
-            // 🛑 هنا نلتقط رسالة المنع القادمة من الباك إند (403 Forbidden)
-            if (res.status === 403) {
-                toast.error(responseData.detail || "لا يمكن حذف سلسلة تحتوي على حصص معتمدة");
-            } else {
-                toast.error(responseData.detail || "حدث خطأ أثناء العملية");
-            }
-            // 🟢 إغلاق النافذة وتصفير وضع الحذف حتى لو فشل بسبب الاعتماد
+            
+            // إغلاق النافذة المنبثقة
             setModalOpen(false); 
-            setConfirmDeleteId(null);
+        } 
+        // 5. معالجة الرفض (الاعتمادات الموجودة)
+        else {
+            // هنا يظهر "المنطق الصارم": سيعرض السيرفر رسالة مثل:
+            // "عفواً، لا يمكن حذف السلسلة بالكامل لوجود حصص معتمدة... يمكنك تقصير المدة بدلاً من ذلك"
+            toast.error(responseData.detail || "عفواً، لا يمكن إتمام الحذف لوجود قيود اعتماد 🔒");
+            
+            // نغلق النافذة لنجعل المستخدم يقرر خياره التالي بناءً على الرسالة
+            setModalOpen(false); 
         }
     } catch (e) {
-        toast.error("حدث خطأ في الاتصال بالسيرفر");
+        // خطأ تقني في الشبكة أو السيرفر
+        toast.error("حدث خطأ في الاتصال بالسيرفر، يرجى المحاولة لاحقاً 🌐");
     } finally {
+        // تنظيف حالات التحميل والتأكيد في كل الظروف
         setLoading(false);
         setConfirmDeleteId(null);
     }
@@ -505,29 +663,40 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
 </Select>
 
                 {/* 🟢 التعديل الثاني: قائمة الدفعات تظهر فقط ما يخص الدورة المختارة */}
-                <Select value={selectedBatch} onValueChange={setSelectedBatch} disabled={!selectedCourse}>
-                  <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="الدفعة" /></SelectTrigger>
-                  <SelectContent>
-                      {availableBatches.length > 0 && <SelectItem value="all">كل الدفعات</SelectItem>}
-                      {availableBatches.length > 0 ? (
-                          availableBatches.map((b: any) => <SelectItem key={b} value={b}>{b}</SelectItem>)
-                      ) : (
-                          <SelectItem value="all">بدون دفعات</SelectItem>
-                      )}
-                  </SelectContent>
-                </Select>
+         <Select value={selectedBatch} onValueChange={setSelectedBatch} disabled={!selectedCourse}>
+    <SelectTrigger className="h-9 text-xs font-bold bg-white">
+        <SelectValue placeholder="الدفعة" />
+    </SelectTrigger>
+    <SelectContent>
+        {/* إظهار خيار "كل الدفعات" فقط إذا كان هناك أكثر من دفعة واحدة متاحة، أو للمدير */}
+        {(allowedBatchesForSelectedCourse.length > 1 || user.role === 'owner') && (
+            <SelectItem value="all">كل الدفعات</SelectItem>
+        )}
+        
+        {allowedBatchesForSelectedCourse.map((b: string) => (
+            <SelectItem key={b} value={b}>{b}</SelectItem>
+        ))}
+    </SelectContent>
+</Select>
 
-                <Select value={selectedCompany} onValueChange={(v) => { setSelectedCompany(v); setSelectedPlatoon("all"); }}>
-  <SelectTrigger className="h-9 text-xs">
-    <SelectValue placeholder="السرية" />
-  </SelectTrigger>
-  <SelectContent>
-    <SelectItem value="all">كل السرايا</SelectItem>
-    {/* 🟢 نستخدم القائمة الذكية الجديدة هنا لضمان عدم التكرار */}
-    {availableCompanies.map((c: any) => (
-      <SelectItem key={c} value={c}>{c}</SelectItem>
-    ))}
-  </SelectContent>
+<Select 
+    value={selectedCompany} 
+    onValueChange={(v) => { 
+        setSelectedCompany(v); 
+        setSelectedPlatoon("all"); 
+    }}
+>
+    <SelectTrigger className="h-9 text-xs">
+        <SelectValue placeholder="السرية" />
+    </SelectTrigger>
+    <SelectContent>
+        <SelectItem value="all">كل السرايا</SelectItem>
+        {availableCompanies.map((c: any) => (
+            <SelectItem key={c} value={c}>
+                {c}
+            </SelectItem>
+        ))}
+    </SelectContent>
 </Select>
                 <Select value={selectedPlatoon} onValueChange={setSelectedPlatoon}><SelectTrigger className="h-9 text-xs"><SelectValue placeholder="الفصيل" /></SelectTrigger><SelectContent><SelectItem value="all">كل الفصائل</SelectItem>{platoonsList.map(p=><SelectItem key={p} value={p}>{p}</SelectItem>)}</SelectContent></Select>
                 <div className="relative col-span-2 md:col-span-2">
@@ -630,16 +799,17 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
             // 🟢 تغيير الخلفية إذا كانت مغلقة
             className={`border p-1 cursor-pointer transition-colors ${isLocked ? 'bg-slate-50/50' : 'hover:bg-slate-100'}`}
             onClick={() => { 
-                setActiveEntry({ 
-                    soldier, 
-                    session, 
-                    sessionId: String(sIdx), 
-                    ...record,
-                    start_date: record?.start_date || date,
-                    isLocked: isLocked // 🟢 نمرر حالة القفل للنافذة
-                }); 
-                setModalOpen(true); 
-            }}
+        setActiveEntry({ 
+            soldier, 
+            session, 
+            sessionId: String(sIdx), 
+            ...record,
+            // 🛡️ تأمين التاريخ لمنع الانهيار
+            start_date: record?.start_date || date || format(new Date(), "yyyy-MM-dd"),
+            isLocked: isLocked 
+        }); 
+        setModalOpen(true); 
+    }}
         >
             <div className="relative flex items-center justify-center">
                 {status ? (
@@ -715,6 +885,9 @@ const executeDeleteStatus = async (mode: 'single' | 'group_full' | 'group_from_t
        <Dialog open={modalOpen} onOpenChange={setModalOpen}>
     {/* أضفنا mb-20 لرفع النافذة عن الأيقونات السفلية على الهاتف، و sm:mb-0 لإلغائها على الحاسوب */}
 <DialogContent 
+  // 🛡️ هذا السطر يمنع إغلاق النافذة عند الضغط بالخارج أو بالخطأ أثناء المعالجة
+  onPointerDownOutside={(e) => { if (loading) e.preventDefault(); }}
+  onEscapeKeyDown={(e) => { if (loading) e.preventDefault(); }}
   className="max-w-md border-2 border-[#c5b391] flex flex-col max-h-[70vh] sm:max-h-[85vh] p-0 overflow-hidden mb-40 sm:mb-0 shadow-2xl rounded-t-2xl sm:rounded-xl" dir="rtl">
 
         {/* الرأس ثابت - تم إضافة padding لتعويض p-0 في الأب */}
@@ -1032,7 +1205,17 @@ const fullUrl = att.attachment.startsWith('http')
                 )}
             </DialogContent>
         </Dialog>
-
+{loading && (
+          <div className="fixed inset-0 bg-black/20 backdrop-blur-[1px] z-[200] flex flex-col items-center justify-center">
+            <div className="bg-white p-6 rounded-2xl shadow-2xl border-2 border-[#c5b391] flex flex-col items-center gap-4 animate-in zoom-in-95">
+              <Loader2 className="w-10 h-10 animate-spin text-[#c5b391]" />
+              <div className="text-center">
+                <p className="font-black text-slate-800">جاري معالجة السلسلة الزمنية...</p>
+                <p className="text-[10px] text-slate-500 font-bold">يرجى عدم إغلاق المتصفح أو النافذة</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </ProtectedRoute>
   )

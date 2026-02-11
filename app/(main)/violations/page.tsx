@@ -141,15 +141,18 @@ useEffect(() => {
   // ابحث عن الدالة وحدثها كالتالي:
 // 🟢 التعديل: جعل الدالة تستقبل الدورة والدفعة كبارامترات
 const fetchTodaySessions = async (courseName?: string, batchName?: string) => {
-    // نستخدم القيم الممررة أو نأخذ من الـ State كاحتياط
     const targetCourse = courseName || selectedSoldier?.course;
-    const targetBatch = batchName || selectedSoldier?.batch;
+    let rawBatch = batchName || selectedSoldier?.batch;
+
+    // 🟢 التعديل: تحويل كافة مسميات "الفراغ" إلى نص فارغ لإرساله للباك إند
+    const cleanBatchForApi = (!rawBatch || rawBatch === "all" || rawBatch === "None" || rawBatch === "none" || rawBatch === "لا يوجد") ? "" : rawBatch;
 
     if (!targetCourse) return;
 
     try {
         const today = format(new Date(), "yyyy-MM-dd");
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates/today-sessions?course=${targetCourse}&batch=${targetBatch}&date=${today}`, {
+        // نرسل cleanBatchForApi في الرابط
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates/today-sessions?course=${targetCourse}&batch=${cleanBatchForApi}&date=${today}`, {
             headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
         });
         if (res.ok) {
@@ -179,33 +182,69 @@ const fetchTodaySessions = async (courseName?: string, batchName?: string) => {
             if (data && data.length > 0) {
                 const foundSoldier = data[0];
 
-                // 🛡️ [حارس النطاق الذكي]
+                // 🛡️ [تطوير حارس النطاق الذكي - النسخة الصارمة]
                 const user = JSON.parse(localStorage.getItem("user") || "{}");
                 const scope = user?.extra_permissions?.scope;
 
                 if (user.role !== 'owner' && scope?.is_restricted) {
-                    const currentKeyPrefix = `${foundSoldier.course}||${foundSoldier.batch}->`;
+                    const allowedCourses = scope.courses || [];
                     const allowedCompanies = scope.companies || [];
                     const allowedPlatoons = scope.platoons || [];
 
-                    // التحقق: هل السرية والفصيل ضمن المسموح؟
+                    const courseName = foundSoldier.course;
+                    
+                    // 🟢 1. توحيد مسمى الدفعة (Normalization)
+                    const batchLabel = (!foundSoldier.batch || foundSoldier.batch === "all" || foundSoldier.batch === "None" || foundSoldier.batch === "none" || foundSoldier.batch === "") 
+                        ? "لا يوجد" 
+                        : foundSoldier.batch;
+                    
+                    // 🟢 2. بناء "بادئة المسار" لفحص السرايا والفصائل
+                    const currentKeyPrefix = (batchLabel === "لا يوجد") 
+                        ? `${courseName}->` 
+                        : `${courseName}||${batchLabel}->`;
+
+                    // 🟢 3. التحقق من وجود "قيود تفصيلية" لهذا المسار
+                    // هل المستخدم لديه أي سرايا أو فصائل محددة لهذه الدورة/الدفعة؟
+                    // 🟢 التعديل المطلوب لإرضاء TypeScript
+const hasSpecificCompanyConstraints = allowedCompanies.some((c: string) => c.startsWith(currentKeyPrefix));
+const hasSpecificPlatoonConstraints = allowedPlatoons.some((p: string) => p.startsWith(currentKeyPrefix));
+                    // 🟢 4. فحص الصلاحيات بمستويات (الدورة، الدفعة، السرية، الفصيل)
+                    const hasGeneralCourseAccess = allowedCourses.includes(courseName);
+                    const hasSpecificBatchAccess = allowedCourses.includes(`${courseName}||${batchLabel}`);
+                    
                     const isCompanyAllowed = allowedCompanies.includes(`${currentKeyPrefix}${foundSoldier.company}`);
                     const isPlatoonAllowed = allowedPlatoons.includes(`${currentKeyPrefix}${foundSoldier.platoon}`);
 
-                    if (!isCompanyAllowed || !isPlatoonAllowed) {
+                    // 🛑 [منطق المنع الصارم]:
+                    let isAccessDenied = false;
+
+                    // أ. إذا كان هناك قيود على السرايا/الفصائل، يجب أن يتطابق الجندي معها حصراً
+                    if (hasSpecificCompanyConstraints || hasSpecificPlatoonConstraints) {
+                        if (!isCompanyAllowed || !isPlatoonAllowed) {
+                            isAccessDenied = true;
+                        }
+                    } 
+                    // ب. إذا لم توجد قيود تفصيلية، نكتفي بفحص الدورة والدفعة
+                    else if (!hasGeneralCourseAccess && !hasSpecificBatchAccess) {
+                        isAccessDenied = true;
+                    }
+
+                    if (isAccessDenied) {
                         toast.error("عفواً، هذا المجند خارج النطاق المصرح لك بالوصول إليه 🔒");
                         setSelectedSoldier(null);
                         setLoading(false);
-                        return; // وقف العملية هنا
+                        return;
                     }
                 }
 
-                // ✅ إذا اجتاز الفحص أو كان "أونر"
+                // ✅ إذا اجتاز الفحص بنجاح
                 setSelectedSoldier(foundSoldier);
                 setViolationSearch(""); 
+                
                 if (typeof fetchTodaySessions === 'function') {
                     fetchTodaySessions(foundSoldier.course, foundSoldier.batch);
                 }
+                
                 toast.success("تم العثور على المجند ✅");
             } else {
                 toast.error("لم يتم العثور على نتائج");
@@ -213,7 +252,8 @@ const fetchTodaySessions = async (courseName?: string, batchName?: string) => {
             }
         }
     } catch (e) {
-        toast.error("خطأ في الاتصال");
+        console.error("🚨 خطأ في البحث:", e);
+        toast.error("خطأ في الاتصال بالسيرفر");
     } finally {
         setLoading(false);
     }
@@ -519,7 +559,10 @@ if (isSaved && entryToDelete) {
                     <p className="font-bold text-sm mt-1 opacity-80 tracking-tighter">الرقم: {selectedSoldier?.military_id || "-----"}</p>
                     <div className="flex gap-1.5 mt-2 flex-wrap">
                       <Badge className="bg-slate-900 text-white border-none text-[10px] px-2 py-0.5">{selectedSoldier?.course || "---"}</Badge>
-                      <Badge className="bg-white/50 text-slate-900 border-none text-[10px] font-bold px-2 py-0.5">دفعة {selectedSoldier?.batch || "---"}</Badge>
+                      
+<Badge className="bg-white/50 text-slate-900 border-none text-[10px] font-bold px-2 py-0.5">
+    دفعة {(!selectedSoldier?.batch || selectedSoldier.batch === "None" || selectedSoldier.batch === "none") ? "لا يوجد" : selectedSoldier.batch}
+</Badge>
                     </div>
                     <p className="text-[11px] font-black mt-2 opacity-60">س: {selectedSoldier?.company || "--"} / ف: {selectedSoldier?.platoon || "--"}</p>
                   </div>

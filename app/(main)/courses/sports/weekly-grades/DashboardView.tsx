@@ -99,6 +99,7 @@ const fetchDashboardStats = async () => {
         if (filterCourse !== 'all') params.append('course', filterCourse);
         if (filterBatch !== 'all') params.append('batch', filterBatch);
         if (filterCompany !== 'all') params.append('company', filterCompany);
+        // إضافة دعم الفلاتر الخاصة بالدبلوم
         if (filterCourse === "طلبة الدبلوم" && filterPeriod !== "all") params.append('period', filterPeriod);
         params.append('subject', subject);
 
@@ -109,17 +110,33 @@ const fetchDashboardStats = async () => {
         if (res.ok) {
             let data = await res.json();
 
-            // 🟢 [فلترة بطاقات الفصائل بناءً على النطاق]
             const user = JSON.parse(localStorage.getItem("user") || "{}");
             const scope = user?.extra_permissions?.scope;
 
+            // نظام التحقق الذكي من النطاق (Scope Enforcement)
             if (user.role !== 'owner' && scope?.is_restricted) {
-                const allowedPlatoons = scope.platoons || [];
-                const currentKeyPrefix = `${filterCourse}||${filterBatch}->`;
+                const allowedPlatoons = scope?.platoons || [];
+                const allowedCourses = scope?.courses || [];
 
                 data = data.filter((item: any) => {
-                    // نتحقق إذا كان الفصيل المكتوب على البطاقة موجود ضمن المسموح
-                    return allowedPlatoons.includes(`${currentKeyPrefix}${item.platoon}`);
+                    const currentCourseName = filterCourse;
+                    // تنظيف وتوحيد مسميات البيانات القادمة من السيرفر
+                    const iBatch = (item.batch === "all" || item.batch === "None" || !item.batch) ? "" : item.batch;
+                    const iPlatoon = (item.platoon === "عام" || item.platoon === "None" || !item.platoon) ? "" : item.platoon;
+
+                    // 1. فحص الدورات العامة (التي تظهر كـ "عام" أو بلا فصيل)
+                    if (iPlatoon === "") {
+                        return allowedCourses.includes(currentCourseName);
+                    }
+
+                    // 2. فحص الفصائل (دعم كافة أنماط تخزين مفاتيح الصلاحية)
+                    return allowedPlatoons.some((pKey: string) => {
+                        const pattern1 = `${currentCourseName}||${iBatch}->${item.platoon}`;
+                        const pattern2 = `${currentCourseName}->${item.platoon}`;
+                        const pattern3 = `${currentCourseName}||->${item.platoon}`;
+
+                        return pKey === pattern1 || pKey === pattern2 || pKey === pattern3;
+                    });
                 });
             }
 
@@ -128,7 +145,6 @@ const fetchDashboardStats = async () => {
             setDashboardData([]);
         }
     } catch (e) { 
-        console.error(e); 
         setDashboardData([]); 
     } finally { 
         setLoading(false); 
@@ -197,21 +213,26 @@ const handleDeleteSavedGrades = async () => {
     } catch (e) { toast.error("خطأ في الحذف"); }
     finally { setLoadingDetails(false); }
 };
-   const handleCalculateFinal = async () => {
+  const handleCalculateFinal = async () => {
     if (!selectedPlatoon) return;
     setLoadingDetails(true);
     try {
+        const cleanBatch = filterBatch === "all" ? "" : filterBatch;
+        const cleanCompany = filterCompany === "all" ? "" : filterCompany;
+        const cleanPlatoon = selectedPlatoon.platoon === "عام" ? "" : selectedPlatoon.platoon;
+        const cleanPeriod = filterPeriod === "all" ? "" : filterPeriod;
+
         const params = new URLSearchParams();
-        if (filterCourse !== 'all') params.append('course', filterCourse);
-        if (filterBatch !== 'all') params.append('batch', filterBatch);
-        if (filterCompany !== 'all') params.append('company', filterCompany);
-        
-        params.append('platoon', selectedPlatoon.platoon);
+        params.append('course', filterCourse);
+        params.append('batch', cleanBatch);
+        params.append('company', cleanCompany);
+        params.append('platoon', cleanPlatoon);
         params.append('subject', subject);
+        params.append('period', cleanPeriod);
 
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/final-grades?${params.toString()}`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-});
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
         if (res.ok) {
             setFinalMatrix(await res.json());
             setViewMode('final-grades');
@@ -247,23 +268,31 @@ const [isViewOnlyFinal, setIsViewOnlyFinal] = useState(false);
 const handleViewFinalSavedRecord = async () => {
     setLoadingDetails(true);
     try {
+        // 🟢 تنظيف المسميات لضمان مطابقة الباك إند (تحويل الكل وعام إلى نصوص فارغة)
+        const cleanBatch = filterBatch === "all" ? "" : filterBatch;
+        const cleanPlatoon = selectedPlatoon.platoon === "عام" ? "" : selectedPlatoon.platoon;
+        const cleanPeriod = filterPeriod === "all" ? "" : filterPeriod;
+
         const params = new URLSearchParams({
             course: filterCourse,
-            batch: filterBatch,
+            batch: cleanBatch,
             subject: subject,
-            platoon: selectedPlatoon.platoon
+            platoon: cleanPlatoon,
+            period: cleanPeriod
         });
+
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/dashboard/final-saved-only?${params.toString()}`, {
             headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
         });
+        
         if (res.ok) {
             const result = await res.json();
-            setReportGrades(result.data); // نضعها في نفس مصفوفة العرض
+            setReportGrades(result.data);
             setSelectedReport({ 
                 title: "الدرجة النهائية المعتمدة", 
                 last_update: result.last_update 
             });
-            setIsViewOnlyFinal(true); // نُفعل وضع "العرض المختصر"
+            setIsViewOnlyFinal(true);
             setViewMode('report-view');
         }
     } catch (e) { toast.error("خطأ في جلب البيانات"); }

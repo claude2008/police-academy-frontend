@@ -143,8 +143,20 @@ const showPlatoonCol = useMemo(() => {
       })
 
       if (res.ok) {
-          setDailySummaries(await res.json());
-          setDailyPage(1); // 👈 أضفها هنا: العودة للصفحة 1 عند نجاح جلب البيانات
+          let data = await res.json();
+          
+          // 🛡️ تطبيق حماية النطاق (Scope) في الواجهة
+          const user = JSON.parse(localStorage.getItem("user") || "{}");
+          const scope = user?.extra_permissions?.scope;
+          if (user.role !== 'owner' && scope?.is_restricted) {
+              const allowedCourses = scope.courses || [];
+              // هنا في الإجماليات، لا نستطيع الفلترة بدقة 100% لأن السيرفر يرسل "تاريخ" فقط
+              // لذا سنعتمد على الباك إند في فلترة العدد (Count) وسنترك الواجهة تعرض التاريخ
+              setDailySummaries(data);
+          } else {
+              setDailySummaries(data);
+          }
+          setDailyPage(1);
       }
     } catch (e) { toast.error("خطأ في الاتصال") }
     finally { setIsRefreshing(false) }
@@ -158,8 +170,21 @@ const showPlatoonCol = useMemo(() => {
           })
           
           if (res.ok) {
-              setDraftsList(await res.json());
-              setDraftsPage(1); // 👈 أضفها هنا: العودة للصفحة 1 عند تحديث المسودات
+              let data = await res.json();
+              
+              // 🛡️ تطبيق حماية النطاق (Scope) للمسودات
+              const user = JSON.parse(localStorage.getItem("user") || "{}");
+              const scope = user?.extra_permissions?.scope;
+              if (user.role !== 'owner' && scope?.is_restricted) {
+                  const allowedCourses = scope.courses || [];
+                  data = data.filter((d: any) => {
+                      const dBatch = (d.batch && d.batch.trim() !== "") ? d.batch : "لا يوجد";
+                      const key = `${d.course}||${dBatch}`;
+                      return allowedCourses.includes(key) || allowedCourses.includes(d.course);
+                  });
+              }
+              setDraftsList(data);
+              setDraftsPage(1);
           }
       } catch (e) { toast.error("فشل جلب المسودات") }
       finally { setIsDraftsRefreshing(false); }
@@ -547,7 +572,7 @@ const handleMerge = async () => {
     }
 };
 
-  const handleRunImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+const handleRunImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -562,34 +587,60 @@ const handleMerge = async () => {
 
         const runMap: Record<string, string> = {};
         
+        // 1️⃣ بناء "خارطة زمنية" دقيقة تعتمد على الرقم العسكري كفتاح فريد
         jsonData.forEach((row: any) => {
             let mID = "";
             let timeVal = "";
             Object.keys(row).forEach(key => {
                 const cleanKey = key.trim();
-                if (cleanKey.includes("الرقم العسكري") || cleanKey === "Military ID") mID = String(row[key]).trim();
-                if (cleanKey.includes("توقيت") || cleanKey === "Time" || cleanKey === "Gun Time") timeVal = String(row[key]).trim();
+                // دعم كافة مسميات الأعمدة المحتملة (عربي وإنجليزي)
+                if (cleanKey.includes("الرقم العسكري") || cleanKey === "Military ID") {
+                    mID = String(row[key]).trim();
+                }
+                if (cleanKey.includes("توقيت") || cleanKey === "Time" || cleanKey === "Gun Time" || cleanKey === "الجري") {
+                    timeVal = String(row[key]).trim();
+                }
             });
+            // لا نضيف للسجل إلا إذا وجدنا رقم عسكري وتوقيت صالحين
             if (mID && timeVal) runMap[mID] = timeVal;
         });
 
-        let updatedCount = 0;
-        setTableData(prev => prev.map(soldier => {
-            const sysMilID = String(soldier.military_id).trim();
+        // 2️⃣ دالة مساعدة لتنفيذ الدمج على أي مصفوفة (لضمان تطابق الكود)
+        const applyMerge = (prevArray: any[]) => prevArray.map(soldier => {
+            const sysMilID = String(soldier.military_id || "").trim();
             if (runMap[sysMilID]) {
-                updatedCount++;
                 return { ...soldier, run_time: runMap[sysMilID] };
             }
             return soldier;
-        }));
+        });
 
-        if (updatedCount > 0) toast.success(`تم استيراد ${updatedCount} توقيت بنجاح`);
-        else toast.warning("لم يتم العثور على أرقام عسكرية مطابقة");
+        // 3️⃣ التحديث المزدوج (هنا السر في منع الضياع)
+        // تحديث البيانات المعروضة فوراً
+        setTableData(prev => {
+            const updated = applyMerge(prev);
+            
+            // تحديث الكاش الأساسي أيضاً لكي لا تضيع البيانات عند التبديل بين (خام / مدمج / رسمي)
+            setRawDataCache(currentCache => applyMerge(currentCache));
+            
+            // حساب عدد السجلات التي تم تحديثها فعلياً بناءً على الخريطة
+            const matchCount = updated.filter(s => runMap[String(s.military_id).trim()]).length;
+            
+            if (matchCount > 0) {
+                toast.success(`تم استيراد ${matchCount} توقيت جري بنجاح وتثبيتها في النظام ✅`);
+            } else {
+                toast.warning("لم يتم العثور على أرقام عسكرية مطابقة في الملف المرفوع");
+            }
+            
+            return updated;
+        });
 
-      } catch (error) { toast.error("فشل قراءة ملف الإكسل"); }
+      } catch (error) { 
+          console.error("Excel Import Error:", error);
+          toast.error("فشل في قراءة ملف الإكسل، تأكد من صيغة الملف"); 
+      }
     };
     reader.readAsBinaryString(file);
-    e.target.value = "";
+    e.target.value = ""; // تصفير الحقل للسماح برفع نفس الملف مجدداً إذا عُدل
   };
 
  const exportToExcel = () => {
