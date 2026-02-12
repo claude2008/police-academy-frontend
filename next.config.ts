@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
 
-// 1. تعريف ترويسات الأمان (معدل ليدعم Supabase و Render وكافة المصادر الخارجية)
+// 1. تعريف ترويسات الأمان (شاملة لكل تصاريح الاتصال والصور)
 const securityHeaders = [
   {
     key: 'X-Content-Type-Options',
@@ -21,8 +21,8 @@ const securityHeaders = [
   },
   {
     key: 'Content-Security-Policy',
-    // 💡 تم تحديث img-src و connect-src للسماح بكل المصادر الخارجية المستخدمة في كودك
-    value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.supabase.co https://*.onrender.com https://www.qatarradio.qa https://grainy-gradients.vercel.app; connect-src 'self' https://*.onrender.com https://*.supabase.co;"
+    // 💡 التعديل الجوهري: أضفنا الروابط الخارجية لـ connect-src لكي يعمل الـ PWA بدون أخطاء
+    value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co https://*.onrender.com https://www.qatarradio.qa https://grainy-gradients.vercel.app; connect-src 'self' https://*.onrender.com https://*.supabase.co https://www.qatarradio.qa https://grainy-gradients.vercel.app;"
   }
 ];
 
@@ -57,7 +57,7 @@ const withPWA = withPWAInit({
   disable: process.env.NODE_ENV === "development",
 });
 
-// 4. إعدادات Next.js العامة مع إضافة Headers
+// 4. إعدادات Next.js العامة
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   async headers() {
