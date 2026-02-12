@@ -88,7 +88,7 @@ export default function FitnessRecordsPage() {
 
     const [innerCurrentPage, setInnerCurrentPage] = useState(1);
 
-    const [innerItemsPerPage, setInnerItemsPerPage] = useState(20);
+    const [innerItemsPerPage, setInnerItemsPerPage] = useState(50);
 
     const [showTrainerColumn, setShowTrainerColumn] = useState(true);
 
@@ -103,7 +103,10 @@ export default function FitnessRecordsPage() {
     const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
 
     const [printDestination, setPrintDestination] = useState<"sports" | "control">("sports");
-
+    // 🟢 أضف هذا الجزء تحت تعريف userRole (تقريباً سطر 55)
+const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
+const scope = user?.extra_permissions?.scope;
+const isRestricted = user.role !== 'owner' && scope?.is_restricted;
     const router = useRouter()
 
 const searchParams = useSearchParams() // 👈 إضافة هذا
@@ -2872,7 +2875,7 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
 
 
-        <ProtectedRoute allowedRoles={["owner","manager","admin","assistant_admin","sports_officer","sports_supervisor"]}>
+        <ProtectedRoute allowedRoles={["owner","manager","admin","assistant_admin","sports_officer","sports_supervisor","sports_trainer"]}>
 
 
 
@@ -3129,32 +3132,19 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
 
                                     <Select value={innerCompany} onValueChange={(v)=>{setInnerCompany(v); setInnerCurrentPage(1);}}>
-
-
-
-                                        <SelectTrigger className="w-full md:w-24 h-7 border-none text-xs font-bold"><SelectValue /></SelectTrigger>
-
-
-
-<SelectContent>
-
-    <SelectItem value="all">الكل</SelectItem>
-
-    {/* حماية إضافية: التأكد أن المخطط موجود قبل عمل map */}
-
-    {processedGroupData?.students?.length > 0 && Array.from(new Set(processedGroupData.students.map((s:any)=>s.company || s["السرية"])))
-
-    .filter(Boolean)
-
-    .sort((a: any, b: any) => a.localeCompare(b, 'ar', { numeric: true })) // 👈 إضافة الترتيب هنا
-
-    .map(c=><SelectItem key={c as string} value={c as string}>{c as string}</SelectItem>)}
-
-</SelectContent>
-
-
-
-                                    </Select>
+    <SelectTrigger className="w-full md:w-24 h-7 border-none text-xs font-bold"><SelectValue /></SelectTrigger>
+    <SelectContent>
+        {/* 🟢 إذا كان مقيداً ولديه سرية واحدة فقط، لا نظهر خيار "الكل" */}
+        {(!isRestricted || Array.from(new Set(processedGroupData.students.map((s:any)=>s.company || s["السرية"]))).length > 1) && (
+            <SelectItem value="all">الكل</SelectItem>
+        )}
+        
+        {processedGroupData?.students?.length > 0 && Array.from(new Set(processedGroupData.students.map((s:any)=>s.company || s["السرية"])))
+            .filter(Boolean)
+            .sort((a: any, b: any) => a.localeCompare(b, 'ar', { numeric: true }))
+            .map(c => <SelectItem key={c as string} value={c as string}>{c as string}</SelectItem>)}
+    </SelectContent>
+</Select>
 
 
 
@@ -3170,31 +3160,19 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
 
 
-                                    <Select value={innerPlatoon} onValueChange={(v)=>{setInnerPlatoon(v); setInnerCurrentPage(1);}}>
-
-
-
-                                        <SelectTrigger className="w-full md:w-24 h-7 border-none text-xs font-bold"><SelectValue /></SelectTrigger>
-
-
-
-                                        <SelectContent>
-
-    <SelectItem value="all">الكل</SelectItem>
-
-{Array.from(new Set(processedGroupData?.students?.map((s:any)=>s.platoon || s["الفصيل"])))
-
-    .filter(Boolean)
-
-    .sort((a: any, b: any) => a.localeCompare(b, 'ar', { numeric: true })) // 👈 إضافة الترتيب هنا
-
-    .map(p=><SelectItem key={p as string} value={p as string}>{p as string}</SelectItem>)}
-
-</SelectContent>
-
-
-
-                                    </Select>
+                                   <Select value={innerPlatoon} onValueChange={(v)=>{setInnerPlatoon(v); setInnerCurrentPage(1);}}>
+    <SelectTrigger className="w-full md:w-24 h-7 border-none text-xs font-bold"><SelectValue /></SelectTrigger>
+    <SelectContent>
+        {(!isRestricted || Array.from(new Set(processedGroupData?.students?.map((s:any)=>s.platoon || s["الفصيل"]))).length > 1) && (
+            <SelectItem value="all">الكل</SelectItem>
+        )}
+        
+        {Array.from(new Set(processedGroupData?.students?.map((s:any)=>s.platoon || s["الفصيل"])))
+            .filter(Boolean)
+            .sort((a: any, b: any) => a.localeCompare(b, 'ar', { numeric: true }))
+            .map(p => <SelectItem key={p as string} value={p as string}>{p as string}</SelectItem>)}
+    </SelectContent>
+</Select>
 
 
 
@@ -3472,31 +3450,16 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
 
 
-        <Button 
-
-
-
-            variant="outline" 
-
-
-
-            onClick={exportToExcel} 
-
-
-
-            className="text-green-700 border-green-600 h-10 px-2 text-[10px] bg-white font-bold shadow-sm gap-1"
-
-
-
-        >
-
-
-
-            <Download className="w-4 h-4" /> Excel
-
-
-
-        </Button>
+        {/* 🟢 إخفاء زر الإكسل عن المدرب والمشرف الرياضي */}
+{!["sports_trainer", "sports_supervisor"].includes(userRole) && (
+    <Button 
+        variant="outline" 
+        onClick={exportToExcel} 
+        className="text-green-700 border-green-600 h-10 px-2 text-[10px] bg-white font-bold shadow-sm gap-1"
+    >
+        <Download className="w-4 h-4" /> Excel
+    </Button>
+)}
 
 
 

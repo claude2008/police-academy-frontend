@@ -756,9 +756,13 @@ if (feature === 'others') {
                                        <>
                                            <button onClick={() => handleExamTypeSelect('fitness')} className="w-full p-4 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-bold rounded-2xl transition-all border border-slate-100">🏃 اختبار اللياقة</button>
                                            <button onClick={() => handleExamTypeSelect('combat')} className="w-full p-4 bg-slate-50 hover:bg-red-50 text-slate-700 hover:text-red-700 font-bold rounded-2xl transition-all border border-slate-100">🤼 اختبار الاشتباك</button>
-                                           {!["sports_trainer"].includes(user?.role) && (
-                                               <button onClick={() => handleExamTypeSelect('results')} className="w-full p-4 bg-slate-800 text-white font-bold rounded-2xl transition-all">📊 سجل النتائج</button>
-                                           )}
+                                           <button 
+    onClick={() => handleExamTypeSelect('results')} 
+    className="w-full p-4 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+>
+    <Table className="w-5 h-5 text-orange-400" />
+    سجل النتائج
+</button>
                                        </>
                                    )}
                                </div>

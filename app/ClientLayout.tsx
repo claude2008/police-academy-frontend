@@ -443,7 +443,7 @@ if (item.id === "cs-sp-audit" || item.id === "cs-mil-audit" || item.id === "cs-s
 
     // ج. سجل النتائج الرياضي (للكل ما عدا المدرب)
     if (item.id === "dig-sports-results") {
-        const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "sports_supervisor"];
+        const allowed = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "sports_supervisor","sports_trainer"];
         if (isLoading || !allowed.includes(userRole || "")) return null;
     }
 

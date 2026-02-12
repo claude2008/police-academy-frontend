@@ -15,8 +15,9 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { 
   Printer, Download, Save, Plus, Trash2, Search, Scale, Dumbbell, Swords, User, AlertTriangle, 
-  ChevronLeft, ChevronRight, Eye, EyeOff, Loader2
+  ChevronLeft, ChevronRight, Eye, EyeOff, Loader2,X, Zap
 } from "lucide-react"
+import { Label } from "@/components/ui/label" // 👈 أضف هذا السطر
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { ar } from "date-fns/locale"
@@ -45,7 +46,11 @@ export default function WeightsPage() {
   const [filterCompany, setFilterCompany] = useState("all")
   const [filterPlatoon, setFilterPlatoon] = useState("all")
   const [filterOptions, setFilterOptions] = useState<any>({ courses: [], batches: [], companies: [], platoons: [] })
-  
+  // 🟢 حالات وضع الترحيل السريع
+  const [isQuickMode, setIsQuickMode] = useState(false);
+  const [quickSearchId, setQuickSearchId] = useState("");
+  const [quickList, setQuickList] = useState<any[]>([]);
+  const [quickDate, setQuickDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [hasSearched, setHasSearched] = useState(false)
   const [loading, setLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -280,7 +285,65 @@ useEffect(() => {
       }
       finally { setLoading(false) }
   }
+// 🔍 دالة البحث السريع وإضافة الجندي للقائمة المؤقتة
+  const handleQuickSearch = async () => {
+    if (!quickSearchId.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/search-by-id?military_id=${quickSearchId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem("token")}` }
+      });
+      if (res.ok) {
+        const soldier = await res.json();
+        // منع التكرار في القائمة
+        if (!quickList.find(s => s.id === soldier.id)) {
+          setQuickList([{ ...soldier, weight: "", imc: 0, status: "-" }, ...quickList]);
+          setQuickSearchId(""); // تصفير البحث
+        } else {
+          toast.warning("هذا الجندي مضاف بالفعل");
+        }
+      } else {
+        toast.error("الرقم العسكري غير موجود");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  // 🚀 دالة الترحيل النهائي لقاعدة البيانات
+  const handleQuickTransfer = async () => {
+    const recordsToSave = quickList
+      .filter(s => parseFloat(s.weight) > 0)
+      .map(s => ({
+        soldier_id: s.id,
+        date: quickDate,
+        weight: parseFloat(s.weight),
+        imc: s.imc,
+        status: s.status
+      }));
+
+    if (recordsToSave.length === 0) return toast.error("يرجى إدخال الأوزان أولاً");
+
+    setIsSaving(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weights/bulk`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("token")}` 
+        },
+        body: JSON.stringify(recordsToSave)
+      });
+
+      if (res.ok) {
+        toast.success(`تم ترحيل ${recordsToSave.length} وزن بنجاح ✅`);
+        setQuickList([]); // تصفير القائمة بعد النجاح
+        if (isPathComplete) fetchData(); // تحديث الجدول الرئيسي إذا كان مفتوحاً
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
   useEffect(() => {
       setCurrentPage(1);
   }, [search, filterCourse, filterBatch, filterCompany, filterPlatoon])
@@ -539,7 +602,138 @@ useEffect(() => {
             </Button>
         </div>
       </div>
+{/* 🟢 زر تبديل وضع الترحيل السريع */}
+      <div className="flex justify-end mb-2 print:hidden">
+        <Button 
+          variant={isQuickMode ? "destructive" : "default"}
+          onClick={() => setIsQuickMode(!isQuickMode)}
+          className="gap-2 font-bold shadow-lg"
+        >
+          {isQuickMode ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          {isQuickMode ? "إغلاق الترحيل السريع" : "وضع الترحيل السريع (طابور مفتوح)"}
+        </Button>
+      </div>
 
+      {/* 🟢 واجهة الترحيل السريع */}
+      {isQuickMode && (
+        <Card className="bg-blue-50 border-blue-200 border-2 shadow-xl animate-in zoom-in-95 print:hidden mb-6">
+          <CardContent className="p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-blue-100 pb-2">
+               <h3 className="font-black text-blue-800 flex items-center gap-2 text-lg">
+                 <Zap className="w-6 h-6 animate-pulse text-amber-500" /> الإدخال السريع للأوزان
+               </h3>
+               <div className="flex items-center gap-2">
+                  <Label className="font-bold text-blue-700">تاريخ الترحيل:</Label>
+                  <Input type="date" value={quickDate} onChange={(e)=>setQuickDate(e.target.value)} className="w-40 h-9 bg-white font-bold" />
+               </div>
+            </div>
+
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute right-3 top-3 w-5 h-5 text-slate-400" />
+                <Input 
+                  placeholder="ابحث بالرقم العسكري واضغط Enter..." 
+                  className="h-11 pr-10 text-lg font-bold border-2 border-blue-200"
+                  value={quickSearchId}
+                  onChange={(e) => setQuickSearchId(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleQuickSearch()}
+                />
+              </div>
+              <Button onClick={handleQuickSearch} disabled={loading} className="h-11 px-8 bg-blue-600 hover:bg-blue-700">
+                {loading ? <Loader2 className="animate-spin" /> : "إضافة للطابور"}
+              </Button>
+            </div>
+
+            {quickList.length > 0 && (
+  <div className="border-2 border-blue-100 rounded-2xl bg-white overflow-hidden shadow-inner">
+    <Table>
+      <TableHeader className="bg-blue-600">
+        <TableRow>
+          {/* 🟢 إضافة عمود الصورة */}
+          <TableHead className="text-white font-bold text-center w-[70px]">الصورة</TableHead>
+          {/* 🟢 جعل محاذاة الاسم في المنتصف */}
+          <TableHead className="text-white font-bold text-center">الاسم</TableHead>
+          <TableHead className="text-white font-bold text-center">السرية/الفصيل</TableHead>
+          <TableHead className="text-white font-bold text-center w-32">الوزن الحالي</TableHead>
+          <TableHead className="text-white font-bold text-center">الحالة (IMC)</TableHead>
+          <TableHead className="w-10"></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {quickList.map((s, index) => (
+          <TableRow key={s.id} className="border-b border-blue-50 hover:bg-blue-50/30 transition-colors">
+            {/* 🖼️ خلية الصورة المصغرة */}
+            <TableCell className="text-center">
+                <div className="w-10 h-10 rounded-full border-2 border-blue-100 overflow-hidden mx-auto shadow-sm bg-slate-100">
+                    <img 
+                        src={s.image_url ? `${s.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
+                        alt="" 
+                        className="w-full h-full object-cover"
+                        onError={(e) => {(e.target as HTMLImageElement).src = "/placeholder-user.png"}}
+                    />
+                </div>
+            </TableCell>
+
+            {/* 🎯 محاذاة الاسم في المنتصف مع خط عريض */}
+            <TableCell className="font-black text-slate-800 text-center text-sm">
+                {s.name}
+            </TableCell>
+
+            <TableCell className="text-center text-[10px] font-bold text-slate-500">
+                {s.company} / {s.platoon}
+            </TableCell>
+
+            <TableCell>
+              <Input 
+                type="text"
+                inputMode="decimal"
+                className="h-9 text-center font-black border-2 border-amber-200 focus:border-amber-500 bg-amber-50/30"
+                placeholder="00.0"
+                value={s.weight}
+                onChange={(e) => {
+                  const rawInput = e.target.value;
+                  const weightStr = rawInput.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
+                  const newList = [...quickList];
+                  const w = parseFloat(weightStr);
+                  newList[index].weight = weightStr;
+                  newList[index].imc = calculateIMC(w, s.height);
+                  newList[index].status = getIMCStatus(newList[index].imc).text;
+                  setQuickList(newList);
+                }}
+              />
+            </TableCell>
+
+            <TableCell className="text-center">
+               <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${getIMCStatus(s.imc).color}`}>
+                 {s.status}
+               </span>
+            </TableCell>
+
+            <TableCell>
+              <Button variant="ghost" size="icon" onClick={() => setQuickList(quickList.filter(i => i.id !== s.id))} className="hover:bg-red-50 text-red-500">
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+    
+    <div className="p-4 bg-slate-50 flex justify-end border-t">
+      <Button 
+        className="bg-green-600 hover:bg-green-700 text-white font-black px-10 h-11 gap-2 shadow-lg active:scale-95 transition-all"
+        onClick={handleQuickTransfer}
+        disabled={isSaving}
+      >
+        {isSaving ? <Loader2 className="animate-spin" /> : <Save className="w-5 h-5" />}
+        ترحيل كافة الأوزان للقاعدة
+      </Button>
+    </div>
+  </div>
+)}
+          </CardContent>
+        </Card>
+      )}
       {/* الفلاتر */}
       <Card className="print:hidden">
         <CardContent className="p-4 space-y-4">

@@ -291,7 +291,7 @@ useEffect(() => {
             <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="space-y-2"><label className="text-xs font-bold text-slate-500">عنوان التقرير</label><Input value={reportTitle} onChange={(e) => setReportTitle(e.target.value)} className="bg-white dark:bg-slate-900" /></div>
                 <div className="space-y-2"><label className="text-xs font-bold text-slate-500">اسم مدخل البيانات</label><Input value={dataEntryName} onChange={(e) => setDataEntryName(e.target.value)} className="bg-white dark:bg-slate-900" /></div>
-                <div className="space-y-2 md:col-span-3"><label className="text-xs font-bold text-slate-500">الخلاصة</label><Textarea value={reportSummary} onChange={(e) => setReportSummary(e.target.value)} className="bg-white dark:bg-slate-900 h-16" /></div>
+                <div className="space-y-2 md:col-span-3"><label className="text-xs font-bold text-slate-500">الخلاصة</label><Textarea value={reportSummary} onChange={(e) => setReportSummary(e.target.value)} className="bg-white dark:bg-slate-900 h-12" /></div>
             </CardContent>
         </Card>
 
