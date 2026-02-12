@@ -1,10 +1,35 @@
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
 
-// 1. إعدادات التعتيم (نسخة مستقرة وخفيفة للسيرفر)
+// 1. تعريف ترويسات الأمان (معدل ليدعم Render)
+const securityHeaders = [
+  {
+    key: 'X-Content-Type-Options',
+    value: 'nosniff',
+  },
+  {
+    key: 'X-Frame-Options',
+    value: 'DENY',
+  },
+  {
+    key: 'X-XSS-Protection',
+    value: '1; mode=block',
+  },
+  {
+    key: 'Referrer-Policy',
+    value: 'origin-when-cross-origin',
+  },
+  {
+    key: 'Content-Security-Policy',
+    // 💡 قمنا بإضافة رابط Render ورابط الـ Google Fonts لضمان عدم توقف الخدمة
+    value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.onrender.com;"
+  }
+];
+
+// 2. إعدادات التعتيم (Obfuscator)
 const obfuscatorConfig = {
     compact: true,
-    controlFlowFlattening: false, // 🔒 ضروري جداً لعدم نفاذ الذاكرة
+    controlFlowFlattening: false,
     deadCodeInjection: false,
     debugProtection: false,
     indentationSymbol: '',
@@ -18,25 +43,33 @@ const obfuscatorConfig = {
 const obfuscatorOptions = {
     enabled: 'production',
     obfuscateFiles: {
-        main: false,      // تعطيل الملفات الكبيرة
-        framework: false, // عدم لمس مكتبات React/Next الأساسية
-        pages: true,      // حماية صفحاتك وكودك الخاص فقط
+        main: false,
+        framework: false,
+        pages: true,
     },
 };
 
 const withNextJsObfuscator = require('nextjs-obfuscator')(obfuscatorConfig, obfuscatorOptions);
 
-// 2. إعدادات الـ PWA
+// 3. إعدادات الـ PWA
 const withPWA = withPWAInit({
   dest: "public",
   disable: process.env.NODE_ENV === "development",
 });
 
-// 3. إعدادات Next.js العامة
+// 4. إعدادات Next.js العامة مع إضافة Headers
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  // ⚠️ تم حذف Turbopack لضمان التوافق مع التعتيم
+  // إضافة الترويسات هنا لتطبق على كل الموقع
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: securityHeaders,
+      },
+    ];
+  },
 };
 
-// 4. دمج كل شيء وترتيبه (PWA أولاً ثم التعتيم)
+// 5. دمج كل شيء
 export default withNextJsObfuscator(withPWA(nextConfig));
