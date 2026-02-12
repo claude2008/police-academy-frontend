@@ -101,6 +101,8 @@ export default function FitnessRecordsPage() {
     const [deleteTarget, setDeleteTarget] = useState<{id: number, title: string, all_ids: number[]} | null>(null);
 
     const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
+    const [selectedEvaluator, setSelectedEvaluator] = useState("all"); // اسم المدرب/المقيم
+const [evaluatorType, setEvaluatorType] = useState<"technical" | "scenario">("technical"); // نوع الاختبار
 
     const [printDestination, setPrintDestination] = useState<"sports" | "control">("sports");
     // 🟢 أضف هذا الجزء تحت تعريف userRole (تقريباً سطر 55)
@@ -167,139 +169,76 @@ useEffect(() => {
 
 
 
-  const fetchRecords = async () => {
+ const fetchRecords = async () => {
+    setLoading(true);
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records`, {
+            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+        });
 
-        setLoading(true);
+        if (res.ok) {
+            const rawData = await res.json();
+            const user = JSON.parse(localStorage.getItem("user") || "{}");
+            const scope = user?.extra_permissions?.scope;
 
-        try {
+            // 🧼 المرحلة 1: التطهير والتوحيد (Normalization) 🧼
+            let processed = rawData.map((r: any) => {
+                const sData = typeof r.students_data === 'string' ? JSON.parse(r.students_data) : r.students_data;
+                const apps = typeof r.approvals === 'string' ? JSON.parse(r.approvals) : r.approvals;
+                
+                const normalizedBatch = (r.batch === null || r.batch === "None" || r.batch === "null" || r.batch === "" || r.batch === "عام") 
+                    ? "لا يوجد" 
+                    : r.batch;
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/records`, {
-
-                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-
+                return {
+                    ...r,
+                    batch: normalizedBatch,
+                    students_data: sData,
+                    approvals: apps
+                };
             });
 
+            // 🛡️ المرحلة 2: نظام فحص النطاق الذكي (الإصلاح الجوهري هنا)
             
+            // 1. تحديد الرتب التي تملك صلاحية كاملة
+            const isSuperUser = ["owner", "manager", "admin"].includes(user.role);
 
-           if (res.ok) {
+            // 2. لا يتم تطبيق الفلترة إلا إذا كان المستخدم (ليس قيادياً) وحسابه (مقيد)
+            if (!isSuperUser && scope?.is_restricted === true) {
+                const allowedCourses = scope.courses || [];
+                const allowedPlatoons = scope.platoons || [];
 
-                const rawData = await res.json();
+                // إذا كان مدرباً مقيداً ولكن ليس لديه أي دورات أو فصائل مسندة، نمنع العرض
+                if (allowedCourses.length === 0 && allowedPlatoons.length === 0) {
+                    processed = [];
+                } else {
+                    processed = processed.filter((r: any) => {
+                        const courseName = r.course;
+                        const courseKeyWithBatch = `${courseName}||${r.batch}`;
 
-                const user = JSON.parse(localStorage.getItem("user") || "{}");
+                        // أ. فحص الوصول للدورة
+                        const hasCourseAccess = allowedCourses.includes(courseName) || allowedCourses.includes(courseKeyWithBatch);
 
-                const scope = user?.extra_permissions?.scope;
-
-
-
-                // 🧼 المرحلة 1: التطهير والتوحيد (Normalization) 🧼
-
-                // نقوم بتوحيد البيانات فور وصولها وقبل الفلترة لضمان عدم ضياع أي سجل
-
-                let processed = rawData.map((r: any) => {
-
-                    const sData = typeof r.students_data === 'string' ? JSON.parse(r.students_data) : r.students_data;
-
-                    const apps = typeof r.approvals === 'string' ? JSON.parse(r.approvals) : r.approvals;
-
-                    
-
-                    // 🟢 توحيد مسمى الدفعة: أي فراغ أو نص مشوه يصبح "لا يوجد" للمطابقة مع الصلاحيات
-
-                    const normalizedBatch = (r.batch === null || r.batch === "None" || r.batch === "null" || r.batch === "" || r.batch === "عام") 
-
-                        ? "لا يوجد" 
-
-                        : r.batch;
-
-
-
-                    return {
-
-                        ...r,
-
-                        batch: normalizedBatch,
-
-                        students_data: sData,
-
-                        approvals: apps
-
-                    };
-
-                });
-
-
-
-                // 🛡️ المرحلة 2: نظام فحص النطاق المطور والذكي
-
-                if (user.role !== 'owner' && scope?.is_restricted === true) {
-
-                    const allowedCourses = scope.courses || [];
-
-                    const allowedPlatoons = scope.platoons || [];
-
-
-
-                    if (allowedCourses.length === 0 && allowedPlatoons.length === 0) {
-
-                        processed = [];
-
-                    } else {
-
-                        processed = processed.filter((r: any) => {
-
-                            const courseName = r.course;
-
-                            // بما أننا وحدنا الدفعة في المرحلة الأولى، نستخدمها مباشرة لبناء المفتاح
-
-                            const courseKeyWithBatch = `${courseName}||${r.batch}`;
-
-
-
-                            // 1. فحص الوصول العام للدورة (بالاسم الصافي أو بالمفتاح الكامل "لا يوجد")
-
-                            const hasCourseAccess = allowedCourses.includes(courseName) || allowedCourses.includes(courseKeyWithBatch);
-
-
-
-                            // 2. فحص الوصول عبر الفصائل (إذا كان مسموحاً له فصيل واحد داخل هذه الدورة)
-
-                            const hasPlatoonAccess = allowedPlatoons.some((pKey: string) => {
-
-                                // يطابق نمط "اسم الدورة->فصيل" أو "اسم الدورة||لا يوجد->فصيل"
-
-                                return pKey.startsWith(`${courseName}->`) || pKey.startsWith(`${courseKeyWithBatch}->`);
-
-                            });
-
-
-
-                            return hasCourseAccess || hasPlatoonAccess;
-
+                        // ب. فحص الوصول للفصائل
+                        const hasPlatoonAccess = allowedPlatoons.some((pKey: string) => {
+                            return pKey.startsWith(`${courseName}->`) || pKey.startsWith(`${courseKeyWithBatch}->`);
                         });
 
-                    }
-
+                        return hasCourseAccess || hasPlatoonAccess;
+                    });
                 }
-
-
-
-                setRecords(processed);
-
             }
 
-        } catch (e) { 
-
-            toast.error("فشل الاتصال بالسيرفر"); 
-
-            console.error(e);
-
-        } finally { 
-
-            setLoading(false); 
-
+            // للـ SuperUser، ستبقى مصفوفة processed كاملة كما جاءت من السيرفر
+            setRecords(processed);
         }
-
-    };
+    } catch (e) { 
+        toast.error("فشل الاتصال بالسيرفر"); 
+        console.error(e);
+    } finally { 
+        setLoading(false); 
+    }
+};
 
 
 
@@ -470,117 +409,67 @@ const uniqueCourses = useMemo(() => [...new Set(records.map(r => r.course))].fil
 
 
 const courseBatchGroups = useMemo(() => {
-
     const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
-
     const scope = user?.extra_permissions?.scope;
-
     
+    // 🟢 1. تعريف القيادة العليا (الذين لا يخضعون لفحص النطاق)
+    const isSuperUser = ["owner", "manager", "admin"].includes(user.role);
 
-    // 🛡️ حماية إضافية: إذا كان المستخدم مقيداً كلياً، لا تبدأ المعالجة أصلاً
-
-    if (user.role !== 'owner' && scope?.is_restricted && (!scope.courses || scope.courses.length === 0)) {
-
+    // 🛡️ 2. حماية النطاق المحدثة: 
+    // يتم المنع فقط إذا كان المستخدم (ليس قيادياً) و (حسابه مقيد) و (ليس لديه دورات مسندة)
+    if (!isSuperUser && scope?.is_restricted && (!scope.courses || scope.courses.length === 0)) {
         return [];
-
     }
 
-
-
     const groups: Record<string, any> = {};
-
+    
+    // 🔍 ملاحظة: الباك إند أصبح الآن يرسل سجلات مفلترة للمدربين وكاملة للمدراء
+    // لذلك سنقوم بمعالجة كل ما يصل من السيرفر (records)
     records.forEach(r => {
-
-        // ... (نفس كود الفلترة الأولية كما هو) ...
-
         const titleLower = (r.title || "").toLowerCase();
-
         const subject = r.subject || "";
-
+        
+        // منطق التصنيف (لياقة / اشتباك) - اترك كما هو
         const isEngagement = titleLower.includes("اشتباك") || subject.startsWith("engagement_");
-
         const militaryKeywords = ["اشتباك", "رماية", "مسدس", "بندقية", "مشاة", "تلميذ"];
-
         const isMilitary = militaryKeywords.some(k => titleLower.includes(k)) && !isEngagement;
-
         const isFitness = !isMilitary && !isEngagement;
 
-
-
         let matchesTab = false;
-
         if (activeTab === "fitness") matchesTab = isFitness;
-
         else matchesTab = isEngagement;
-
-
 
         if (!matchesTab) return;
 
-
-
         // تجميع حسب الدورة والدفعة
-
         const key = `${r.course}-${r.batch}`;
-
         if (!groups[key]) {
-
             groups[key] = {
-
                 course: r.course,
-
                 batch: r.batch,
-
                 examsUniqueKeys: new Set(), 
-
             };
-
         }
-
         
-
-        // 🟢 الحل الجذري لمشكلة العد:
-
+        // توحيد مفتاح العد لمنع التكرار في البطاقة
         let uniqueKey;
-
         if (activeTab === "engagement") {
-
-            // في الاشتباك: نعتمد على (التاريخ) فقط لدمج الجزئين (فني + سيناريو)
-
-            // أو نقوم بتنظيف العنوان من الأقواس
-
             uniqueKey = `${r.exam_date}-engagement-unified`;
-
         } else {
-
-            // في اللياقة: نعتمد على العنوان بالكامل لأن الاختبارات قد تختلف
-
             uniqueKey = `${r.exam_date}-${r.title}`;
-
         }
-
-
 
         groups[key].examsUniqueKeys.add(uniqueKey);
-
     });
 
-
-
+    // تحويل الكائن إلى مصفوفة وتطبيق فلاتر البحث العلوية
     return Object.values(groups).map(g => ({
-
         ...g,
-
         examCount: g.examsUniqueKeys.size,
-
     })).filter(g => {
-
         const matchCourse = filterCourse === "all" || g.course === filterCourse;
-
         const matchBatch = filterBatch === "all" || g.batch === filterBatch;
-
         return matchCourse && matchBatch;
-
     });
 
 }, [records, activeTab, filterCourse, filterBatch]);
@@ -588,150 +477,81 @@ const courseBatchGroups = useMemo(() => {
  
 
 const groupedRecords = useMemo(() => {
-
     // 🛡️ حارس أمن النطاق
-
     const user = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem("user") || "{}") : {};
-
     const scope = user?.extra_permissions?.scope;
-
     
+    // 🟢 1. تعريف القيادة العليا (الاستثناء الذهبي)
+    const isSuperUser = ["owner", "manager", "admin"].includes(user.role);
 
-    // إذا كان المستخدم مقيداً كلياً (نطاق فارغ)، نمنع الحساب فوراً
-
-    if (user.role !== 'owner' && scope?.is_restricted && (!scope.courses || scope.courses.length === 0)) {
-
+    // 🛡️ 2. التعديل: لا يتم حظر الحساب إلا إذا كان (ليس قيادياً) و (مقيداً) و (نطاقه فارغ)
+    if (!isSuperUser && scope?.is_restricted && (!scope.courses || scope.courses.length === 0)) {
         return [];
-
     }
 
-
-
     // 🚨 شرط الحماية الأصلي الخاص بك: إذا لم نكن داخل دورة، لا نحسب شيئاً
-
     if (!activeGroup) return [];
 
-
-
     const filtered = records.filter(r => {
-
         // 🟢 قيد إضافي: يجب أن يطابق الدورة والدفعة المختارة
-
         const isSameGroup = r.course === activeGroup.course && r.batch === activeGroup.batch;
-
         if (!isSameGroup) return false;
 
-
-
         const titleLower = r.title.toLowerCase();
-
         const subject = r.subject || "";
-
         const isEngagement = titleLower.includes("اشتباك") || subject.startsWith("engagement_");
-
         const militaryKeywords = ["اشتباك", "رماية", "مسدس", "بندقية", "مشاة", "تلميذ"];
-
         const isMilitary = militaryKeywords.some(k => titleLower.includes(k)) || subject.startsWith("engagement_");
-
         const isFitness = !isMilitary; 
 
-
-
         let matchesTab = false;
-
         if (activeTab === "fitness") matchesTab = isFitness;
-
         else matchesTab = isEngagement;
 
-
-
         return matchesTab && (!searchQuery || r.title.includes(searchQuery)) && (!dateSearch || r.exam_date === dateSearch);
-
     });
-
-
 
     // ... (باقي كود التجميع كما هو بدون تغيير) ...
-
     const groups: Record<string, any> = {};
-
     filtered.forEach(r => {
-
         const sData = Array.isArray(r.students_data) ? r.students_data : [];
-
         const axesFingerprint = sData[0]?.axes_fingerprint || `legacy-${r.config_id}`;
-
         const groupKey = activeTab === "fitness" 
-
             ? `${r.exam_date}-${r.course}-${r.batch}-${r.title}`
-
             : `${r.exam_date}-${r.course}-${r.batch}-${axesFingerprint}`;
 
-
-
         if (!groups[groupKey]) {
-
             const displayTitle = activeTab === "engagement" 
-
                 ? `اختبار اشتباك - ${r.exam_date} - ${r.course} (${r.batch})` 
-
                 : r.title;
 
-
-
             groups[groupKey] = { 
-
                 key: groupKey, 
-
                 title: displayTitle, 
-
                 exam_date: r.exam_date, 
-
                 course: r.course, 
-
                 batch: r.batch, 
-
                 sub_records: [r], 
-
                 status: r.status, 
-
                 type: activeTab 
-
             };
-
         } else {
-
             groups[groupKey].sub_records.push(r);
-
             if (r.status === 'approved') groups[groupKey].status = 'approved';
-
         }
-
     });
-
-
 
     return Object.values(groups).map((group: any) => {
-
         const uniqueSoldiers = new Set();
-
         group.sub_records.forEach((record: any) => {
-
             record.students_data.forEach((s: any) => {
-
                 const id = s.military_id || s["الرقم العسكري"];
-
                 if (id) uniqueSoldiers.add(id);
-
             });
-
         });
-
         return { ...group, student_count_ref: uniqueSoldiers.size };
-
     });
-
-}, [records, searchQuery, dateSearch, activeTab, activeGroup]); // 🟢 أضفنا activeGroup
+}, [records, searchQuery, dateSearch, activeTab, activeGroup]);
 
 
 
@@ -1211,167 +1031,90 @@ useEffect(() => {
 
 
 
-   const finalReportData = useMemo(() => {
-
-
-
+  const finalReportData = useMemo(() => {
     if (!selectedGroup) return [];
 
-
-
-
-
-
-
+    // --- 1. منطق اختبار اللياقة البدنية (يبقى كما هو بدون تغيير) ---
     if (selectedGroup.type === "fitness") {
-
-
-
         const rawData = selectedGroup.sub_records[0]?.students_data || [];
-
-
-
         const dataArray = Array.isArray(rawData) ? rawData : [];
-
-
-
-        return dataArray.filter((s: any) => {
-
-
-
+        return dataArray.filter((s) => {
             const sCo = s["السرية"] || s.company || "";
-
-
-
             const sPl = s["الفصيل"] || s.platoon || "";
-
-
-
             const matchCo = innerCompany === "all" || sCo === innerCompany;
-
-
-
             const matchPl = innerPlatoon === "all" || sPl === innerPlatoon;
-
-
-
             return matchCo && matchPl;
-
-
-
         });
-
-
-
     }
 
+    // --- 2. منطق اختبار الاشتباك (التعديل الجوهري هنا) ---
+    let baseData = processedGroupData.students;
 
+    if (selectedEvaluator !== "all") {
+        baseData = baseData.filter((s: any) => {
+            const scores = evaluatorType === "technical" ? s.technical_scores : s.scenario_scores;
+            return (scores || []).some((score: any) => score.by === selectedEvaluator);
+        }).map((s: any) => {
+            // 🎯 التعديل الجوهري: البحث عن الدرجة واللقطة (Snapshot) للنوع المختار فقط
+            const scoreSource = evaluatorType === "technical" ? s.technical_scores : s.scenario_scores;
+            const matchingScore = (scoreSource || []).find((sc: any) => sc.by === selectedEvaluator);
+            
+            return {
+                ...s,
+                total_final: matchingScore?.val || 0,
+                // نأخذ الـ snapshot الخاص بهذه الدرجة تحديداً
+                display_snapshot: matchingScore?.snapshot || null,
+                is_specific_evaluator: true 
+            };
+        });
+    }
 
-
-
-
-
-    const fieldData = processedGroupData.students; 
-
-
-
+    // 🔵 ب: معالجة وضع العرض (رصد ميداني أم كشف رسمي)
+    let processedResult = [];
     if (viewMode === "field") {
+        processedResult = baseData;
+    } else {
+        // وضع الكشف الرسمي: دمج الناجحين مع الغائبين من الدفعة بالكامل
+        const fieldDataMap = new Map(baseData.map(s => [String(s.military_id), s]));
+        const targetGroups = new Set(baseData.map((s) => `${s.company}-${s.platoon}`));
 
-
-
-        return fieldData.filter((s: any) => {
-
-
-
-            const matchCo = innerCompany === "all" || s.company === innerCompany;
-
-
-
-            const matchPl = innerPlatoon === "all" || s.platoon === innerPlatoon;
-
-
-
-            return matchCo && matchPl;
-
-
-
-        });
-
-
-
+        processedResult = allSoldiersInBatch
+            .filter((soldier) => {
+                const soldierGroupKey = `${soldier.company}-${soldier.platoon}`;
+                return targetGroups.has(soldierGroupKey);
+            })
+            .map((soldier) => {
+                const match = fieldDataMap.get(String(soldier.military_id));
+                if (match) return match;
+                return { 
+                    ...soldier, 
+                    total_final: null, 
+                    is_absent: true, 
+                    notes: tempNotes[soldier.military_id] || "" 
+                };
+            });
     }
 
+    // 🟡 ج: الفلترة النهائية حسب السرية والفصيل المختارين من الواجهة
+    return processedResult.filter((s) => {
+        const sCo = s.company || s["السرية"] || "";
+        const sPl = s.platoon || s["الفصيل"] || "";
+        const matchCo = innerCompany === "all" || sCo === innerCompany;
+        const matchPl = innerPlatoon === "all" || sPl === innerPlatoon;
+        return matchCo && matchPl;
+    });
 
-
-
-
-
-
-    const targetGroups = new Set(fieldData.map((s: any) => `${s.company}-${s.platoon}`));
-
-
-
-    return allSoldiersInBatch
-
-
-
-        .filter((soldier: any) => {
-
-
-
-            const soldierGroupKey = `${soldier.company}-${soldier.platoon}`;
-
-
-
-            return targetGroups.has(soldierGroupKey);
-
-
-
-        })
-
-
-
-        .map((soldier: any) => {
-
-
-
-            const match = fieldData.find((r: any) => String(r.military_id) === String(soldier.military_id));
-
-
-
-            if (match) return match;
-
-
-
-            return { ...soldier, total_final: null, is_absent: true, notes: tempNotes[soldier.military_id] || "" };
-
-
-
-        })
-
-
-
-        .filter((s: any) => {
-
-
-
-            const matchCo = innerCompany === "all" || s.company === innerCompany;
-
-
-
-            const matchPl = innerPlatoon === "all" || s.platoon === innerPlatoon;
-
-
-
-            return matchCo && matchPl;
-
-
-
-        });
-
-
-
-    }, [selectedGroup, viewMode, allSoldiersInBatch, innerCompany, innerPlatoon, tempNotes, processedGroupData.students]);
+}, [
+    selectedGroup, 
+    viewMode, 
+    allSoldiersInBatch, 
+    innerCompany, 
+    innerPlatoon, 
+    tempNotes, 
+    processedGroupData.students,
+    selectedEvaluator, // التبعية الجديدة
+    evaluatorType      // التبعية الجديدة
+]);
 
 
 
@@ -2887,72 +2630,54 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
 
 
-                <style jsx global>{`
+               <style jsx global>{`
+    @media print {
+        @page { 
+            /* 🟢 التعديل: تصبح الورقة landscape في حالتين: 
+               1- اختبار اللياقة. 
+               2- اختبار الاشتباك عند اختيار مقيم محدد (لوجود أعمدة تفصيلية). */
+            size: A4 ${
+                selectedGroup?.type === 'fitness' || (selectedGroup?.type === 'engagement' && selectedEvaluator !== 'all')
+                ? 'landscape' 
+                : 'portrait'
+            }; 
+            margin: 5mm; 
+        }
 
+        body { 
+            /* 💡 تصغير الزووم قليلاً عند طباعة المقيم لضمان احتواء كل الأعمدة */
+            zoom: ${selectedEvaluator !== "all" ? '0.75' : '0.85'}; 
+            -webkit-print-color-adjust: exact; 
+        }
 
+        .no-print { display: none !important; }
+        .archive-view { display: none !important; } 
+        .force-print { display: table-row !important; }
 
-                    @media print {
+        table { 
+            width: 100% !important; 
+            border-collapse: collapse !important; 
+            table-layout: auto !important; /* السماح للمتصفح بضبط عرض الأعمدة حسب النص */
+        }
 
+        th { 
+            background-color: #c5b391 !important; 
+            color: black !important; 
+            border: 1px solid black !important; 
+            /* 🟢 حماية النصوص الطويلة في العناوين */
+            word-wrap: break-word;
+            white-space: normal !important; 
+            line-height: 1.1 !important;
+            padding: 2px !important;
+        }
 
-
-                        @page { 
-
-
-
-                            size: A4 ${selectedGroup?.type === 'fitness' ? 'landscape' : 'portrait'}; 
-
-
-
-                            margin: 5mm; 
-
-
-
-                        }
-
-
-
-                        body { zoom: 0.85; -webkit-print-color-adjust: exact; }
-
-
-
-                        .no-print { display: none !important; }
-
-
-
-                        .archive-view { display: none !important; } 
-
-
-
-                        .print-no-result { display: none !important; }
-
-
-
-                        table { width: 100% !important; border-collapse: collapse !important; }
-
-
-
-                        th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; }
-
-
-
-                        td { border: 1px solid black !important; padding: 4px !important; font-size: 11px !important; }
-
-
-
-                        .signature-print-force { height: 40px !important; width: auto !important; display: block !important; margin: 0 auto !important; }
-
-
-
-                        .force-print { display: table-row !important; }
-
-
-
-                    }
-
-
-
-                `}</style>
-
+        td { 
+            border: 1px solid black !important; 
+            padding: 4px !important; 
+            font-size: 10px !important; 
+        }
+    }
+`}</style>
 
 
 
@@ -3189,7 +2914,39 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
 
     
+{/* 🟢 فرز المقيمين (يظهر فقط في الاشتباك) */}
+{selectedGroup.type === "engagement" && (
+    <div className="flex flex-wrap gap-2 items-center bg-blue-50/50 p-2 rounded-lg border border-blue-100">
+        <Label className="text-[10px] font-bold text-blue-800">طباعة كشف مقيم:</Label>
+        
+        {/* اختيار اسم المقيم */}
+        <Select value={selectedEvaluator} onValueChange={setSelectedEvaluator}>
+            <SelectTrigger className="w-40 h-8 text-[10px] font-bold bg-white">
+                <SelectValue placeholder="اختر المقيم" />
+            </SelectTrigger>
+            <SelectContent>
+                <SelectItem value="all">الكشف العام (الكل)</SelectItem>
+                {/* استخراج أسماء المقيمين من البيانات المعالجة */}
+                {Array.from(new Set(processedGroupData.students.flatMap((s:any) => Array.from(s.recorders || []))))
+                    .map(name => <SelectItem key={name as string} value={name as string}>{name as string}</SelectItem>)
+                }
+            </SelectContent>
+        </Select>
 
+        {/* اختيار نوع الاختبار (فني/سيناريو) - يظهر فقط إذا تم اختيار مقيم معين */}
+        {selectedEvaluator !== "all" && (
+            <Select value={evaluatorType} onValueChange={(v:any) => setEvaluatorType(v)}>
+                <SelectTrigger className="w-32 h-8 text-[10px] font-bold bg-white border-blue-300 text-blue-700">
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="technical">الجزء الفني</SelectItem>
+                    <SelectItem value="scenario">جزء السيناريو</SelectItem>
+                </SelectContent>
+            </Select>
+        )}
+    </div>
+)}
 
 
     {/* 1. جهة الطباعة (تظهر فقط في الاشتباك) */}
@@ -3539,16 +3296,23 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
 
 
-                            <h1 className="text-lg md:text-xl font-black py-4 underline underline-offset-8 uppercase leading-relaxed">
+                           <h1 className="text-lg md:text-xl font-black py-4 underline underline-offset-8 uppercase leading-relaxed">
+    {/* 1. تحديد نوع الاختبار الأساسي */}
+    {selectedGroup.type === "fitness" ? (
+        "اختبار اللياقة البدنية"
+    ) : (
+        /* 2. منطق الاشتباك: هل هو عام أم لمقيم محدد؟ */
+        selectedEvaluator === "all" 
+            ? "اختبار اشتباك - الكشف العام" 
+            : `كشف درجات اختبار الاشتباك (${evaluatorType === 'technical' ? 'الجزء الفني' : 'جزء السيناريو'}) - المقيم: ${selectedEvaluator}`
+    )}
 
-    {selectedGroup.type === "fitness" ? "اختبار اللياقة البدنية" : "اختبار اشتباك"} 
+    {/* 3. الإضافات (النوع المخصص، الدورة، الدفعة) */}
+    {customExamType && ` (${customExamType})`} 
+    {" - "} دورة: {selectedGroup.course} 
 
-    {customExamType && ` (${customExamType})`} - دورة: {selectedGroup.course} 
-
-    {/* 🟢 التعديل هنا: يطبع الدفعة فقط إذا لم تكن "لا يوجد" */}
-
+    {/* 🟢 شرط الدفعة: يطبع فقط إذا لم تكن "لا يوجد" */}
     {selectedGroup.batch !== "لا يوجد" && ` / الدفعة: ${selectedGroup.batch}`}
-
 </h1>
 
 
@@ -3585,629 +3349,227 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
 
 
-                                <TableHeader className="bg-[#c5b391]">
-
-
-
-                                    <TableRow className="border-b-2 border-black text-black">
-
-
-
-                                        <TableHead className="text-center border-l border-black font-bold w-12">#</TableHead>
-
-
-
-                                        <TableHead className="text-center border-l border-black font-bold w-24">الرتبة</TableHead>
-
-
-
-                                        <TableHead className="text-center border-l border-black font-bold w-32">الرقم العسكري</TableHead>
-
-
-
-                                        <TableHead className="text-right border-l border-black font-bold px-4">الاسم</TableHead>
-
-
-
-                                        {hasCompanyData && <TableHead className="text-center border-l border-black font-bold w-20">السرية</TableHead>}
-
-{hasPlatoonData && <TableHead className="text-center border-l border-black font-bold w-20">الفصيل</TableHead>}
-
-
-
-
-
-
-
-                                        {selectedGroup.type === "fitness" ? (
-
-
-
-                                            <>
-
-
-
-                                                {/* الجري */}
-
-
-
-                                                <TableHead className="text-center border-l border-black font-bold w-16 bg-slate-50">الجري</TableHead>
-
-
-
-                                                <TableHead className="text-center border-l border-black font-bold w-12 text-[10px] bg-slate-50">د.جري</TableHead>
-
-
-
-                                                <TableHead className="text-center border-l border-black font-bold w-14 text-[10px] bg-slate-50">تق.جري</TableHead>
-
-
-
-                                                {/* الضغط */}
-
-
-
-                                                <TableHead className="text-center border-l border-black font-bold w-12">الضغط</TableHead>
-
-
-
-                                                <TableHead className="text-center border-l border-black font-bold w-12 text-[10px]">د.ضغط</TableHead>
-
-
-
-                                                <TableHead className="text-center border-l border-black font-bold w-14 text-[10px]">تق.ضغط</TableHead>
-
-
-
-                                                {/* البطن */}
-
-
-
-                                                <TableHead className="text-center border-l border-black font-bold w-12 bg-slate-50">البطن</TableHead>
-
-
-
-                                                <TableHead className="text-center border-l border-black font-bold w-12 text-[10px] bg-slate-50">د.بطن</TableHead>
-
-
-
-                                                <TableHead className="text-center border-l border-black font-bold w-14 text-[10px] bg-slate-50">تق.بطن</TableHead>
-
-
-
-                                                {/* النهائية */}
-
-
-
-                                                <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-16">النهائية</TableHead>
-
-
-
-                                            </>
-
-
-
-                                        ) : (
-
-
-
-                                            <>
-
-
-
-                                                <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-24 transition-colors">
-
-
-
-    {/* 🟢 المسمى يتغير ديناميكياً */}
-
-
-
-    {showTrainerColumn ? "المعدل (90%)" : "المعدل (100%)"}
-
-
-
-</TableHead>
-
-
-
-
-
-
-
-{/* عمود درجة المدرب يظهر فقط برغبة المستخدم */}
-
-
-
-{viewMode === "official" && showTrainerColumn && (
-
-
-
-    <TableHead className="text-center border-l border-black font-black bg-[#a39170] w-24 animate-in fade-in">
-
-
-
-        درجة المدرب
-
-
-
+                               <TableHeader className="bg-[#c5b391]">
+    <TableRow className="border-b-2 border-black text-black">
+        <TableHead className="text-center border-l border-black font-bold w-12">#</TableHead>
+        <TableHead className="text-center border-l border-black font-bold w-24">الرتبة</TableHead>
+        <TableHead className="text-center border-l border-black font-bold w-32">الرقم العسكري</TableHead>
+        <TableHead className="text-right border-l border-black font-bold px-4">الاسم</TableHead>
+
+        {hasCompanyData && <TableHead className="text-center border-l border-black font-bold w-20">السرية</TableHead>}
+        {hasPlatoonData && <TableHead className="text-center border-l border-black font-bold w-20">الفصيل</TableHead>}
+
+        {selectedGroup.type === "fitness" ? (
+            <>
+                {/* --- أعمدة اللياقة (بدون تغيير) --- */}
+                <TableHead className="text-center border-l border-black font-bold w-16 bg-slate-50">الجري</TableHead>
+                <TableHead className="text-center border-l border-black font-bold w-12 text-[10px] bg-slate-50">د.جري</TableHead>
+                <TableHead className="text-center border-l border-black font-bold w-14 text-[10px] bg-slate-50">تق.جري</TableHead>
+                <TableHead className="text-center border-l border-black font-bold w-12">الضغط</TableHead>
+                <TableHead className="text-center border-l border-black font-bold w-12 text-[10px]">د.ضغط</TableHead>
+                <TableHead className="text-center border-l border-black font-bold w-14 text-[10px]">تق.ضغط</TableHead>
+                <TableHead className="text-center border-l border-black font-bold w-12 bg-slate-50">البطن</TableHead>
+                <TableHead className="text-center border-l border-black font-bold w-12 text-[10px] bg-slate-50">د.بطن</TableHead>
+                <TableHead className="text-center border-l border-black font-bold w-14 text-[10px] bg-slate-50">تق.بطن</TableHead>
+                <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-16">النهائية</TableHead>
+            </>
+        ) : (
+            <>
+                {/* --- أعمدة الاشتباك (التعديل الذكي هنا) --- */}
+                {selectedEvaluator === "all" ? (
+                    /* 1. الحالة العادية: الكشف العام (متوسطات) */
+                    <>
+                        <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-24 transition-colors">
+                            {showTrainerColumn ? "المعدل (90%)" : "المعدل (100%)"}
+                        </TableHead>
+                        {viewMode === "official" && showTrainerColumn && (
+                            <TableHead className="text-center border-l border-black font-black bg-[#a39170] w-24 animate-in fade-in">
+                                درجة المدرب
+                            </TableHead>
+                        )}
+                    </>
+                ) : (
+                   /* 2. حالة المقيم المحدد: إظهار المعايير التفصيلية */
+<>
+    {(() => {
+        // البحث عن أول طالب يملك snapshot للنوع المختار حالياً
+        const firstWithSnap = finalReportData.find((s: any) => s.display_snapshot);
+        if (!firstWithSnap) return null;
+        
+        const snap = firstWithSnap.display_snapshot;
+        // التأكد من أن الـ snapshot هو مصفوفة أو تحويله لمصفوفة
+        const configsList = Array.isArray(snap) ? snap : [snap];
+        
+        return configsList.flatMap((config: any) => 
+            (config.axes || []).flatMap((axis: any, axisIdx: number) => 
+                (axis.criteria || []).map((crit: any, critIdx: number) => (
+                    <TableHead 
+                        // ✅ حل مشكلة الـ Key: نستخدم اسم المعيار مع أرقام ترتيبية لضمان عدم التكرار
+                        key={`head-${axisIdx}-${critIdx}-${crit.name}`} 
+                        className="text-center border-l border-black font-bold text-[9px] bg-blue-50/50 min-w-[50px] leading-tight"
+                    >
+                        {crit.name}
+                    </TableHead>
+                ))
+            )
+        );
+    })()}
+    <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-20">
+        درجة {evaluatorType === 'technical' ? 'الفني' : 'السيناريو'}
     </TableHead>
+</>
+                )}
+            </>
+        )}
 
-
-
+        {/* 🟢 التقدير: يظهر فقط في الكشف العام */}
+{selectedEvaluator === "all" && (
+    <TableHead className={`text-center border-l border-black font-bold w-20 ${printDestination === 'control' ? 'print:hidden' : ''}`}>
+        التقدير
+    </TableHead>
 )}
 
-
-
-                                            </>
-
-
-
-                                        )}
-
-
-
-
-
-
-
-                                        <TableHead className={`text-center border-l border-black font-bold w-20 ${printDestination === 'control' ? 'print:hidden' : ''}`}>
-
-
-
-                                            التقدير
-
-
-
-                                        </TableHead>
-
-
-
-                                        <TableHead className={`text-center border-l border-black font-bold w-16 ${
-
-
-
-    selectedGroup.type === "engagement" && printDestination === "control" ? "print:hidden" : ""
-
-
-
-}`}>
-
-
-
-    النتيجة
-
-
-
-</TableHead>
-
-
-
-                                        
-
-
-
-                                        {/* 🟢 عمود درجة المدرب يظهر فقط في اللياقة وإذا كان موجوداً */}
-
-
-
-                                        {selectedGroup.type === "fitness" && hasTrainerScore && (
-
-
-
-                                            <TableHead className="text-center border-l border-black font-bold bg-[#a39170] w-16">المدرب</TableHead>
-
-
-
-                                        )}
-
-
-
-
-
-
-
-                                        <TableHead className="text-right font-bold px-4">ملاحظات</TableHead>
-
-
-
-                                    </TableRow>
-
-
-
-                                </TableHeader>
-
-
-
-                                <TableBody>
-
-
-
-                                    {finalReportData.map((s: any, idx: number) => {
-
-
-
-                                        const gradeInfo = getGradeInfo(s.total_final, s.notes);
-
-
-
-                                        const isAbsent = s.total_final === null && !s.average; 
-
-
-
-                                        const isVisibleOnScreen = idx >= (innerCurrentPage - 1) * innerItemsPerPage && idx < innerCurrentPage * innerItemsPerPage;
-
-
-
-
-
-
-
-                                        return (
-
-
-
-                                            <TableRow 
-
-
-
-                                                key={s.military_id || idx} 
-
-
-
-                                                className={`border-b border-black font-bold text-center h-10 hover:bg-slate-50 
-
-
-
-                                                ${isVisibleOnScreen ? 'table-row' : 'hidden print:table-row force-print'}`}
-
-
-
-                                            >
-
-
-
-                                                <TableCell className="border-l border-black">{idx + 1}</TableCell>
-
-
-
-                                                <TableCell className="border-l border-black">{s["الرتبة"] || s.rank || "-"}</TableCell>
-
-
-
-                                                <TableCell className="border-l border-black font-mono">{s["الرقم العسكري"] || s.military_id}</TableCell>
-
-
-
-                                                <TableCell className="text-right border-l border-black px-4 whitespace-nowrap">{s["الإسم"] || s.name}</TableCell>
-
-
-
-                                                {hasCompanyData && (
-
-    <TableCell className="border-l border-black text-[10px]">
-
-        {s["السرية"] || s.company || "-"}
-
+{/* 🟢 النتيجة: تظهر فقط في الكشف العام */}
+{selectedEvaluator === "all" && (
+    <TableHead className={`text-center border-l border-black font-bold w-16 ${
+        selectedGroup.type === "engagement" && printDestination === "control" ? "print:hidden" : ""
+    }`}>
+        النتيجة
+    </TableHead>
+)}
+
+        {selectedGroup.type === "fitness" && hasTrainerScore && (
+            <TableHead className="text-center border-l border-black font-bold bg-[#a39170] w-16">المدرب</TableHead>
+        )}
+
+        <TableHead className="text-right font-bold px-4">ملاحظات</TableHead>
+    </TableRow>
+</TableHeader>
+
+
+
+                               <TableBody>
+    {finalReportData.map((s: any, idx: number) => {
+        const gradeInfo = getGradeInfo(s.total_final, s.notes);
+        const isAbsent = s.total_final === null && !s.average;
+        const isVisibleOnScreen = idx >= (innerCurrentPage - 1) * innerItemsPerPage && idx < innerCurrentPage * innerItemsPerPage;
+
+        return (
+            <TableRow 
+                key={s.military_id || idx} 
+                className={`border-b border-black font-bold text-center h-10 hover:bg-slate-50 
+                ${isVisibleOnScreen ? 'table-row' : 'hidden print:table-row force-print'}`}
+            >
+                {/* البيانات الأساسية */}
+                <TableCell className="border-l border-black">{idx + 1}</TableCell>
+                <TableCell className="border-l border-black">{s["الرتبة"] || s.rank || "-"}</TableCell>
+                <TableCell className="border-l border-black font-mono">{s["الرقم العسكري"] || s.military_id}</TableCell>
+                <TableCell className="text-right border-l border-black px-4 whitespace-nowrap">{s["الإسم"] || s.name}</TableCell>
+                
+                {hasCompanyData && <TableCell className="border-l border-black text-[10px]">{s["السرية"] || s.company || "-"}</TableCell>}
+                {hasPlatoonData && <TableCell className="border-l border-black text-[10px]">{s["الفصيل"] || s.platoon || "-"}</TableCell>}
+
+                {/* --- منطق عرض الدرجات --- */}
+                {selectedGroup.type === "fitness" ? (
+                    <>
+                        {/* خلايا اللياقة البدنية (بدون تغيير) */}
+                        <TableCell className="border-l border-black bg-slate-50/50">{s["الجري"] ?? s.run_time ?? "-"}</TableCell>
+                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["درجة الجري"] ?? s.run_score ?? "-"}</TableCell>
+                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["تقدير الجري"] ?? s.run_grade ?? "-"}</TableCell>
+                        <TableCell className="border-l border-black">{s["الضغط"] ?? s.pushups ?? "-"}</TableCell>
+                        <TableCell className="border-l border-black text-[10px]">{s["درجة الضغط"] ?? s.push_score ?? "-"}</TableCell>
+                        <TableCell className="border-l border-black text-[10px]">{s["تقدير الضغط"] ?? s.push_grade ?? "-"}</TableCell>
+                        <TableCell className="border-l border-black bg-slate-50/50">{s["البطن"] ?? s.situps ?? "-"}</TableCell>
+                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["درجة البطن"] ?? s.sit_score ?? "-"}</TableCell>
+                        <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["تقدير البطن"] ?? s.sit_grade ?? "-"}</TableCell>
+                        <TableCell className="border-l border-black font-black text-lg">{s["الدرجة النهائية"] ?? s.average ?? "-"}</TableCell>
+                    </>
+                ) : (
+                    <>
+                        {/* --- منطق الاشتباك المطور --- */}
+                        {selectedEvaluator === "all" ? (
+                            /* 1. عرض الكشف العام (المتوسطات) */
+                            <>
+                                <TableCell className="border-l border-black font-black text-lg">
+                                    {isAbsent ? "-" : s.total_final}
+                                </TableCell>
+                                {viewMode === "official" && showTrainerColumn && (
+                                    <TableCell className="border-l border-black font-black text-lg">
+                                        {isAbsent ? "-" : (trainerScores[s.military_id] || "-")}
+                                    </TableCell>
+                                )}
+                            </>
+                        ) : (
+                           /* 2. عرض كشف المقيم (المعايير التفصيلية) */
+<>
+    {(() => {
+        if (isAbsent || !s.display_snapshot) {
+            const firstWithSnap = finalReportData.find((st: any) => st.display_snapshot);
+            const count = firstWithSnap?.display_snapshot ? (Array.isArray(firstWithSnap.display_snapshot) ? firstWithSnap.display_snapshot : [firstWithSnap.display_snapshot]).flatMap((c:any)=>(c.axes || [])).flatMap((a:any)=>(a.criteria || [])).length : 0;
+            return Array(count).fill(0).map((_, i) => <TableCell key={`absent-${s.military_id}-${i}`} className="border-l border-black text-slate-300">-</TableCell>);
+        }
+
+        const configsList = Array.isArray(s.display_snapshot) ? s.display_snapshot : [s.display_snapshot];
+        return configsList.flatMap((config: any) => 
+            (config.axes || []).flatMap((axis: any, axisIdx: number) => 
+                (axis.criteria || []).map((crit: any, critIdx: number) => (
+                    <TableCell 
+                        // ✅ استخدام مفتاح فريد يربط الرقم العسكري مع ترتيب المعيار
+                        key={`cell-${s.military_id}-${axisIdx}-${critIdx}`} 
+                        className="border-l border-black text-[11px] font-mono bg-blue-50/20"
+                    >
+                        {crit.score ?? "-"}
+                    </TableCell>
+                ))
+            )
+        );
+    })()}
+    <TableCell className="border-l border-black font-black text-lg bg-slate-100">
+        {isAbsent ? "-" : s.total_final}
     </TableCell>
+</>
+                        )}
+                    </>
+                )}
 
-)}
-
-{hasPlatoonData && (
-
-    <TableCell className="border-l border-black text-[10px]">
-
-        {s["الفصيل"] || s.platoon || "-"}
-
+                {/* 🟢 التقدير: يختفي عند اختيار مقيم محدد */}
+{selectedEvaluator === "all" && (
+    <TableCell className={`border-l border-black ${printDestination === 'control' ? 'print:hidden' : ''}`}>
+        {selectedGroup.type === "fitness" 
+            ? (s["التقدير العام"] || s.grade || "-") 
+            : (isAbsent ? "-" : gradeInfo.result)}
     </TableCell>
-
 )}
 
-
-
-
-
-                                                {selectedGroup.type === "fitness" ? (
-
-
-
-                                                    <>
-
-
-
-                                                        {/* 🟢 تعديل خلايا اللياقة لضمان ظهور الصفر 0 بدلاً من الشرطة - */}
-
-
-
-<TableCell className="border-l border-black bg-slate-50/50">
-
-    {/* نستخدم ?? بدلاً من || لضمان أن الصفر قيمة مقبولة */}
-
-    {s["الجري"] ?? s.run_time ?? "-"}
-
-</TableCell>
-
-<TableCell className="border-l border-black text-[10px] bg-slate-50/50">
-
-    {s["درجة الجري"] ?? s.run_score ?? "-"}
-
-</TableCell>
-
-<TableCell className="border-l border-black text-[10px] bg-slate-50/50">
-
-    {s["تقدير الجري"] ?? s.run_grade ?? "-"}
-
-</TableCell>
-
-
-
-<TableCell className="border-l border-black">
-
-    {s["الضغط"] ?? s.pushups ?? "-"}
-
-</TableCell>
-
-<TableCell className="border-l border-black text-[10px]">
-
-    {s["درجة الضغط"] ?? s.push_score ?? "-"}
-
-</TableCell>
-
-<TableCell className="border-l border-black text-[10px]">
-
-    {s["تقدير الضغط"] ?? s.push_grade ?? "-"}
-
-</TableCell>
-
-
-
-<TableCell className="border-l border-black bg-slate-50/50">
-
-    {s["البطن"] ?? s.situps ?? "-"}
-
-</TableCell>
-
-<TableCell className="border-l border-black text-[10px] bg-slate-50/50">
-
-    {s["درجة البطن"] ?? s.sit_score ?? "-"}
-
-</TableCell>
-
-<TableCell className="border-l border-black text-[10px] bg-slate-50/50">
-
-    {s["تقدير البطن"] ?? s.sit_grade ?? "-"}
-
-</TableCell>
-
-
-
-<TableCell className="border-l border-black font-black text-lg">
-
-    {/* الدرجة النهائية أيضاً يجب أن تظهر 0 إذا كانت النتيجة كذلك */}
-
-    {s["الدرجة النهائية"] ?? s.average ?? "-"}
-
-</TableCell>
-
-
-
-                                                    </>
-
-
-
-                                                ) : (
-
-
-
-                                                    <>
-
-
-
-                                                        <TableCell className="border-l border-black font-black text-lg">
-
-
-
-    {isAbsent ? "-" : s.total_final}
-
-
-
-</TableCell>
-
-
-
-
-
-
-
-{/* إخفاء خلية درجة المدرب برمجياً */}
-
-
-
-{viewMode === "official" && showTrainerColumn && (
-
-
-
-    <TableCell className="border-l border-black font-black text-lg">
-
-
-
-        {isAbsent ? "-" : (trainerScores[s.military_id] || "-")}
-
-
-
+{/* 🟢 النتيجة: تختفي عند اختيار مقيم محدد */}
+{selectedEvaluator === "all" && (
+    <TableCell className={`border-l border-black font-bold ${
+        selectedGroup.type === "engagement" && printDestination === "control" ? "print:hidden" : ""
+    }`}>
+        {selectedGroup.type === "fitness" ? (
+            s["النتيجة"] === "ناجح" || s.final_result === "Pass" ? <span className="text-green-700">ناجح</span> : 
+            s["النتيجة"] === "راسب" || s.final_result === "Fail" ? <span className="text-red-600">راسب</span> : "-"
+        ) : (
+            isAbsent ? "-" : gradeInfo.result === "راسب" ? <span className="text-red-600">راسب</span> : <span className="text-green-700">ناجح</span>
+        )}
     </TableCell>
-
-
-
 )}
 
-
-
-                                                    </>
-
-
-
-                                                )}
-
-
-
-
-
-
-
-                                                <TableCell className={`border-l border-black ${printDestination === 'control' ? 'print:hidden' : ''}`}>
-
-
-
-                                                    {selectedGroup.type === "fitness" 
-
-
-
-                                                        ? (s["التقدير العام"] || s.grade || "-") 
-
-
-
-                                                        : (isAbsent ? "-" : gradeInfo.result)}
-
-
-
-                                                </TableCell>
-
-
-
-
-
-
-
-                                                <TableCell className={`border-l border-black font-bold ${
-
-
-
-    selectedGroup.type === "engagement" && printDestination === "control" ? "print:hidden" : ""
-
-
-
-}`}>
-
-
-
-     {selectedGroup.type === "fitness" ? (
-
-
-
-        s["النتيجة"] === "ناجح" || s.final_result === "Pass" ? <span className="text-green-700">ناجح</span> : 
-
-
-
-        s["النتيجة"] === "راسب" || s.final_result === "Fail" ? <span className="text-red-600">راسب</span> : "-"
-
-
-
-     ) : (
-
-
-
-        isAbsent ? "-" : gradeInfo.result === "راسب" ? <span className="text-red-600">راسب</span> : <span className="text-green-700">ناجح</span>
-
-
-
-     )}
-
-
-
-</TableCell>
-
-
-
-
-
-
-
-                                                {/* 🟢 مكان درجة المدرب الجديد (قبل الملاحظات) */}
-
-
-
-                                                {selectedGroup.type === "fitness" && hasTrainerScore && (
-
-
-
-                                                    <TableCell className="border-l border-black font-bold text-blue-800">
-
-
-
-                                                        {s["درجة المدرب"] || s.trainer_score || "-"}
-
-
-
-                                                    </TableCell>
-
-
-
-                                                )}
-
-
-
-
-
-
-
-                                                {/* الملاحظات الذكية: تظهر على الشاشة وتختفي عند الطباعة (لأن لدينا خلية مخصصة للطباعة بعدها) */}
-
-
-
-<TableCell className="text-right border-l border-black px-2 no-print min-w-[150px]">
-
-
-
-    {/* 🟢 التعديل: قراءة الملاحظة من كل المصادر الممكنة */}
-
-
-
-    {renderNoteCell(s) || s["ملاحظات"] || s["الملاحظات"] || s.notes || "-"}
-
-
-
-</TableCell>
-
-
-
-
-
-
-
-{/* الخلية المخصصة للطباعة فقط */}
-
-
-
-<TableCell className="text-right px-2 hidden print:table-cell text-[10px]">
-
-
-
-    {/* 🟢 التعديل: ضمان ظهور الملاحظة المخزنة في قاعدة البيانات عند الطباعة */}
-
-
-
-    {tempNotes[s.military_id] || s.notes || s["ملاحظات"] || s["الملاحظات"] || ""} 
-
-
-
-</TableCell>
-
-
-
-                                            </TableRow>
-
-
-
-                                        );
-
-
-
-                                    })}
-
-
-
-                                </TableBody>
+                {selectedGroup.type === "fitness" && hasTrainerScore && (
+                    <TableCell className="border-l border-black font-bold text-blue-800">{s["درجة المدرب"] || s.trainer_score || "-"}</TableCell>
+                )}
+
+                <TableCell className="text-right border-l border-black px-2 no-print min-w-[150px]">
+                    {renderNoteCell(s) || s["ملاحظات"] || s["الملاحظات"] || s.notes || "-"}
+                </TableCell>
+
+                <TableCell className="text-right px-2 hidden print:table-cell text-[10px]">
+                    {tempNotes[s.military_id] || s.notes || s["ملاحظات"] || s["الملاحظات"] || ""} 
+                </TableCell>
+            </TableRow>
+        );
+    })}
+</TableBody>
 
 
 

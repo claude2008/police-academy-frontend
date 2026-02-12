@@ -20,10 +20,14 @@ const securityHeaders = [
     value: 'origin-when-cross-origin',
   },
   {
-    key: 'Content-Security-Policy',
-    // 💡 التعديل الجوهري: أضفنا الروابط الخارجية لـ connect-src لكي يعمل الـ PWA بدون أخطاء
-    value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.supabase.co https://*.onrender.com https://www.qatarradio.qa https://grainy-gradients.vercel.app http://localhost:8000 http://172.20.10.10:8000; connect-src 'self' https://*.onrender.com https://*.supabase.co https://www.qatarradio.qa https://grainy-gradients.vercel.app http://localhost:8000 http://172.20.10.10:8000;"
-  }
+  key: 'Content-Security-Policy',
+  value: "default-src 'self'; " +
+         "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+         "font-src 'self' https://fonts.gstatic.com; " +
+         "img-src 'self' data: blob: https://*.supabase.co https://*.onrender.com https://www.qatarradio.qa https://grainy-gradients.vercel.app http://localhost:8000 http://172.20.10.10:8000 http://192.168.1.22:8000; " + // 👈 أضفناه هنا للصور
+         "connect-src 'self' https://*.onrender.com https://*.supabase.co https://www.qatarradio.qa https://grainy-gradients.vercel.app http://localhost:8000 http://172.20.10.10:8000 http://192.168.1.22:8000;" // 👈 أضفناه هنا للبيانات
+}
 ];
 
 // 2. إعدادات التعتيم (Obfuscator)
