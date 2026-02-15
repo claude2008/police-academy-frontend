@@ -304,27 +304,42 @@ const handleApprove = async (level: string, customTitle: string) => {
     }
 };
 
-    // 🟢 دالة فك الاعتماد
-    const handleUnapprove = async (level: string) => {
-        try {
-            const token = localStorage.getItem("token");
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/violations/audit/unapprove`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-                body: JSON.stringify({
-                    start_date: startDate,
-                    end_date: endDate,
-                    course: selectedReport.course,
-                    batch: selectedReport.batch,
-                    level: level
-                })
-            });
-            if (res.ok) {
-                toast.success("تم إلغاء الاعتماد");
-                openViolationReport(selectedReport.course, selectedReport.batch);
-            }
-        } catch (e) { toast.error("خطأ في العملية"); }
-    };
+   // 🟢 دالة فك الاعتماد المصححة
+const handleUnapprove = async (level: string) => {
+    try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/violations/audit/unapprove`, {
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json", 
+                "Authorization": `Bearer ${token}` 
+            },
+            body: JSON.stringify({
+                start_date: startDate,
+                end_date: endDate,
+                course: selectedReport.course,
+                batch: selectedReport.batch,
+                level: level
+            })
+        });
+
+        if (res.ok) {
+            toast.success("تم إلغاء الاعتماد بنجاح");
+            
+            // ✅ الحل هنا: استدعاء الدالة الصحيحة الموجودة في هذه الصفحة
+            openViolationReport(selectedReport.course, selectedReport.batch);
+            
+            // تحديث الملخصات في الخلفية أيضاً (البطاقات الخارجية)
+            fetchSummaries();
+        } else {
+            // استخراج رسالة الخطأ من الباك إند (مثل: ليس لديك صلاحية)
+            const errorData = await res.json();
+            toast.error(errorData.detail || "فشل إلغاء الاعتماد");
+        }
+    } catch (e) { 
+        toast.error("خطأ في الاتصال بالسيرفر"); 
+    }
+};
 
    const handleOpenAttachment = (path: string) => {
     if (!path) return;

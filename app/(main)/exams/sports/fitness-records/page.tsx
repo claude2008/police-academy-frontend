@@ -2641,7 +2641,7 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
                 ? 'landscape' 
                 : 'portrait'
             }; 
-            margin: 5mm; 
+            margin: 3mm; 
         }
 
         body { 
@@ -2674,7 +2674,33 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
         td { 
             border: 1px solid black !important; 
             padding: 4px !important; 
-            font-size: 10px !important; 
+            font-size: 14px !important; 
+        }
+    .signature-print-force { 
+            height: 40px !important; /* تقليل الارتفاع من 40px إلى 25px */
+            width: auto !important; 
+            display: block !important; 
+            margin: 2px auto !important; /* تقليل الهوامش حول الصورة */
+            mix-blend-multiply: multiply; /* لضمان شفافية خلفية التوقيع مع الورقة */
+        }
+
+        /* 🟢 2. تقليل المسافات في صندوق التوقيع بالكامل */
+        .signature-box {
+            gap: 1px !important; /* تقليل الفراغ بين الرتبة والتوقيع */
+            margin-top: 5px !important;
+        }
+
+        /* 🟢 3. تصغير خط الرتبة والاسم أسفل التوقيع */
+        .signature-box span, .signature-box p {
+            font-size: 14px !important; /* جعل الخط صغيراً ومناسباً لحجم التوقيع الجديد */
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* 🟢 4. تقليل الفراغ العلوي لقسم التوقيعات */
+        .signature-section-container {
+            margin-top: 10px !important;
+            padding-top: 10px !important;
         }
     }
 `}</style>
@@ -3349,101 +3375,120 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
 
 
-                               <TableHeader className="bg-[#c5b391]">
-    <TableRow className="border-b-2 border-black text-black">
-        <TableHead className="text-center border-l border-black font-bold w-12">#</TableHead>
-        <TableHead className="text-center border-l border-black font-bold w-24">الرتبة</TableHead>
-        <TableHead className="text-center border-l border-black font-bold w-32">الرقم العسكري</TableHead>
-        <TableHead className="text-right border-l border-black font-bold px-4">الاسم</TableHead>
-
-        {hasCompanyData && <TableHead className="text-center border-l border-black font-bold w-20">السرية</TableHead>}
-        {hasPlatoonData && <TableHead className="text-center border-l border-black font-bold w-20">الفصيل</TableHead>}
-
-        {selectedGroup.type === "fitness" ? (
-            <>
-                {/* --- أعمدة اللياقة (بدون تغيير) --- */}
-                <TableHead className="text-center border-l border-black font-bold w-16 bg-slate-50">الجري</TableHead>
-                <TableHead className="text-center border-l border-black font-bold w-12 text-[10px] bg-slate-50">د.جري</TableHead>
-                <TableHead className="text-center border-l border-black font-bold w-14 text-[10px] bg-slate-50">تق.جري</TableHead>
-                <TableHead className="text-center border-l border-black font-bold w-12">الضغط</TableHead>
-                <TableHead className="text-center border-l border-black font-bold w-12 text-[10px]">د.ضغط</TableHead>
-                <TableHead className="text-center border-l border-black font-bold w-14 text-[10px]">تق.ضغط</TableHead>
-                <TableHead className="text-center border-l border-black font-bold w-12 bg-slate-50">البطن</TableHead>
-                <TableHead className="text-center border-l border-black font-bold w-12 text-[10px] bg-slate-50">د.بطن</TableHead>
-                <TableHead className="text-center border-l border-black font-bold w-14 text-[10px] bg-slate-50">تق.بطن</TableHead>
-                <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-16">النهائية</TableHead>
-            </>
-        ) : (
-            <>
-                {/* --- أعمدة الاشتباك (التعديل الذكي هنا) --- */}
-                {selectedEvaluator === "all" ? (
-                    /* 1. الحالة العادية: الكشف العام (متوسطات) */
-                    <>
-                        <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-24 transition-colors">
-                            {showTrainerColumn ? "المعدل (90%)" : "المعدل (100%)"}
-                        </TableHead>
-                        {viewMode === "official" && showTrainerColumn && (
-                            <TableHead className="text-center border-l border-black font-black bg-[#a39170] w-24 animate-in fade-in">
-                                درجة المدرب
-                            </TableHead>
-                        )}
-                    </>
-                ) : (
-                   /* 2. حالة المقيم المحدد: إظهار المعايير التفصيلية */
-<>
+                             <TableHeader className="bg-[#c5b391]">
     {(() => {
-        // البحث عن أول طالب يملك snapshot للنوع المختار حالياً
-        const firstWithSnap = finalReportData.find((s: any) => s.display_snapshot);
-        if (!firstWithSnap) return null;
+        // 1. استخراج الـ Snapshot
+        const firstRecord = finalReportData.find((s: any) => s.display_snapshot || s.exam_snapshot);
+        const snap = firstRecord?.display_snapshot || firstRecord?.exam_snapshot;
         
-        const snap = firstWithSnap.display_snapshot;
-        // التأكد من أن الـ snapshot هو مصفوفة أو تحويله لمصفوفة
-        const configsList = Array.isArray(snap) ? snap : [snap];
-        
-        return configsList.flatMap((config: any) => 
-            (config.axes || []).flatMap((axis: any, axisIdx: number) => 
-                (axis.criteria || []).map((crit: any, critIdx: number) => (
-                    <TableHead 
-                        // ✅ حل مشكلة الـ Key: نستخدم اسم المعيار مع أرقام ترتيبية لضمان عدم التكرار
-                        key={`head-${axisIdx}-${critIdx}-${crit.name}`} 
-                        className="text-center border-l border-black font-bold text-[9px] bg-blue-50/50 min-w-[50px] leading-tight"
-                    >
-                        {crit.name}
-                    </TableHead>
-                ))
-            )
+        // 2. فحص ذكي جداً للمحطات (بما أن الكونسول أعطى false)
+        // سنحاول الوصول للمحطات حتى لو كانت المسميات مختلفة قليلاً
+        const hasStations = snap?.axes?.some((ax: any) => 
+            ax.criteria?.some((c: any) => (c.stations && c.stations.length > 0) || (c.sub_criteria && c.sub_criteria.length > 0))
+        );
+
+        // 3. تحديد عدد الصفوف (3 مستويات)
+        const rowCount = hasStations ? 3 : 2;
+
+        return (
+            <>
+                {/* 🟥 الصف الأول: العناوين الثابتة + المحاور */}
+                <TableRow className="border-b border-black text-black">
+                    <TableHead rowSpan={rowCount} className="text-center border-l border-black font-bold w-12">#</TableHead>
+                    <TableHead rowSpan={rowCount} className="text-center border-l border-black font-bold w-24">الرتبة</TableHead>
+                    <TableHead rowSpan={rowCount} className="text-center border-l border-black font-bold w-32">الرقم العسكري</TableHead>
+                    <TableHead rowSpan={rowCount} className="text-right border-l border-black font-bold px-4">الاسم</TableHead>
+
+                    {hasCompanyData && <TableHead rowSpan={rowCount} className="text-center border-l border-black font-bold w-20">السرية</TableHead>}
+                    {hasPlatoonData && <TableHead rowSpan={rowCount} className="text-center border-l border-black font-bold w-20">الفصيل</TableHead>}
+
+                    {selectedGroup.type === "fitness" ? (
+                        <>
+                            <TableHead colSpan={3} className="text-center border-l border-black font-bold bg-slate-50/50">الجري</TableHead>
+                            <TableHead colSpan={3} className="text-center border-l border-black font-bold">الضغط</TableHead>
+                            <TableHead colSpan={3} className="text-center border-l border-black font-bold bg-slate-50/50">البطن</TableHead>
+                            <TableHead rowSpan={rowCount} className="text-center border-l border-black font-black bg-[#b4a280] w-16">النهائية</TableHead>
+                        </>
+                    ) : (
+                        <>
+                            {selectedEvaluator === "all" ? (
+                                <TableHead rowSpan={rowCount} className="text-center border-l border-black font-black bg-[#b4a280] w-24">
+                                    {showTrainerColumn ? "المعدل (90%)" : "المعدل (100%)"}
+                                </TableHead>
+                            ) : (
+                                <>
+                                    {snap?.axes?.map((axis: any, axisIdx: number) => (
+                                        <TableHead 
+                                            key={`axis-h-${axisIdx}`} 
+                                            colSpan={axis.criteria?.length || 1} 
+                                            className="text-center border-l border-b border-black font-black text-[10px] bg-[#b4a280] px-1"
+                                        >
+                                            {axis.name}
+                                        </TableHead>
+                                    ))}
+                                    <TableHead rowSpan={rowCount} className="text-center border-l border-black font-black bg-[#b4a280] w-20">
+                                        درجة {evaluatorType === 'technical' ? 'الفني' : 'السيناريو'}
+                                    </TableHead>
+                                </>
+                            )}
+                        </>
+                    )}
+ {/* ✅ أعمدة التقدير والنتيجة (محمية) */}
+                    {selectedEvaluator === "all" && (
+                        <>
+                            <TableHead rowSpan={rowCount} className={`text-center border-l border-black font-bold w-20 ${printDestination === 'control' ? 'print:hidden' : ''}`}>التقدير</TableHead>
+                            <TableHead rowSpan={rowCount} className={`text-center border-l border-black font-bold w-16 ${selectedGroup.type === "engagement" && printDestination === "control" ? "print:hidden" : ""}`}>النتيجة</TableHead>
+                        </>
+                    )}
+                    {/* ✅ عمود درجة المدرب (محمي) */}
+                    {((selectedGroup.type === "fitness" && hasTrainerScore) || (selectedGroup.type === "engagement" && selectedEvaluator === "all" && showTrainerColumn)) && (
+                        <TableHead rowSpan={rowCount} className="text-center border-l border-black font-black bg-[#a39170] w-20">درجة المدرب</TableHead>
+                    )}
+
+                   
+
+                    <TableHead rowSpan={rowCount} className="text-right font-bold px-4">ملاحظات</TableHead>
+                </TableRow>
+
+                {/* 🟦 الصف الثاني: المعايير (Criteria) */}
+                <TableRow className="border-b border-black text-black">
+                    {selectedGroup.type === "fitness" ? (
+                        <>
+                            <TableHead className="text-center border-l border-black font-bold text-[8px] bg-slate-50">زمن</TableHead><TableHead className="text-center border-l border-black font-bold text-[8px] bg-slate-50">درجة</TableHead><TableHead className="text-center border-l border-black font-bold text-[8px] bg-slate-50">تقدير</TableHead>
+                            <TableHead className="text-center border-l border-black font-bold text-[8px]">عدد</TableHead><TableHead className="text-center border-l border-black font-bold text-[8px]">درجة</TableHead><TableHead className="text-center border-l border-black font-bold text-[8px]">تقدير</TableHead>
+                            <TableHead className="text-center border-l border-black font-bold text-[8px] bg-slate-50">عدد</TableHead><TableHead className="text-center border-l border-black font-bold text-[8px] bg-slate-50">درجة</TableHead><TableHead className="text-center border-l border-black font-bold text-[8px] bg-slate-50">تقدير</TableHead>
+                        </>
+                    ) : (
+                        selectedEvaluator !== "all" && snap?.axes?.flatMap((axis: any, aIdx: number) => 
+                            (axis.criteria || []).map((crit: any, cIdx: number) => (
+                                <TableHead key={`cr-${aIdx}-${cIdx}`} className="text-center border-l border-black font-bold text-[9px] bg-blue-50/30 py-1">
+                                    {crit.name}
+                                </TableHead>
+                            ))
+                        )
+                    )}
+                </TableRow>
+
+                {/* 🟩 الصف الثالث: المحطات (تعديل المفاتيح لمنع التكرار) */}
+{hasStations && selectedEvaluator !== "all" && (
+    <TableRow className="border-b-2 border-black text-black">
+        {snap.axes.flatMap((axis: any, aIdx: number) =>  // 👈 أضفنا aIdx هنا (ترتيب المحور)
+            (axis.criteria || []).map((crit: any, cIdx: number) => (
+                <TableHead 
+                    // ✅ التعديل هنا: دمج ترتيب المحور مع ترتيب المعيار لضمان عدم التكرار
+                    key={`st-${aIdx}-${cIdx}`} 
+                    className="text-center border-l border-black font-normal text-[7px] text-slate-500 bg-white leading-tight py-0.5"
+                >
+                    {/* عرض المحطات سواء كان اسمها stations أو sub_criteria */}
+                    {(crit.stations || crit.sub_criteria)?.join(" | ") || ""}
+                </TableHead>
+            ))
+        )}
+    </TableRow>
+)}
+            </>
         );
     })()}
-    <TableHead className="text-center border-l border-black font-black bg-[#b4a280] w-20">
-        درجة {evaluatorType === 'technical' ? 'الفني' : 'السيناريو'}
-    </TableHead>
-</>
-                )}
-            </>
-        )}
-
-        {/* 🟢 التقدير: يظهر فقط في الكشف العام */}
-{selectedEvaluator === "all" && (
-    <TableHead className={`text-center border-l border-black font-bold w-20 ${printDestination === 'control' ? 'print:hidden' : ''}`}>
-        التقدير
-    </TableHead>
-)}
-
-{/* 🟢 النتيجة: تظهر فقط في الكشف العام */}
-{selectedEvaluator === "all" && (
-    <TableHead className={`text-center border-l border-black font-bold w-16 ${
-        selectedGroup.type === "engagement" && printDestination === "control" ? "print:hidden" : ""
-    }`}>
-        النتيجة
-    </TableHead>
-)}
-
-        {selectedGroup.type === "fitness" && hasTrainerScore && (
-            <TableHead className="text-center border-l border-black font-bold bg-[#a39170] w-16">المدرب</TableHead>
-        )}
-
-        <TableHead className="text-right font-bold px-4">ملاحظات</TableHead>
-    </TableRow>
 </TableHeader>
 
 
@@ -3460,7 +3505,7 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
                 className={`border-b border-black font-bold text-center h-10 hover:bg-slate-50 
                 ${isVisibleOnScreen ? 'table-row' : 'hidden print:table-row force-print'}`}
             >
-                {/* البيانات الأساسية */}
+                {/* 1️⃣ البيانات الأساسية */}
                 <TableCell className="border-l border-black">{idx + 1}</TableCell>
                 <TableCell className="border-l border-black">{s["الرتبة"] || s.rank || "-"}</TableCell>
                 <TableCell className="border-l border-black font-mono">{s["الرقم العسكري"] || s.military_id}</TableCell>
@@ -3469,96 +3514,85 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
                 {hasCompanyData && <TableCell className="border-l border-black text-[10px]">{s["السرية"] || s.company || "-"}</TableCell>}
                 {hasPlatoonData && <TableCell className="border-l border-black text-[10px]">{s["الفصيل"] || s.platoon || "-"}</TableCell>}
 
-                {/* --- منطق عرض الدرجات --- */}
+                {/* 2️⃣ منطقة الدرجات (لياقة أو اشتباك) */}
                 {selectedGroup.type === "fitness" ? (
                     <>
-                        {/* خلايا اللياقة البدنية (بدون تغيير) */}
+                        {/* تفاصيل اللياقة: 9 خلايا (3 لكل تمرين) */}
                         <TableCell className="border-l border-black bg-slate-50/50">{s["الجري"] ?? s.run_time ?? "-"}</TableCell>
                         <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["درجة الجري"] ?? s.run_score ?? "-"}</TableCell>
                         <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["تقدير الجري"] ?? s.run_grade ?? "-"}</TableCell>
+                        
                         <TableCell className="border-l border-black">{s["الضغط"] ?? s.pushups ?? "-"}</TableCell>
                         <TableCell className="border-l border-black text-[10px]">{s["درجة الضغط"] ?? s.push_score ?? "-"}</TableCell>
                         <TableCell className="border-l border-black text-[10px]">{s["تقدير الضغط"] ?? s.push_grade ?? "-"}</TableCell>
+                        
                         <TableCell className="border-l border-black bg-slate-50/50">{s["البطن"] ?? s.situps ?? "-"}</TableCell>
                         <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["درجة البطن"] ?? s.sit_score ?? "-"}</TableCell>
                         <TableCell className="border-l border-black text-[10px] bg-slate-50/50">{s["تقدير البطن"] ?? s.sit_grade ?? "-"}</TableCell>
-                        <TableCell className="border-l border-black font-black text-lg">{s["الدرجة النهائية"] ?? s.average ?? "-"}</TableCell>
+                        
+                        <TableCell className="border-l border-black font-black text-lg bg-[#b4a280]/10">{s["الدرجة النهائية"] ?? s.average ?? "-"}</TableCell>
                     </>
                 ) : (
                     <>
-                        {/* --- منطق الاشتباك المطور --- */}
+                        {/* وضع الاشتباك */}
                         {selectedEvaluator === "all" ? (
-                            /* 1. عرض الكشف العام (المتوسطات) */
+                            <TableCell className="border-l border-black font-black text-lg bg-[#b4a280]/10">
+                                {isAbsent ? "-" : s.total_final}
+                            </TableCell>
+                        ) : (
                             <>
-                                <TableCell className="border-l border-black font-black text-lg">
+                                {/* عرض درجات المعايير التفصيلية */}
+                                {(() => {
+                                    const snap = s.display_snapshot || s.exam_snapshot;
+                                    if (isAbsent || !snap || !snap.axes) {
+                                        // موازنة الأعمدة الفارغة في حال الغياب
+                                        const firstRec = finalReportData.find((st: any) => (st.display_snapshot || st.exam_snapshot));
+                                        const firstSnap = firstRec?.display_snapshot || firstRec?.exam_snapshot;
+                                        const totalCols = firstSnap?.axes?.reduce((acc: number, ax: any) => acc + (ax.criteria?.length || 0), 0) || 0;
+                                        return Array(totalCols).fill(0).map((_, i) => <TableCell key={`empty-${i}`} className="border-l border-black text-slate-300">-</TableCell>);
+                                    }
+
+                                    return snap.axes.flatMap((axis: any, aIdx: number) => 
+                                        (axis.criteria || []).map((crit: any, cIdx: number) => (
+                                            <TableCell key={`c-${s.military_id}-${aIdx}-${cIdx}`} className="border-l border-black text-[11px] font-mono bg-blue-50/10">
+                                                {crit.score ?? "-"}
+                                            </TableCell>
+                                        ))
+                                    );
+                                })()}
+                                <TableCell className="border-l border-black font-black text-lg bg-slate-100">
                                     {isAbsent ? "-" : s.total_final}
                                 </TableCell>
-                                {viewMode === "official" && showTrainerColumn && (
-                                    <TableCell className="border-l border-black font-black text-lg">
-                                        {isAbsent ? "-" : (trainerScores[s.military_id] || "-")}
-                                    </TableCell>
-                                )}
                             </>
-                        ) : (
-                           /* 2. عرض كشف المقيم (المعايير التفصيلية) */
-<>
-    {(() => {
-        if (isAbsent || !s.display_snapshot) {
-            const firstWithSnap = finalReportData.find((st: any) => st.display_snapshot);
-            const count = firstWithSnap?.display_snapshot ? (Array.isArray(firstWithSnap.display_snapshot) ? firstWithSnap.display_snapshot : [firstWithSnap.display_snapshot]).flatMap((c:any)=>(c.axes || [])).flatMap((a:any)=>(a.criteria || [])).length : 0;
-            return Array(count).fill(0).map((_, i) => <TableCell key={`absent-${s.military_id}-${i}`} className="border-l border-black text-slate-300">-</TableCell>);
-        }
-
-        const configsList = Array.isArray(s.display_snapshot) ? s.display_snapshot : [s.display_snapshot];
-        return configsList.flatMap((config: any) => 
-            (config.axes || []).flatMap((axis: any, axisIdx: number) => 
-                (axis.criteria || []).map((crit: any, critIdx: number) => (
-                    <TableCell 
-                        // ✅ استخدام مفتاح فريد يربط الرقم العسكري مع ترتيب المعيار
-                        key={`cell-${s.military_id}-${axisIdx}-${critIdx}`} 
-                        className="border-l border-black text-[11px] font-mono bg-blue-50/20"
-                    >
-                        {crit.score ?? "-"}
-                    </TableCell>
-                ))
-            )
-        );
-    })()}
-    <TableCell className="border-l border-black font-black text-lg bg-slate-100">
-        {isAbsent ? "-" : s.total_final}
-    </TableCell>
-</>
                         )}
                     </>
                 )}
-
-                {/* 🟢 التقدير: يختفي عند اختيار مقيم محدد */}
-{selectedEvaluator === "all" && (
-    <TableCell className={`border-l border-black ${printDestination === 'control' ? 'print:hidden' : ''}`}>
-        {selectedGroup.type === "fitness" 
-            ? (s["التقدير العام"] || s.grade || "-") 
-            : (isAbsent ? "-" : gradeInfo.result)}
-    </TableCell>
-)}
-
-{/* 🟢 النتيجة: تختفي عند اختيار مقيم محدد */}
-{selectedEvaluator === "all" && (
-    <TableCell className={`border-l border-black font-bold ${
-        selectedGroup.type === "engagement" && printDestination === "control" ? "print:hidden" : ""
-    }`}>
-        {selectedGroup.type === "fitness" ? (
-            s["النتيجة"] === "ناجح" || s.final_result === "Pass" ? <span className="text-green-700">ناجح</span> : 
-            s["النتيجة"] === "راسب" || s.final_result === "Fail" ? <span className="text-red-600">راسب</span> : "-"
-        ) : (
-            isAbsent ? "-" : gradeInfo.result === "راسب" ? <span className="text-red-600">راسب</span> : <span className="text-green-700">ناجح</span>
-        )}
-    </TableCell>
-)}
-
-                {selectedGroup.type === "fitness" && hasTrainerScore && (
-                    <TableCell className="border-l border-black font-bold text-blue-800">{s["درجة المدرب"] || s.trainer_score || "-"}</TableCell>
+{/* 4️⃣ التقدير والنتيجة (يظهران في اللياقة والكشف العام للاشتباك) */}
+                {selectedEvaluator === "all" && (
+                    <>
+                        <TableCell className={`border-l border-black ${printDestination === 'control' ? 'print:hidden' : ''}`}>
+                            {selectedGroup.type === "fitness" ? (s["التقدير العام"] || s.grade || "-") : (isAbsent ? "-" : gradeInfo.result)}
+                        </TableCell>
+                        <TableCell className={`border-l border-black font-bold ${selectedGroup.type === "engagement" && printDestination === "control" ? "print:hidden" : ""}`}>
+                            {selectedGroup.type === "fitness" ? (
+                                s["النتيجة"] === "ناجح" || s.final_result === "Pass" ? <span className="text-green-700">ناجح</span> : 
+                                s["النتيجة"] === "راسب" || s.final_result === "Fail" ? <span className="text-red-600">راسب</span> : "-"
+                            ) : (
+                                isAbsent ? "-" : gradeInfo.result === "راسب" ? <span className="text-red-600">راسب</span> : <span className="text-green-700">ناجح</span>
+                            )}
+                        </TableCell>
+                    </>
+                )}
+                {/* 3️⃣ عمود درجة المدرب (موقعه حساس جداً ليتوافق مع الرأس) */}
+                {((selectedGroup.type === "fitness" && hasTrainerScore) || (selectedGroup.type === "engagement" && selectedEvaluator === "all" && showTrainerColumn)) && (
+                    <TableCell className="border-l border-black font-bold text-blue-800 bg-[#a39170]/10">
+                        {selectedGroup.type === "fitness" ? (s["درجة المدرب"] || s.trainer_score || "-") : (isAbsent ? "-" : (trainerScores[s.military_id] || "-"))}
+                    </TableCell>
                 )}
 
+                
+
+                {/* 5️⃣ الملاحظات */}
                 <TableCell className="text-right border-l border-black px-2 no-print min-w-[150px]">
                     {renderNoteCell(s) || s["ملاحظات"] || s["الملاحظات"] || s.notes || "-"}
                 </TableCell>

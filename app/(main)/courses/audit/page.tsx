@@ -157,7 +157,7 @@ export default function SessionAuditPage() {
     // --- جلب البيانات ---
     useEffect(() => {
         if (viewMode === 'audit' && selectedCourse && selectedSession) {
-            const documentTitle = `كشف الحالات والمخالفات - ${selectedSession.name} - ${selectedCourse.course} ${selectedCourse.batch || ""} - ${date}`;
+            const documentTitle = `التكميل اليومي - ${selectedSession.name} - ${selectedCourse.course} ${selectedCourse.batch || ""} - ${date}`;
             const originalTitle = document.title;
             document.title = documentTitle;
             return () => { document.title = originalTitle; };
@@ -508,7 +508,7 @@ export default function SessionAuditPage() {
                 
                 <style jsx global>{`
                     @media print {
-                        @page { size: A4 Portrait; margin: 5mm; }
+                        @page { size: A4 Portrait; margin: 3mm; }
                         body { background: white; }
                         .no-print { display: none !important; }
                         .print-border { border: 1px solid #000 !important; }
@@ -670,15 +670,11 @@ export default function SessionAuditPage() {
 
     <div className="w-1/3 text-center pt-2 space-y-2">
         <h2 className="text-xl font-black text-slate-900 leading-tight">قسم التدريب العسكري والرياضي</h2>
-        <div className="inline-block border-2 border-black rounded-lg px-4 py-1 bg-slate-50 mt-1">
-           <h3 className="text-lg font-black text-black">
-    {selectedCourse.course} 
-    {/* نتحقق: إذا كانت الدفعة "None" أو فارغة، لا تظهر شيء أو نكتب مسمى عربي */}
-    {(selectedCourse.batch && selectedCourse.batch !== "None" && selectedCourse.batch !== "none") 
-        ? ` - ${selectedCourse.batch}` 
-        : " "}
-</h3>
-        </div>
+        
+           <h2 className="text-xl font-black text-slate-900 leading-tight">
+        {selectedSession.type === 'sports' ? 'فرع التدريب الرياضي' : 'فرع التدريب العسكري'}
+    </h2>
+        
     </div>
 
     <div className="w-1/3 text-left pt-4 pl-2 font-bold text-sm leading-relaxed">
@@ -710,7 +706,7 @@ export default function SessionAuditPage() {
    <div className="text-center mb-6 mt-2 px-2"> 
     <div className="inline-block w-full max-w-[400px] border-2 border-black rounded-xl overflow-hidden shadow-sm">
         <h1 className="text-lg md:text-xl font-black bg-[#c5b391] text-black py-2 border-b-2 border-black [-webkit-print-color-adjust:exact]">
-            كشف الحالات والمخالفات
+           التكميل اليومي
         </h1>
         <div className="bg-white py-2 px-4 flex flex-wrap justify-center items-center gap-1.5">
            <p className="text-sm md:text-lg font-black text-slate-800 leading-tight">
@@ -768,9 +764,9 @@ export default function SessionAuditPage() {
 </div>
 
                         {/* أولاً: جدول الحالات */}
-                        <div className="mb-10">
+                        <div className={cn("mb-10", attendanceRows.length === 0 && "print:hidden")}>
                             <h3 className="text-lg font-black text-slate-800 mb-3 flex items-center gap-2">
-                                <span className="bg-blue-600 w-2 h-6 rounded-full"/> أولاً: سجل الحالات والغياب
+                                <span className="bg-blue-600 w-2 h-6 rounded-full"/> أولاً: سجل الحالات 
                             </h3>
                             <div className="border border-slate-300 rounded-lg overflow-hidden print:border-black">
                                 <Table>
@@ -893,9 +889,9 @@ export default function SessionAuditPage() {
                         </div>
 
                         {/* ثانياً: جدول المخالفات */}
-                        <div className="mb-12">
+                        <div className={cn("mb-12", violationRows.length === 0 && "print:hidden")}>
                             <h3 className="text-lg font-black text-slate-800 mb-3 flex items-center gap-2">
-                                <span className="bg-red-600 w-2 h-6 rounded-full"/> ثانياً: سجل المخالفات والانضباط
+                                <span className="bg-red-600 w-2 h-6 rounded-full"/> ثانياً: سجل المخالفات 
                             </h3>
                             <div className="border border-slate-300 rounded-lg overflow-hidden print:border-black">
                                 <Table>
@@ -1012,10 +1008,11 @@ export default function SessionAuditPage() {
     {['supervisor', 'officer', 'head'].map(role => {
         const app = auditData.approvals[role];
         const labels: any = { 
-            'supervisor': 'مشرف التدريب', 
-            'officer': 'ضابط التدريب', 
-            'head': 'رئيس قسم التدريب العسكري والرياضي' 
-        };
+    'supervisor': 'مشرف التدريب', 
+    // إذا كان رياضي يبقى "ضابط التدريب"، غير ذلك (عسكري/اشتباك) يصبح "قائد الدفعة"
+    'officer': selectedSession.type === 'sports' ? 'ضابط التدريب  الرياضي' : 'قائد الدفعة', 
+    'head': 'رئيس قسم التدريب العسكري والرياضي' 
+};
         
         const userStr = localStorage.getItem("user");
         const currentUser = JSON.parse(userStr || "{}");

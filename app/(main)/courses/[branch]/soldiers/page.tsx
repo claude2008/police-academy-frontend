@@ -13,7 +13,7 @@ import {
     GraduationCap, Scale, AlertTriangle, FileText, Activity, 
     MapPin, Calendar as CalIcon, User, ChevronLeft, ChevronRight, 
     Dumbbell, Target, ShieldAlert, RotateCcw,
-    Swords, Eye, Calculator,
+    Swords, Eye, Calculator,ChevronDown, ChevronUp,
     Paperclip,CheckCircle2 // 👈 أضف هذه الكلمة هنا
 } from "lucide-react"
 import { toast } from "sonner"
@@ -42,7 +42,8 @@ export default function SoldiersDirectoryPage() {
 const [fitExamsPage, setFitExamsPage] = useState(1)
 const [fitExamsPerPage, setFitExamsPerPage] = useState(5)
     // --- 2. States (Profile) ---
-    const [profileData, setProfileData] = useState<any>({ weights: [], status_stats: {}, violation_stats: {}, reports: [], military_exams: [],
+    const [profileData, setProfileData] = useState<any>({ weights: [], status_stats: {}, violation_stats: {}, reports: [], military_exams: [],attendance_list: [],
+    all_attachments: [],
     sports_exams: [] })
     const [loadingProfile, setLoadingProfile] = useState(false)
     const [historyDialog, setHistoryDialog] = useState<{open: boolean, title: string, details: any[]}>({ open: false, title: "", details: [] })
@@ -438,7 +439,7 @@ useEffect(() => {
     // 🔍 رسالة فحص: لنرى كل ما أرسله السيرفر
     console.log("Full Profile Data Received:", data);
     console.log("Sessions from Backend:", data.course_sessions);
-
+    
     setProfileData(data);
     setAvailableSessions(data.course_sessions || []);
     setSessionFilter("all");
@@ -600,23 +601,39 @@ const handleOpenAnyFile = (fileData: string) => {
     }
 };
 // 🟢 فلترة الحالات الإدارية (تستخدم reportFrom / reportTo)
+// 🟢 فلترة الحالات الإدارية والطبية (منطق الحالات العامة والخاصة)
 const filteredAttendance = useMemo(() => {
-    return (profileData.attendance_list || []).filter((item: any) => {
-        // 1. فلترة التاريخ (موجودة سابقاً)
+    const globalStatuses = ['exempt', 'rest', 'leave', 'medical', 'admin_leave', 'death_leave', 'late_parade', 'late_class', 'hospital', 'other'];
+
+    return (profileData.attendance_list || []).map((item: any) => {
+        // حساب المدة الفعلية بناءً على الحصة المختارة
+        let displayDuration = Number(item.duration) || 0;
+        let isAttendedInFirstDay = false;
+
+        if (sessionFilter !== "all" && globalStatuses.includes(item.status_key)) {
+            // إذا كانت الحصة المختارة ليست من ضمن الحصص التي شملها الإعفاء في اليوم الأول
+            if (!item.involved_sessions?.includes(String(sessionFilter))) {
+                displayDuration = Math.max(0, displayDuration - 1);
+                isAttendedInFirstDay = true; 
+            }
+        }
+
+        return { ...item, displayDuration, isAttendedInFirstDay };
+    }).filter((item: any) => {
+        // فلترة التاريخ
         const matchesDate = (!reportFrom && !reportTo) || 
                           (item.start_date >= (reportFrom || "0000-00-00") && 
                            item.start_date <= (reportTo || "9999-99-99"));
         
-        // 2. 🆕 فلترة الحصة الذكية
+        // فلترة الحصة
         let matchesSession = true;
         if (sessionFilter !== "all") {
-            // تظهر الحالة إذا كانت (إجازة/طبية عامة) أو إذا كانت تخص الحصة المختارة
-            const isGlobal = ["medical", "leave", "absent"].includes(item.status_key);
-            const isSpecific = item.involved_sessions?.includes(String(sessionFilter));
-            matchesSession = isGlobal || isSpecific;
+            const isGlobal = globalStatuses.includes(item.status_key);
+            const isSpecificallyLogged = item.involved_sessions?.includes(String(sessionFilter));
+            matchesSession = isGlobal || isSpecificallyLogged;
         }
 
-        return matchesDate && matchesSession;
+        return matchesDate && matchesSession && item.displayDuration > 0;
     });
 }, [profileData.attendance_list, reportFrom, reportTo, sessionFilter]);
 
@@ -637,10 +654,10 @@ const statsSummary = useMemo(() => {
     
     filteredAttendance.forEach((item: any) => {
         const label = item.status_label || "أخرى";
-        counts[label] = (counts[label] || 0) + 1;
+        // 🟢 نجمع displayDuration (المدة الذكية) بدلاً من المدة الأصلية
+        counts[label] = (counts[label] || 0) + item.displayDuration;
     });
     
-    // يرجع مصفوفة مرتبة مثل: [["طبية", 3], ["تأخير", 1]]
     return Object.entries(counts); 
 }, [filteredAttendance]);
 
@@ -1380,6 +1397,29 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
         </div>
     </AccordionTrigger>
     <AccordionContent className="pb-4 pt-2 border-t text-right">
+    {profileData.all_attachments && profileData.all_attachments.length > 0 && (
+        <div className="mb-6 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 no-print">
+            <h4 className="text-xs font-black text-blue-800 mb-3 flex items-center gap-2">
+                <Paperclip className="w-4 h-4" />
+                <span>كافة المستندات والمرفقات المرفوعة للمجند</span>
+                <Badge className="bg-blue-600 text-[9px]">{profileData.all_attachments.length}</Badge>
+            </h4>
+            <div className="flex flex-wrap gap-2">
+                {profileData.all_attachments.map((file: string, fIdx: number) => (
+                    <Button 
+                        key={fIdx} 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-9 gap-2 bg-white border-blue-200 text-blue-700 hover:bg-blue-100 font-bold transition-all hover:scale-105"
+                        onClick={() => handleOpenAnyFile(file)}
+                    >
+                        {file.toLowerCase().includes("pdf") ? <FileText className="w-3.5 h-3.5 text-red-500" /> : <Paperclip className="w-3.5 h-3.5" />}
+                        <span className="text-[10px]">مستند {fIdx + 1}</span>
+                    </Button>
+                ))}
+            </div>
+        </div>
+    )}
         {/* شريط البحث */}
         <div className="flex items-center gap-3 mb-4 no-print flex-wrap">
     {/* 🆕 1. قائمة اختيار الحصة */}
@@ -1444,6 +1484,7 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                 <TableHeader className="bg-slate-50">
                     <TableRow>
                         <TableHead className="font-bold text-slate-900 text-center w-28">تاريخ البداية</TableHead>
+                        <TableHead className="font-bold text-slate-900 text-center w-28">تاريخ النهاية</TableHead>
                         <TableHead className="text-center font-bold text-slate-900">الحالة</TableHead>
                         <TableHead className="text-center font-bold text-slate-900">المدة</TableHead>
                         <TableHead className="text-right font-bold text-slate-900">الملاحظات</TableHead>
@@ -1454,6 +1495,9 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                     {filteredAttendance.map((item: any) => (
                         <TableRow key={item.id} className="hover:bg-slate-50">
                             <TableCell className="font-mono text-xs text-center border-l border-slate-100 font-bold">{item.start_date}</TableCell>
+                            <TableCell className="font-mono text-xs text-center border-l border-slate-100 font-bold text-red-600/80">
+    {item.end_date}
+</TableCell>
                             <TableCell className="text-center">
                                 <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100 font-bold text-[10px]">
                                     {item.status_label}
@@ -1488,9 +1532,10 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                     <span className="text-[10px] font-bold text-slate-500 mb-1 print:text-black print:text-xs">
                         {label}
                     </span>
-                    <span className="text-lg font-black text-blue-700 print:text-black">
-                        {count}
-                    </span>
+                    <div className="flex flex-col items-center">
+    <span className="text-lg font-black text-blue-700 print:text-black">{count}</span>
+    <span className="text-[9px] font-bold text-slate-400">يوم</span> {/* 👈 إضافة كلمة يوم */}
+</div>
                 </div>
             ))}
         </div>
@@ -1631,29 +1676,13 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
         {paginatedReports.length > 0 ? (
             <div className="space-y-4">
                 <div className="space-y-3">
-                    {paginatedReports.map((rep: any, idx: number) => {
-                        const sub = getSubjectInfo(rep.branch || 'sports');
-                        return (
-                            <div key={idx} className="bg-slate-50 p-3 rounded-lg border flex flex-col md:flex-row justify-between items-start gap-2 hover:border-blue-200 transition-colors">
-                                <div className="flex-1">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="font-bold text-slate-800 text-sm">{rep.title}</span>
-                                        <Badge className={`${sub.color} border-0 text-[9px] h-5 flex items-center gap-1 font-bold`}>
-                                            {sub.icon} {sub.label}
-                                        </Badge>
-                                    </div>
-                                    <p className="text-xs text-slate-500 whitespace-pre-wrap leading-relaxed">{rep.details}</p>
-                                    <div className="flex items-center gap-1 mt-2 text-[10px] font-bold text-slate-400">
-                                        <User className="w-3 h-3"/> {rep.trainer}
-                                    </div>
-                                </div>
-                                <Badge variant="outline" className="bg-white whitespace-nowrap text-[10px] font-mono">
-                                    {rep.date}
-                                </Badge>
-                            </div>
-                        )
-                    })}
-                </div>
+    {paginatedReports.map((rep: any, idx: number) => {
+        const sub = getSubjectInfo(rep.branch || 'sports');
+        return (
+            <ReportItem key={idx} rep={rep} sub={sub} /> // 👈 استدعاء المكون الجديد
+        );
+    })}
+</div>
                 
                 {/* شريط الترقيم للتقارير */}
                 <div className="flex flex-col sm:flex-row items-center justify-between pt-2 gap-4 border-t mt-2">
@@ -1716,4 +1745,55 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
         </div>
         </ProtectedRoute>
     )
+}
+// 🟢 ضعه هنا في نهاية الملف تماماً خارج كل الدوال
+function ReportItem({ rep, sub }: { rep: any, sub: any }) {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const isLong = rep.details && rep.details.length > 160;
+
+    return (
+        <div className="bg-slate-50 p-3 rounded-lg border flex flex-col md:flex-row justify-between items-start gap-2 hover:border-blue-200 transition-colors shadow-sm">
+            <div className="flex-1 w-full">
+                <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-800 text-sm">{rep.title}</span>
+                        <Badge className={`${sub.color} border-0 text-[9px] h-5 flex items-center gap-1 font-bold`}>
+                            {sub.icon} {sub.label}
+                        </Badge>
+                    </div>
+                    <Badge variant="outline" className="bg-white text-[10px] font-mono border-slate-200 text-slate-500">
+                        {rep.date}
+                    </Badge>
+                </div>
+
+                <div className="relative">
+                    <p className={cn(
+                        "text-xs text-slate-500 whitespace-pre-wrap leading-relaxed transition-all duration-300",
+                        !isExpanded && isLong && "line-clamp-2"
+                    )}>
+                        {rep.details}
+                    </p>
+                    
+                    {isLong && (
+                        <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => setIsExpanded(!isExpanded)}
+                            className="h-6 mt-1 p-0 text-blue-600 hover:text-blue-800 text-[10px] font-bold gap-1 no-print hover:bg-transparent"
+                        >
+                            {isExpanded ? (
+                                <>عرض أقل <ChevronUp className="w-3 h-3"/></>
+                            ) : (
+                                <>... عرض المزيد <ChevronDown className="w-3 h-3"/></>
+                            )}
+                        </Button>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-1 mt-2 text-[10px] font-bold text-slate-400 border-t border-slate-100 pt-2">
+                    <User className="w-3 h-3"/> {rep.trainer}
+                </div>
+            </div>
+        </div>
+    );
 }

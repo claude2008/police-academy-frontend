@@ -191,36 +191,61 @@ const handleSaveToArchive = async () => {
     if (!saveTitle) return toast.error("يرجى كتابة عنوان للاختبار")
     setIsSaving(true)
     
-    // 1. استخراج اسم الدورة (Course)
+    // 🟢 منطق التنظيف والتثبيت (Sanitization & Syncing)
+    const cleanedResults = data.map((row) => {
+        // 1. استخراج الملاحظة الأصلية أياً كان مكانها (عربي أو إنجليزي)
+        const finalNote = String(row['ملاحظات'] || row['notes'] || "").trim();
+        
+        // 2. فحص الحالة الإدارية
+        const isAdminCase = /إعفاء|اعفاء|غياب|مستشفى|طبي/.test(finalNote);
+        
+        // عمل نسخة من السطر
+        let cleanedRow = { ...row };
+
+        // 3. 🛡️ أهم خطوة: تثبيت الملاحظة في كل المفاتيح لضمان الحفظ
+        cleanedRow['notes'] = finalNote;
+        cleanedRow['ملاحظات'] = finalNote;
+
+        if (isAdminCase) {
+            // تحويل الأصفار لشرطة في النسخة المرسلة
+            Object.keys(cleanedRow).forEach(key => {
+                if (cleanedRow[key] === 0 || cleanedRow[key] === "0" || cleanedRow[key] === "0.00") {
+                    cleanedRow[key] = "-";
+                }
+            });
+
+            // تحويل النتيجة لشرطة (تثبيتها في العربي والإنجليزي)
+            cleanedRow['final_result'] = "-";
+            cleanedRow['النتيجة'] = "-";
+            
+            // تحويل الدرجة النهائية لشرطة
+            cleanedRow['average'] = "-";
+            cleanedRow['الدرجة النهائية'] = "-";
+        }
+
+        return cleanedRow;
+    });
+
+    // --- استخراج الدورة والدفعة (نفس كودك الأصلي دون تغيير) ---
     let targetCourse = "عام";
-    
-    // أولوية 1: إذا اختار المستخدم دورة من الفلتر، نعتمدها
     if (filterCourse !== "all" && filterCourse !== "") {
         targetCourse = filterCourse;
-    } 
-    // أولوية 2: إذا لم يختر، نبحث في بيانات الطالب الأول عن أي مسمى للدورة
-    else if (data.length > 0) {
+    } else if (data.length > 0) {
         targetCourse = data[0]['course'] || data[0]['اسم الدورة'] || data[0]['الدورة'] || "عام";
     }
 
-    // 2. استخراج اسم الدفعة (Batch)
     let targetBatch = "عام";
-    
-    // نبحث في بيانات الطالب الأول عن أي مسمى للدفعة
     if (data.length > 0) {
         targetBatch = data[0]['batch'] || data[0]['الدفعة'] || data[0]['رقم الدفعة'] || "عام";
     }
-
-    // للتأكد (يمكنك رؤية هذا في الكونسول F12)
-    console.log("سيتم الحفظ بالبيانات التالية:", { Course: targetCourse, Batch: targetBatch });
 
     try {
         const payload = {
             title: saveTitle,
             exam_date: new Date().toISOString().split('T')[0],
-            course: targetCourse, // 👈 القيمة المستخرجة
-            batch: targetBatch,   // 👈 القيمة المستخرجة
-            results: data 
+            course: targetCourse,
+            batch: targetBatch,
+            results: cleanedResults // 👈 نرسل البيانات المنظفة والمثبتة
         }
 
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/save-calculated`, {
@@ -808,38 +833,74 @@ const screenVisibleColumns = useMemo(() => {
                 </TableRow>
             </TableHeader>
             <TableBody>
-                {loading ? (
-                <TableRow><TableCell colSpan={screenVisibleColumns.length + 1} className="h-24 text-center">جارِ التحميل...</TableCell></TableRow>
-                ) : paginatedData.length === 0 ? (
-                <TableRow><TableCell colSpan={screenVisibleColumns.length + 1} className="h-24 text-center text-slate-500">لا توجد نتائج.</TableCell></TableRow>
-                ) : (
-                paginatedData.map((row, index) => (
-                    <TableRow key={index} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 group ${row.is_special_row ? 'bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-900/20' : ''}`}>
-                    <TableCell className="text-center text-slate-500 font-mono text-xs">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
-                    {screenVisibleColumns.map((key) => (
-                        <TableCell key={key} className={`text-right whitespace-nowrap py-3 text-sm ${getCellClass(key, row[key])}`}>
-                        {key === 'final_result' ? (
-                            (row[key] !== 'Pass' && row[key] !== 'Fail') ? (
-                            <span className="font-bold text-slate-700 dark:text-slate-300">{row[key]}</span>
-                            ) : (
-                            <Badge variant={row[key] === 'Pass' ? 'default' : 'destructive'} 
-                                className={row[key] === 'Pass' ? 'bg-green-100 text-green-800 hover:bg-green-200' : ''}>
-                                {row[key] === 'Pass' ? 'ناجح' : 'راسب'}
-                            </Badge>
-                            )
-                        ) : String(row[key]).includes('ممتاز') ? (
-                            <Badge className="bg-[#7030a0] text-white hover:bg-[#7030a0]/90 font-bold">{row[key]}</Badge>
-                        ) : key === 'average' ? (
-                            <span className="font-bold text-blue-600 dark:text-blue-400">{isNaN(Number(row[key])) ? row[key] : `${Number(row[key]).toFixed(2)}%`}</span>
-                        ) : (
-                            <span className={String(row[key]).includes('راسب') ? 'text-red-600 font-bold' : ''}>{row[key]}</span>
-                        )}
-                        </TableCell>
-                    ))}
-                    </TableRow>
-                ))
-                )}
-            </TableBody>
+    {loading ? (
+        <TableRow><TableCell colSpan={screenVisibleColumns.length + 1} className="h-24 text-center">جارِ التحميل...</TableCell></TableRow>
+    ) : paginatedData.length === 0 ? (
+        <TableRow><TableCell colSpan={screenVisibleColumns.length + 1} className="h-24 text-center text-slate-500">لا توجد نتائج.</TableCell></TableRow>
+    ) : (
+        paginatedData.map((row, index) => {
+            // 🟢 1. استخراج القيم الحقيقية باستخدام كافة المسميات المحتملة (عربي وإنجليزي)
+            const noteText = String(row['ملاحظات'] || row['notes'] || "").trim();
+            const rawResult = String(row['النتيجة'] || row['final_result'] || "").trim();
+
+            // 🟢 2. فحص الحالة الإدارية (تجاهل الهمزات لضمان الدقة)
+            const isAdminCase = /إعفاء|اعفاء|غياب|مستشفى|طبي/.test(noteText);
+            
+            // 🟢 3. فحص هل النتيجة "راسب" (بالعربي أو الإنجليزي)
+            const isFail = rawResult === "راسب" || rawResult === "Fail";
+
+            return (
+                <TableRow key={index} className={`hover:bg-slate-50 dark:hover:bg-slate-800/50 group ${row.is_special_row ? 'bg-yellow-50 hover:bg-yellow-100 dark:bg-yellow-900/20' : ''}`}>
+                    <TableCell className="text-center text-slate-500 font-mono text-xs">
+                        {(currentPage - 1) * itemsPerPage + index + 1}
+                    </TableCell>
+                    
+                    {screenVisibleColumns.map((key) => {
+                        // جلب القيمة الأصلية للخلية
+                        let cellValue = row[key];
+                        
+                        // فحص هل القيمة صفرية
+                        const isZero = cellValue === 0 || cellValue === "0" || cellValue === "0.00";
+
+                        // 🟢 4. تحويل الأصفار لشرطة في حال وجود عذر إداري
+                        if (isAdminCase && isZero) {
+                            cellValue = "-";
+                        }
+
+                        return (
+                            <TableCell key={key} className={`text-right whitespace-nowrap py-3 text-sm ${getCellClass(key, row[key])}`}>
+                                { (key === 'final_result' || key === 'النتيجة') ? (
+                                    // 🟢 5. التعامل مع عمود النتيجة (إخفاء راسب في حالات الإعفاء)
+                                    (isAdminCase && isFail) ? (
+                                        <span className="font-bold text-slate-400">-</span>
+                                    ) : (cellValue !== 'Pass' && cellValue !== 'Fail' && cellValue !== 'ناجح' && cellValue !== 'راسب') ? (
+                                        <span className="font-bold text-slate-700 dark:text-slate-300">{cellValue}</span>
+                                    ) : (
+                                        <Badge variant={(cellValue === 'Pass' || cellValue === 'ناجح') ? 'default' : 'destructive'} 
+                                            className={(cellValue === 'Pass' || cellValue === 'ناجح') ? 'bg-green-100 text-green-800 hover:bg-green-200' : ''}>
+                                            {(cellValue === 'Pass' || cellValue === 'ناجح') ? 'ناجح' : 'راسب'}
+                                        </Badge>
+                                    )
+                                ) : String(cellValue).includes('ممتاز') ? (
+                                    <Badge className="bg-[#7030a0] text-white hover:bg-[#7030a0]/90 font-bold">{cellValue}</Badge>
+                                ) : (key === 'average' || key === 'الدرجة النهائية') ? (
+                                    <span className="font-bold text-blue-600 dark:text-blue-400">
+                                        {/* 🟢 6. عرض الرقم فقط بدون علامة % مع تحويل الصفر لشرطة في الإعفاء */}
+                                        { (isAdminCase && (row[key] === 0 || row[key] === "0")) ? "-" : (isNaN(Number(row[key])) ? row[key] : Number(row[key]).toFixed(2)) }
+                                    </span>
+                                ) : (
+                                    <span className={String(cellValue).includes('راسب') ? 'text-red-600 font-bold' : ''}>
+                                        {cellValue}
+                                    </span>
+                                )}
+                            </TableCell>
+                        );
+                    })}
+                </TableRow>
+            );
+        })
+    )}
+</TableBody>
             </Table>
         </div>
 
@@ -911,102 +972,80 @@ const screenVisibleColumns = useMemo(() => {
             </thead>
 
             <tbody>
-                {printableRows.map((row, index) => (
-                <tr 
-  key={index} 
-  className={
-    // 🟢 تلوين الصف بالأصفر فقط إذا كان التقرير "عام" وكان هناك حالة خاصة (رأفة أو غياب)
-    // أما في تقارير الاتحاد والكنترول، سيبقى الصف أبيضاً رسمياً
-    (row.is_special_row && reportType === 'general') 
-      ? 'bg-yellow-100 print:bg-yellow-100' 
-      : ''
-  }
->
-                    <td className={`border border-black ${cellPaddingClass} text-center font-bold text-black`}>{index + 1}</td>
-                    {printVisibleColumns.map((key) => (
-                   <td key={key} className={`border border-black ${cellPaddingClass} text-center whitespace-nowrap font-bold text-black`}>
-    {(() => {
-        // 1. معالجة عمود النتيجة النهائية
-        if (key === 'final_result') {
-            return row[key] === 'Pass' ? <span className="text-green-700 print:text-green-700">ناجح</span> :
-                   row[key] === 'Fail' ? <span className="text-red-600 print:text-red-600">راسب</span> :
-                   <span>{row[key]}</span>;
-        }
+    {printableRows.map((row, index) => {
+        // 1. استخراج الملاحظات والنتيجة بدقة (عربي وإنجليزي)
+        const noteValueRaw = String(row['ملاحظات'] || row['notes'] || "").trim();
+        const isAdminCase = /إعفاء|اعفاء|غياب|مستشفى|طبي/.test(noteValueRaw);
 
-        // 2. معالجة عمود تاريخ الميلاد (حل مشكلة 33940)
-        // ابحث عن هذا الجزء (تقريباً سطر 575) وحدثه:
-if (key === 'تاريخ الميلاد' || key === 'dob') {
-    const val = row[key];
-    
-    // 🆕 التعديل: إذا كان التقرير للاتحاد والقيمة فارغة، نرجع نصاً فارغاً
-    if (reportType === 'union' && (!val || val === "" || val === "-" || val === "0")) {
-        return ""; 
-    }
+        return (
+            <tr 
+                key={index} 
+                className={(row.is_special_row && reportType === 'general') ? 'bg-yellow-100 print:bg-yellow-100' : ''}
+            >
+                <td className={`border border-black ${cellPaddingClass} text-center font-bold text-black`}>{index + 1}</td>
+                {printVisibleColumns.map((key) => (
+                    <td key={key} className={`border border-black ${cellPaddingClass} text-center whitespace-nowrap font-bold text-black`}>
+                        {(() => {
+                            const val = row[key];
+                            const isZero = val === 0 || val === "0" || val === "0.00";
 
-    if (!val || val === "" || val === "-") return "-";
-    
-    // منطق تحويل تاريخ إكسيل (يبقى كما هو)
-    if (typeof val === 'number' || (!isNaN(Number(val)) && String(val).length <= 5)) {
-        try {
-            const date = new Date(Math.round((Number(val) - 25569) * 86400 * 1000));
-            return <span>{format(date, "yyyy-MM-dd")}</span>;
-        } catch (e) { return <span>{val}</span>; }
-    }
-    return <span>{val}</span>;
-}
+                            // 2. معالجة عمود النتيجة النهائية (عربي/إنجليزي)
+                            if (key === 'final_result' || key === 'النتيجة') {
+                                if (isAdminCase && (val === 'Fail' || val === 'راسب')) return <span className="text-slate-400">-</span>;
+                                return (val === 'Pass' || val === 'ناجح') ? <span className="text-green-700">ناجح</span> :
+                                       (val === 'Fail' || val === 'راسب') ? <span className="text-red-600">راسب</span> : <span>{val}</span>;
+                            }
 
-        // 3. معالجة الدرجة النهائية (المعدل %)
-        if (key === 'average') {
-            return <span>{isNaN(Number(row[key])) ? row[key] : `${Number(row[key]).toFixed(2)}%`}</span>;
-        }
+                            // 3. معالجة عمود تاريخ الميلاد
+                            if (key === 'تاريخ الميلاد' || key === 'dob') {
+                                if (reportType === 'union' && (!val || val === "" || val === "-" || val === "0")) return ""; 
+                                if (!val || val === "" || val === "-") return "-";
+                                if (typeof val === 'number' || (!isNaN(Number(val)) && String(val).length <= 5)) {
+                                    try {
+                                        const date = new Date(Math.round((Number(val) - 25569) * 86400 * 1000));
+                                        return <span>{format(date, "yyyy-MM-dd")}</span>;
+                                    } catch (e) { return <span>{val}</span>; }
+                                }
+                                return <span>{val}</span>;
+                            }
 
-        // 4. معالجة درجة المدرب (10%)
-        if (key === 'trainer_score') {
-            return (
-                <span className="font-bold">
-                    {(row[key] && String(row[key]).trim() !== "" && String(row[key]).trim() !== "-") 
-                        ? row[key] 
-                        : "-"}
-                </span>
-            );
-        }
+                            // 4. معالجة الدرجة النهائية (حذف علامة %)
+                            if (key === 'average' || key === 'الدرجة النهائية') {
+                                if (isAdminCase && isZero) return "-";
+                                return <span>{isNaN(Number(val)) ? val : Number(val).toFixed(2)}</span>;
+                            }
 
-        // 5. معالجة الملاحظات
-        // 🆕 تعديل عمود الملاحظات لإخفاء كلمات الرأفة
-if (key === 'notes' || key === 'ملاحظات') {
-    const noteValue = String(row[key] || "");
-    
-    // إذا كان نوع التقرير اتحاد أو كنترول
-    if (reportType === 'union' || reportType === 'control') {
-        // قائمة الكلمات التي نريد حذفها (الرأفة بكل أشكالها)
-        const mercyKeywords = ["رأفة", "رافه", "بموجب الرأفة", "جري", "ضغط", "بطن"];
-        
-        // إذا كانت الملاحظة تحتوي على كلمة "رأفة"
-        if (mercyKeywords.some(word => noteValue.includes(word))) {
-            return ""; // نترك الخلية فاضية تماماً في الطباعة
-        }
-    }
-    
-    return <span>{noteValue}</span>;
-}
+                            // 5. معالجة درجة المدرب
+                            if (key === 'trainer_score' || key === 'درجة المدرب') {
+                                if (isAdminCase && isZero) return "-";
+                                return <span className="font-bold">{(val && String(val).trim() !== "" && String(val).trim() !== "-") ? val : "-"}</span>;
+                            }
 
-        // 6. معالجة التلوين لتقدير (ممتاز) أو (راسب) في أي عمود آخر
-        const valStr = String(row[key]);
-        if (valStr.includes('ممتاز')) {
-            return <span className="text-[#7030a0] print:text-[#7030a0]">{row[key]}</span>;
-        }
-        if (valStr.includes('راسب')) {
-            return <span className="text-red-600 print:text-red-600">{row[key]}</span>;
-        }
+                            // 6. معالجة الملاحظات (إخفاء الرأفة في تقارير معينة)
+                            if (key === 'notes' || key === 'ملاحظات') {
+                                let finalNote = noteValueRaw;
+                                if (reportType === 'union' || reportType === 'control') {
+                                    const mercyKeywords = ["رأفة", "رافه", "بموجب الرأفة", "جري", "ضغط", "بطن"];
+                                    if (mercyKeywords.some(word => finalNote.includes(word))) return ""; 
+                                }
+                                return <span>{finalNote}</span>;
+                            }
 
-        // 7. القيمة الافتراضية لأي عمود آخر
-        return row[key];
-    })()}
-</td>
-                    ))}
-                </tr>
+                            // 7. تصفية الأصفار العامة وتنسيق التقديرات
+                            if (isAdminCase && isZero) return "-";
+
+                            const valStr = String(val);
+                            if (valStr.includes('ممتاز')) return <span className="text-[#7030a0]">{val}</span>;
+                            if (valStr.includes('راسب')) return <span className="text-red-600">{val}</span>;
+
+                            return val;
+                        })()}
+                    </td>
                 ))}
-            </tbody>
+            </tr>
+        );
+    })}
+</tbody>
             </table>
         </div>
 

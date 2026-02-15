@@ -846,7 +846,7 @@ const handlePrint = () => {
                 {approval ? (
                     <div className="relative group flex flex-col items-center">
                         {/* 🛡️ زر إلغاء الاعتماد يظهر فقط للاونر أو المدير لزيادة الأمان */}
-                        {(userRole === "owner" || userRole === "manager" || userRole === "military_officer" || userRole === "sports_officer") && (
+                        {(userRole === "owner" || userRole === "manager" || userRole === "admin" || userRole === "military_officer" || userRole === "sports_officer") && (
                             <Button 
                                 variant="ghost" 
                                 size="icon" 
