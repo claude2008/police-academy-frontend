@@ -63,7 +63,7 @@ export default function WeeklyGradesPage() {
 
     const [currentPage, setCurrentPage] = useState(1)
     const [itemsPerPage, setItemsPerPage] = useState(50)
-
+    const [prevScores, setPrevScores] = useState<Record<number, number>>({});
     const [weekTitle, setWeekTitle] = useState("")
     const [subject, setSubject] = useState("لياقة بدنية")
     const [startDate, setStartDate] = useState("")
@@ -201,24 +201,25 @@ export default function WeeklyGradesPage() {
 
     // --- Logic ---
     const fetchData = async () => {
-
         if (!startDate || !endDate || !weekTitle) {
             return toast.error("الرجاء إدخال العنوان والتاريخ");
         }
         if (filterCourse === "طلبة الدبلوم" && !selectedPeriod) {
             return toast.error("الرجاء اختيار الفترة الدراسية لطلبة الدبلوم");
         }
-       if (isPathIncomplete) return;
+        if (isPathIncomplete) return;
         setLoading(true);
         setExistingReportId(null); 
 
         try {
+            // 1. التحقق من وجود تقرير محفوظ مسبقاً لهذا الأسبوع
             const checkParams = new URLSearchParams({
                 course: filterCourse, batch: filterBatch, company: filterCompany, platoon: filterPlatoon, title: weekTitle, subject: subject
             });
             const checkRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports/check?${checkParams.toString()}`);
             const checkJson = await checkRes.json();
 
+            // 2. جلب قائمة الجنود بناءً على الفلاتر
             const params = new URLSearchParams({ limit: "1000" })
             if (filterCourse !== 'all') params.append('course', filterCourse)
             if (filterBatch !== 'all') params.append('batch', filterBatch)
@@ -226,24 +227,44 @@ export default function WeeklyGradesPage() {
             if (filterPlatoon !== 'all') params.append('platoon', filterPlatoon)
             
             const soldiersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${params.toString()}`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-});
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
             const soldiersJson = await soldiersRes.json()
 
+            // 3. جلب بيانات التكميل (الحضور والمخالفات)
             const attParams = new URLSearchParams({ 
-    class_type: subject === "لياقة بدنية" ? "fitness" : "combat", 
-    start_date: startDate, 
-    end_date: endDate,
-    // 🟢 أضف هذين السطرين ليعمل الفلتر الذكي
-    course: filterCourse,
-    batch: filterBatch
-})
+                class_type: subject === "لياقة بدنية" ? "fitness" : "combat", 
+                start_date: startDate, 
+                end_date: endDate,
+                course: filterCourse,
+                batch: filterBatch
+            })
             const attRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/attendance/?${attParams.toString()}`, {
-    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-});
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
             const attJson = await attRes.json()
             setAttendanceData(attJson)
 
+            // 🟢 4. [المنطق الجديد]: جلب "آخر مجموع سابق" من الباك إند
+            const prevParams = new URLSearchParams({
+                course: filterCourse,
+                batch: filterBatch,
+                company: filterCompany,
+                platoon: filterPlatoon,
+                subject: subject,
+                current_start_date: startDate
+            });
+            const prevRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports/last-total-score?${prevParams.toString()}`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            if (prevRes.ok) {
+                const prevJson = await prevRes.json();
+                setPrevScores(prevJson); // تخزين المجموع السابق في الـ State
+            } else {
+                setPrevScores({}); // تصفير في حال عدم وجود بيانات
+            }
+
+            // 5. معالجة وتجهيز بيانات الطلاب في الجدول
             let processedSoldiers = [];
 
             if (checkJson.found) {
@@ -301,8 +322,12 @@ export default function WeeklyGradesPage() {
             setSoldiers(processedSoldiers);
             setSelectedSoldiers(new Set());
             setCurrentPage(1);
-        } catch (e) { console.error(e); toast.error("حدث خطأ أثناء جلب البيانات"); } 
-        finally { setLoading(false) }
+        } catch (e) { 
+            console.error(e); 
+            toast.error("حدث خطأ أثناء جلب البيانات"); 
+        } finally { 
+            setLoading(false) 
+        }
     }
 
     const handleScoreChange = (id: number, type: 'e' | 'c', val: string) => {
@@ -646,7 +671,9 @@ useEffect(() => {
             
             {/* 📝 عمود الاسم: تم تعديل المسافة (right-[90px]) ليفسح مجالاً للصورة */}
             <TableHead className="w-[120px] md:w-[180px] text-right border p-1 bg-slate-100 sticky right-[90px] z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">الاسم</TableHead>
-            
+            <TableHead className="w-[70px] text-center border bg-slate-200 text-slate-700 font-bold p-1 sticky right-[270px] z-30 shadow-sm">
+    <span className="text-[10px]">آخر مجموع</span>
+</TableHead>
             <TableHead className="w-[50px] min-w-[50px] md:w-[80px] md:min-w-[80px] text-center border bg-blue-50 text-blue-900 font-bold p-1"><span className="text-[10px] md:text-xs">السلوك</span></TableHead>
             <TableHead className="w-[35px] min-w-[35px] md:w-[80px] md:min-w-[80px] text-center border bg-yellow-50 text-yellow-900 font-bold p-0"><span className="text-[9px] md:text-xs">الجهد</span></TableHead>
             <TableHead className="w-[40px] min-w-[40px] md:w-[80px] md:min-w-[80px] text-center border bg-green-50 text-green-900 font-bold p-0"><span className="text-[8px] md:text-xs tracking-tighter">الاستيعاب</span></TableHead>
@@ -691,7 +718,9 @@ useEffect(() => {
                     <TableCell className="p-1 border text-right font-medium text-[10px] md:text-xs sticky right-[90px] bg-white group-hover:bg-slate-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate max-w-[100px] md:max-w-none">
                         {soldier.name}
                     </TableCell>
-
+                    <TableCell className="p-1 border text-center font-bold text-slate-400 bg-slate-50/50 text-xs sticky right-[270px] z-10">
+    {prevScores[soldier.id] !== undefined ? prevScores[soldier.id].toFixed(2) : "--"}
+</TableCell>
                     <TableCell className="p-1 border text-center font-bold text-blue-700 bg-blue-50/50 text-xs md:text-sm">{soldier.scores.b}</TableCell>
                     <TableCell className="p-0 border text-center bg-yellow-50/50"><Input inputMode="decimal" className="h-8 w-full text-center text-[10px] md:text-sm font-bold p-0 border-transparent hover:border-slate-300 focus:bg-white" value={soldier.scores.e} onChange={(e) => handleScoreChange(soldier.id, 'e', e.target.value)} /></TableCell>
                     <TableCell className="p-0 border text-center bg-green-50/50"><Input inputMode="decimal" className="h-8 w-full text-center text-[10px] md:text-sm font-bold p-0 border-transparent hover:border-slate-300 focus:bg-white" value={soldier.scores.c} onChange={(e) => handleScoreChange(soldier.id, 'c', e.target.value)} /></TableCell>
