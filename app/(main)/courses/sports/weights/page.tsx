@@ -719,7 +719,7 @@ export default function WeightsPage() {
               ) : (
                 <>
                   <Users className="w-4 h-4" />
-                  الموزونون فقط
+                  الموزونون
                 </>
               )}
             </Button>
@@ -731,7 +731,7 @@ export default function WeightsPage() {
               <Download className="w-4 h-4" /> Excel
             </Button>
             <Button onClick={handleSave} disabled={isSaving || (!isPathComplete && !showWeighedOnly)} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} حفظ السجل
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} حفظ
             </Button>
         </div>
       </div>
