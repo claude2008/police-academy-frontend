@@ -178,6 +178,7 @@ const navigationStructure: NavItem[] = [
                     { id: "cs-sp-grad", name: "الدرجات الأسبوعية", href: "/courses/sports/weekly-grades", icon: Table },
                     { id: "cs-sp-wgt", name: "متابعة الأوزان", href: "/courses/sports/weights", icon: Scale },
                     { id: "cs-sp-soldiers", name: "ملف المجند", href: "/courses/sports/soldiers", icon: Users },
+                    
                 ]
             },
             {
@@ -199,6 +200,7 @@ const navigationStructure: NavItem[] = [
                     { id: "cs-mil-vio-history", name: "عرض المخالفات المعتمدة ", href: "/violations/history", icon: FileText },
                     { id: "cs-mil-rep", name: "تقرير عن مجند ", href: "/courses/military/reports", icon: FileText }, 
                     { id: "cs-mil-soldiers", name: "ملف المجند", href: "/courses/military/soldiers", icon: Users },
+        
                 ]
             }
         ]
@@ -396,6 +398,7 @@ const NavIcon = ({ active, color, icon, isHome = false }: any) => (
     const allowed = ["owner", "manager", "admin"]; 
     if (isLoading || !allowed.includes(userRole || "")) return null;
 }
+
 // 🛡️ حماية رابط "المقارنات" - يظهر للمالك (Owner) فقط
 if (item.id === "compare") {
     if (isLoading || userRole !== "owner") {

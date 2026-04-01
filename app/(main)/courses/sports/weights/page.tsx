@@ -15,14 +15,15 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { 
   Printer, Download, Save, Plus, Trash2, Search, Scale, Dumbbell, Swords, User, AlertTriangle, 
-  ChevronLeft, ChevronRight, Eye, EyeOff, Loader2,X, Zap
+  ChevronLeft, ChevronRight, Eye, EyeOff, Loader2, X, Zap, Users, CheckCircle2
 } from "lucide-react"
-import { Label } from "@/components/ui/label" // 👈 أضف هذا السطر
+import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { ar } from "date-fns/locale"
 import * as XLSX from 'xlsx'
 import ProtectedRoute from "@/components/ProtectedRoute"
+
 // --- أنواع البيانات ---
 type WeightSession = {
   id: string 
@@ -37,6 +38,7 @@ const DRAFT_KEY = "weights_draft_sessions";
 
 export default function WeightsPage() {
   const [soldiers, setSoldiers] = useState<any[]>([])
+  const [allCourseSoldiers, setAllCourseSoldiers] = useState<any[]>([]) // 🆕 لحفظ كل طلاب الدورة
   const [sessions, setSessions] = useState<WeightSession[]>([])
   const [classType, setClassType] = useState("fitness")
   
@@ -46,6 +48,7 @@ export default function WeightsPage() {
   const [filterCompany, setFilterCompany] = useState("all")
   const [filterPlatoon, setFilterPlatoon] = useState("all")
   const [filterOptions, setFilterOptions] = useState<any>({ courses: [], batches: [], companies: [], platoons: [] })
+  
   // 🟢 حالات وضع الترحيل السريع
   const [isQuickMode, setIsQuickMode] = useState(false);
   const [quickSearchId, setQuickSearchId] = useState("");
@@ -56,13 +59,16 @@ export default function WeightsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null)
   
-  // 🔒 قفل الأمان: لن نحفظ أي شيء في الذاكرة حتى نتأكد أننا قرأنا منها أولاً
+  // 🆕 حالة وضع عرض الموزونين فقط
+  const [showWeighedOnly, setShowWeighedOnly] = useState(false);
+  
+  // 🔒 قفل الأمان
   const [isLoadedFromStorage, setIsLoadedFromStorage] = useState(false)
 
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(50) 
 
-  // 1. عند فتح الصفحة: استرجاع المسودة فوراً (قبل أي شيء)
+  // 1. استرجاع المسودة عند فتح الصفحة
   useEffect(() => {
       const savedDraft = localStorage.getItem(DRAFT_KEY);
       if (savedDraft) {
@@ -76,25 +82,17 @@ export default function WeightsPage() {
               console.error("خطأ في قراءة المسودة");
           }
       }
-      // نفتح القفل لنسمح بالحفظ المستقبلي
       setIsLoadedFromStorage(true);
   }, []);
 
-  // 2. مفعول الحفظ التلقائي (محمي بالقفل)
+  // 2. الحفظ التلقائي للمسودات
   useEffect(() => {
-      // ⛔ إذا لم ننتهي من التحميل الأولي، لا تفعل شيئاً (حماية من المسح)
       if (!isLoadedFromStorage) return;
 
       const unsavedSessions = sessions.filter(s => s.id.toString().startsWith("temp-"));
       
       if (unsavedSessions.length > 0) {
           localStorage.setItem(DRAFT_KEY, JSON.stringify(unsavedSessions));
-      } else {
-          // نمسح الذاكرة فقط إذا كانت المصفوفة فارغة وكنا قد حملنا البيانات سابقاً
-          // هذا يمنع المسح الخطأ عند التحديث
-          if (sessions.length > 0 || hasSearched) {
-             // يمكننا هنا ترك المسودة أو مسحها حسب الرغبة، الأفضل تركها للحفظ اليدوي
-          }
       }
   }, [sessions, isLoadedFromStorage, hasSearched]);
 
@@ -112,7 +110,6 @@ export default function WeightsPage() {
                 if (res.ok) {
                     let data = await res.json();
 
-                    // 🟢 [تطبيق قيود النطاق الذكية]
                     const userStr = localStorage.getItem("user");
                     if (userStr) {
                         const user = JSON.parse(userStr);
@@ -123,12 +120,10 @@ export default function WeightsPage() {
                             const allowedCompanies = scope.companies || [];
                             const allowedPlatoons = scope.platoons || [];
 
-                            // 1. فلترة الدورات
                             data.courses = data.courses.filter((courseName: string) => {
                                 return allowedCourses.some((ac: any) => ac.startsWith(courseName));
                             });
 
-                            // 2. فلترة السرايا والفصائل بناءً على الدورة والدفعة المختارة
                             if (filterCourse !== "all" && filterBatch !== "all") {
                                 const currentKeyPrefix = `${filterCourse}||${filterBatch}->`;
                                 
@@ -140,7 +135,6 @@ export default function WeightsPage() {
                                     return allowedPlatoons.includes(`${currentKeyPrefix}${platoonName}`);
                                 });
                             } else {
-                                // إفراغ السرايا والفصائل إذا لم يتم اختيار المسار الأساسي
                                 data.companies = [];
                                 data.platoons = [];
                             }
@@ -152,36 +146,28 @@ export default function WeightsPage() {
         }
         fetchFilters()
     }, [filterCourse, filterBatch, filterCompany])
+
   const isPathComplete = useMemo(() => {
-    // 1. الدورة أساسية دائماً
     if (filterCourse === "all" || !filterCourse) return false;
-
-    // 2. فحص الدفعة: إذا كان هناك خيارات للدفعة ولم يختر المستخدم واحدة
     if (filterOptions.batches?.length > 0 && filterBatch === "all") return false;
-
-    // 3. فحص السرية: إذا كان هناك خيارات للسرية ولم يختر المستخدم واحدة
     if (filterOptions.companies?.length > 0 && filterCompany === "all") return false;
-
-    // 4. فحص الفصيل: إذا كان هناك خيارات للفصيل ولم يختر المستخدم واحدة
     if (filterOptions.platoons?.length > 0 && filterPlatoon === "all") return false;
-
-    // إذا تجاوز كل الفحوصات، فالمسار مكتمل
     return true;
   }, [filterCourse, filterBatch, filterCompany, filterPlatoon, filterOptions]);
-useEffect(() => {
+
+  useEffect(() => {
       setSoldiers([]);
       setHasSearched(false);
 
-      // ⚡ إذا اكتمل المسار تماماً، اطلب البيانات فوراً تلقائياً
       if (isPathComplete) {
           fetchData();
           setHasSearched(true);
       }
   }, [filterCourse, filterBatch, filterCompany, filterPlatoon, isPathComplete]);
+
   // 4. دالة جلب البيانات من السيرفر
- const fetchData = async () => {
+  const fetchData = async () => {
       setLoading(true)
-      // 🔑 جلب التوكن وبيانات المستخدم الحالي لتطبيق القيود
       const token = localStorage.getItem("token");
       const userStr = localStorage.getItem("user");
       const user = JSON.parse(userStr || "{}");
@@ -193,7 +179,6 @@ useEffect(() => {
       };
 
       try {
-          // أ) جلب الجنود بناءً على الفلتر الحالي (مع إرسال التوكن)
           const params = new URLSearchParams({ limit: "1000" })
           if (filterCourse !== 'all') params.append('course', filterCourse)
           if (filterBatch !== 'all') params.append('batch', filterBatch)
@@ -201,11 +186,10 @@ useEffect(() => {
           if (filterPlatoon !== 'all') params.append('platoon', filterPlatoon)
           
           const soldiersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${params.toString()}`, {
-              headers: { 'Authorization': `Bearer ${token}` } // 🛡️ التوكن الموحد
+              headers: { 'Authorization': `Bearer ${token}` }
           });
           const soldiersJson = await soldiersRes.json()
           
-          // 🟢 [تطبيق قيود النطاق الذكية على قائمة الجنود المستلمة]
           let rawSoldiers = soldiersJson.data || [];
           if (user.role !== 'owner' && scope?.is_restricted) {
               const allowedCourses = scope.courses || [];
@@ -215,12 +199,11 @@ useEffect(() => {
               });
           }
 
-          // تجهيز قائمة الجنود النهائية للعرض
           const mappedSoldiers = rawSoldiers.map((s: any) => ({
               id: s.id,
               militaryId: s.military_id,
               name: s.name,
-              image_url: s.image_url, // 🟢 الحفاظ على رابط الصورة السحابي
+              image_url: s.image_url,
               course: s.course,
               batch: s.batch,
               company: s.company,
@@ -229,13 +212,11 @@ useEffect(() => {
               initialWeight: s.initial_weight
           }));
 
-          // ب) جلب كل الأوزان (مع إرسال التوكن للأمان)
           const weightsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weights/`, {
-              headers: { 'Authorization': `Bearer ${token}` } // 🛡️ التوكن الموحد
+              headers: { 'Authorization': `Bearer ${token}` }
           });
           const weightsJson = await weightsRes.json()
 
-          // ج) تجميع الجلسات (بناءً على الجنود الظاهرين فقط!) 🛡️
           const groupedSessions: Record<string, WeightSession> = {};
           const visibleSoldierIds = new Set(mappedSoldiers.map((s: any) => s.id));
 
@@ -261,7 +242,6 @@ useEffect(() => {
           
           let serverSessions = Object.values(groupedSessions);
 
-          // د) دمج المسودات (Drafts) من المتصفح
           const savedDraft = localStorage.getItem(DRAFT_KEY);
           if (savedDraft) {
               try {
@@ -271,7 +251,6 @@ useEffect(() => {
               } catch (e) { console.error("Draft Error"); }
           }
 
-          // هـ) الترتيب والتخلص من التكرار
           const uniqueSessions = Array.from(new Map(serverSessions.map(item => [item.id, item])).values());
           uniqueSessions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -285,7 +264,111 @@ useEffect(() => {
       }
       finally { setLoading(false) }
   }
-// 🔍 دالة البحث السريع وإضافة الجندي للقائمة المؤقتة
+
+  // 🆕 دالة جلب كل طلاب الدورة/الدفعة (للوضع الجديد)
+  const fetchAllCourseSoldiers = async () => {
+      setLoading(true);
+      const token = localStorage.getItem("token");
+      const userStr = localStorage.getItem("user");
+      const user = JSON.parse(userStr || "{}");
+      const scope = user?.extra_permissions?.scope;
+
+      try {
+          // 🔹 طلب API بدون قيود السرية والفصيل
+          const params = new URLSearchParams({ limit: "1000" });
+          if (filterCourse !== 'all') params.append('course', filterCourse);
+          if (filterBatch !== 'all') params.append('batch', filterBatch);
+          // ❌ لا نرسل company أو platoon
+
+          const soldiersRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${params.toString()}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const soldiersJson = await soldiersRes.json();
+
+          let rawSoldiers = soldiersJson.data || [];
+          if (user.role !== 'owner' && scope?.is_restricted) {
+              const allowedCourses = scope.courses || [];
+              rawSoldiers = rawSoldiers.filter((s: any) => {
+                  const key = `${s.course}${s.batch ? `||${s.batch}` : ''}`;
+                  return allowedCourses.includes(key);
+              });
+          }
+
+          const mappedSoldiers = rawSoldiers.map((s: any) => ({
+              id: s.id,
+              militaryId: s.military_id,
+              name: s.name,
+              image_url: s.image_url,
+              course: s.course,
+              batch: s.batch,
+              company: s.company,
+              platoon: s.platoon,
+              height: s.height,
+              initialWeight: s.initial_weight
+          }));
+
+          // 🔹 جلب الأوزان لكل الطلاب
+          const weightsRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weights/`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const weightsJson = await weightsRes.json();
+
+          const groupedSessions: Record<string, WeightSession> = {};
+          const allSoldierIds = new Set(mappedSoldiers.map((s: any) => s.id));
+
+          if (Array.isArray(weightsJson)) {
+              weightsJson.forEach((rec: any) => {
+                  if (allSoldierIds.has(rec.soldier_id)) {
+                      if (!groupedSessions[rec.date]) {
+                          groupedSessions[rec.date] = {
+                              id: rec.date,
+                              date: rec.date,
+                              weights: {},
+                              imc: {},
+                              status: {},
+                              isHidden: false
+                          };
+                      }
+                      groupedSessions[rec.date].weights[rec.soldier_id] = rec.weight;
+                      groupedSessions[rec.date].imc[rec.soldier_id] = rec.imc;
+                      groupedSessions[rec.date].status[rec.soldier_id] = rec.status;
+                  }
+              });
+          }
+
+          let serverSessions = Object.values(groupedSessions);
+          const uniqueSessions = Array.from(new Map(serverSessions.map(item => [item.id, item])).values());
+          uniqueSessions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+          setAllCourseSoldiers(mappedSoldiers);
+          setSessions(uniqueSessions);
+
+      } catch (e) {
+          console.error(e);
+          toast.error("حدث خطأ أثناء جلب بيانات الدورة");
+      } finally {
+          setLoading(false);
+      }
+  }
+
+  // 🆕 دالة التبديل بين الوضعين
+  const handleToggleWeighedOnly = async () => {
+      if (!showWeighedOnly) {
+          // تفعيل وضع الموزونين - نحتاج بيانات الدورة الكاملة
+          await fetchAllCourseSoldiers();
+          setShowWeighedOnly(true);
+          setCurrentPage(1);
+          toast.success("تم عرض الطلاب الموزونين من الدورة كاملة ✅");
+      } else {
+          // العودة للوضع العادي
+          setShowWeighedOnly(false);
+          setAllCourseSoldiers([]);
+          setCurrentPage(1);
+          toast.info("تم العودة للعرض العادي");
+      }
+  }
+
+  // 🔍 دالة البحث السريع
   const handleQuickSearch = async () => {
     if (!quickSearchId.trim()) return;
     setLoading(true);
@@ -295,10 +378,9 @@ useEffect(() => {
       });
       if (res.ok) {
         const soldier = await res.json();
-        // منع التكرار في القائمة
         if (!quickList.find(s => s.id === soldier.id)) {
           setQuickList([{ ...soldier, weight: "", imc: 0, status: "-" }, ...quickList]);
-          setQuickSearchId(""); // تصفير البحث
+          setQuickSearchId("");
         } else {
           toast.warning("هذا الجندي مضاف بالفعل");
         }
@@ -310,7 +392,7 @@ useEffect(() => {
     }
   };
 
-  // 🚀 دالة الترحيل النهائي لقاعدة البيانات
+  // 🚀 دالة الترحيل السريع
   const handleQuickTransfer = async () => {
     const recordsToSave = quickList
       .filter(s => parseFloat(s.weight) > 0)
@@ -337,23 +419,39 @@ useEffect(() => {
 
       if (res.ok) {
         toast.success(`تم ترحيل ${recordsToSave.length} وزن بنجاح ✅`);
-        setQuickList([]); // تصفير القائمة بعد النجاح
-        if (isPathComplete) fetchData(); // تحديث الجدول الرئيسي إذا كان مفتوحاً
+        setQuickList([]);
+        if (isPathComplete) fetchData();
       }
     } finally {
       setIsSaving(false);
     }
   };
+
   useEffect(() => {
       setCurrentPage(1);
   }, [search, filterCourse, filterBatch, filterCompany, filterPlatoon])
 
+  // 🆕 تحديد البيانات المعروضة بناءً على الوضع
+  const baseData = showWeighedOnly ? allCourseSoldiers : soldiers;
+
   const filteredData = useMemo(() => {
-    return soldiers.filter(item => {
-      const matchSearch = item.name.includes(search) || item.militaryId.includes(search)
-      return matchSearch
-    })
-  }, [soldiers, search])
+    let data = baseData.filter(item => {
+      const matchSearch = item.name.includes(search) || item.militaryId.includes(search);
+      return matchSearch;
+    });
+
+    // 🆕 إذا كنا في وضع الموزونين فقط، نفلتر فقط من لديهم أوزان
+    if (showWeighedOnly) {
+        data = data.filter(soldier => {
+            return sessions.some(session => 
+                session.weights[soldier.id] && 
+                parseFloat(session.weights[soldier.id]) > 0
+            );
+        });
+    }
+
+    return data;
+  }, [baseData, search, showWeighedOnly, sessions])
 
   const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
   const totalPages = Math.ceil(filteredData.length / itemsPerPage)
@@ -378,35 +476,30 @@ useEffect(() => {
 
   const handleDeleteSession = async () => {
     if (deleteSessionId) {
-        // حذف من السيرفر (للسجلات المحفوظة)
         if (!deleteSessionId.startsWith('temp-')) {
             try {
                 const dateToDelete = sessions.find(s => s.id === deleteSessionId)?.date;
-                
-                // 🛡️ نجمع معرفات الجنود الحاليين (المفلترين) فقط
-                const visibleIds = soldiers.map(s => s.id);
+                const visibleIds = baseData.map(s => s.id);
 
                 if(dateToDelete && visibleIds.length > 0) {
                     await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weights/delete-specific`, { 
-    method: "POST",
-    headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${localStorage.getItem('token')}` // 🛡️ قفل الحماية
-    },
-    body: JSON.stringify({
-        date: dateToDelete,
-        soldier_ids: visibleIds
-    })
-});
+                        method: "POST",
+                        headers: { 
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${localStorage.getItem('token')}`
+                        },
+                        body: JSON.stringify({
+                            date: dateToDelete,
+                            soldier_ids: visibleIds
+                        })
+                    });
                 }
             } catch(e) { console.error("Failed to delete from server"); }
         }
 
-        // تحديث الواجهة (حذف العمود محلياً)
         const updatedSessions = sessions.filter(s => s.id !== deleteSessionId);
         setSessions(updatedSessions);
         
-        // تحديث المسودة
         const remainingDrafts = updatedSessions.filter(s => s.id.toString().startsWith("temp-"));
         if (remainingDrafts.length > 0) {
             localStorage.setItem(DRAFT_KEY, JSON.stringify(remainingDrafts));
@@ -441,16 +534,13 @@ useEffect(() => {
     return { text: "سمنة", color: "text-red-600 bg-red-100" };
   }
 
-  // ✅ دالة تحديث الوزن (معدلة لتقبل الأرقام العربية وتحولها لإنجليزية)
   const handleWeightChange = (sessionId: string, soldierId: number, rawInput: string) => {
-    
-    // سحر التحويل: استبدال الأرقام العربية بالإنجليزية فوراً
     const weightStr = rawInput.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
 
     setSessions(sessions.map(s => {
         if (s.id === sessionId) {
             const weight = parseFloat(weightStr);
-            const soldier = soldiers.find(so => so.id === soldierId);
+            const soldier = baseData.find(so => so.id === soldierId);
             const imc = calculateIMC(weight, soldier?.height || 0);
             const status = getIMCStatus(imc).text;
 
@@ -465,7 +555,7 @@ useEffect(() => {
     }))
   }
 
- const handleSave = async () => {
+  const handleSave = async () => {
     setIsSaving(true);
     const token = localStorage.getItem("token");
     try {
@@ -473,7 +563,6 @@ useEffect(() => {
         sessions.forEach(session => {
             Object.keys(session.weights).forEach(soldierIdStr => {
                 const soldierId = parseInt(soldierIdStr);
-                // تنظيف نهائي لأي مسافات أو أرقام غريبة
                 const rawWeight = String(session.weights[soldierId]).trim();
                 const weight = parseFloat(rawWeight);
                 
@@ -496,18 +585,22 @@ useEffect(() => {
         }
 
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weights/bulk`, {
-    method: "POST",
-    headers: { 
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${localStorage.getItem("token")}` // 🛡️ تفعيل الحماية
-    },
-    body: JSON.stringify(recordsToSave)
-});
+            method: "POST",
+            headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("token")}`
+            },
+            body: JSON.stringify(recordsToSave)
+        });
 
         if (res.ok) {
             toast.success("تم الحفظ في قاعدة البيانات بنجاح ✅");
-            localStorage.removeItem(DRAFT_KEY); // مسح المسودة فقط عند النجاح
-            fetchData(); 
+            localStorage.removeItem(DRAFT_KEY);
+            if (showWeighedOnly) {
+                await fetchAllCourseSoldiers();
+            } else {
+                fetchData();
+            }
         } else {
             const err = await res.json();
             toast.error(err.detail || "فشل الحفظ");
@@ -517,7 +610,7 @@ useEffect(() => {
     } finally {
         setIsSaving(false);
     }
-}
+  }
 
   const handleExportExcel = () => {
     const exportData = filteredData.map((s, index) => {
@@ -525,13 +618,19 @@ useEffect(() => {
             "م": index + 1,
             "الدورة": s.course,
             "الدفعة": s.batch,
-            "السرية": s.company,
-            "الفصيل": s.platoon,
-            "الرقم العسكري": s.militaryId,
-            "الاسم": s.name,
-            "الطول (سم)": s.height,
-            "الوزن الأولي": s.initialWeight,
         }
+        
+        // 🆕 إضافة السرية والفصيل في وضع الموزونين فقط
+        if (showWeighedOnly) {
+            row["السرية"] = s.company;
+            row["الفصيل"] = s.platoon;
+        }
+        
+        row["الرقم العسكري"] = s.militaryId;
+        row["الاسم"] = s.name;
+        row["الطول (سم)"] = s.height;
+        row["الوزن الأولي"] = s.initialWeight;
+        
         sessions.forEach((session, idx) => {
             const weight = session.weights[s.id];
             const imc = session.imc[s.id];
@@ -547,21 +646,27 @@ useEffect(() => {
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "سجل الأوزان");
-    XLSX.writeFile(workbook, `سجل_الأوزان_${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+    const filename = showWeighedOnly 
+        ? `الطلاب_الموزونين_${format(new Date(), "yyyy-MM-dd")}.xlsx`
+        : `سجل_الأوزان_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+    XLSX.writeFile(workbook, filename);
     toast.success("تم تصدير الملف بنجاح");
   }
 
   const filterText = [
     filterCourse !== 'all' ? filterCourse : 'جميع الدورات',
     filterBatch !== 'all' ? filterBatch : '',
-    filterCompany !== 'all' ? `السرية ${filterCompany}` : '',
-    filterPlatoon !== 'all' ? filterPlatoon : '',
+    !showWeighedOnly && filterCompany !== 'all' ? `السرية ${filterCompany}` : '',
+    !showWeighedOnly && filterPlatoon !== 'all' ? filterPlatoon : '',
   ].filter(Boolean).join(' / ');
-// 🛡️ فحص اكتمال المسار المعتمد
+
+  const reportTitle = showWeighedOnly 
+    ? "سجل الطلاب الموزونين - الدورة كاملة"
+    : "سجل متابعة الأوزان وقياسات IMC";
   
   return (
     <ProtectedRoute allowedRoles={["owner","manager","admin","assistant_admin","sports_officer","sports_supervisor", "sports_trainer"]}>
-    <div className="space-y-6 pb-20 md:pb-32 " dir="rtl">
+    <div className="space-y-6 pb-20 md:pb-32" dir="rtl">
       
       <style jsx global>{`
         @media print {
@@ -571,7 +676,7 @@ useEffect(() => {
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; zoom: 0.75; }
           body, .report-container * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
           input { border: none !important; background: transparent !important; box-shadow: none !important; }
-          .bg-\[\#d6c5a5\] { background-color: #d6c5a5 !important; border-color: black !important; }
+          .bg-\\[\\#d6c5a5\\] { background-color: #d6c5a5 !important; border-color: black !important; }
           .print-header { display: block !important; margin-bottom: 20px; }
           .print-table { display: table !important; width: 100%; }
           table, th, td, input { font-size: 12px !important; color: black !important; font-weight: bold !important; }
@@ -595,14 +700,63 @@ useEffect(() => {
           <p className="text-slate-500 mt-1">سجل دوري لمتابعة التطور البدني للمجندين</p>
         </div>
         <div className="flex gap-2">
-            <Button variant="outline" disabled={!isPathComplete} onClick={() => { document.title = `متابعة الأوزان - ${filterText}`; window.print(); }} className="gap-2"><Printer className="w-4 h-4" /> طباعة</Button>
-            <Button variant="outline" disabled={!isPathComplete} onClick={handleExportExcel} className="gap-2 border-green-600 text-green-700 hover:bg-green-50"><Download className="w-4 h-4" /> Excel</Button>
-            <Button onClick={handleSave} disabled={isSaving || !isPathComplete} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
+            {/* 🆕 زر التبديل للموزونين فقط */}
+            <Button 
+              variant={showWeighedOnly ? "default" : "outline"}
+              onClick={handleToggleWeighedOnly}
+              disabled={filterCourse === 'all' || loading}
+              className={`gap-2 font-bold shadow-md transition-all ${
+                showWeighedOnly 
+                  ? 'bg-green-600 hover:bg-green-700 text-white' 
+                  : 'border-green-600 text-green-700 hover:bg-green-50'
+              }`}
+            >
+              {showWeighedOnly ? (
+                <>
+                  <X className="w-4 h-4" />
+                  إلغاء
+                </>
+              ) : (
+                <>
+                  <Users className="w-4 h-4" />
+                  الموزونون فقط
+                </>
+              )}
+            </Button>
+            
+            <Button variant="outline" disabled={!isPathComplete && !showWeighedOnly} onClick={() => { document.title = `${reportTitle} - ${filterText}`; window.print(); }} className="gap-2">
+              <Printer className="w-4 h-4" /> طباعة
+            </Button>
+            <Button variant="outline" disabled={!isPathComplete && !showWeighedOnly} onClick={handleExportExcel} className="gap-2 border-green-600 text-green-700 hover:bg-green-50">
+              <Download className="w-4 h-4" /> Excel
+            </Button>
+            <Button onClick={handleSave} disabled={isSaving || (!isPathComplete && !showWeighedOnly)} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
                 {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} حفظ السجل
             </Button>
         </div>
       </div>
-{/* 🟢 زر تبديل وضع الترحيل السريع */}
+
+      {/* 🆕 إشعار وضع الموزونين */}
+      {showWeighedOnly && (
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-r-4 border-green-600 p-4 rounded-lg shadow-md animate-in slide-in-from-top print:hidden">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="w-6 h-6 text-green-600 flex-shrink-0" />
+            <div>
+              <p className="font-bold text-green-800 text-lg">
+                وضع الموزونين النشط - عرض الدورة كاملة
+              </p>
+              <p className="text-sm text-green-700 mt-1">
+                يتم عرض <span className="font-black text-green-900">{filteredData.length}</span> طالب موزون من 
+                <span className="font-bold"> {filterCourse}</span>
+                {filterBatch !== 'all' && <span className="font-bold"> / {filterBatch}</span>}
+                <span className="text-xs mr-2">(كل السرايا والفصائل)</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* زر الترحيل السريع */}
       <div className="flex justify-end mb-2 print:hidden">
         <Button 
           variant={isQuickMode ? "destructive" : "default"}
@@ -610,11 +764,11 @@ useEffect(() => {
           className="gap-2 font-bold shadow-lg"
         >
           {isQuickMode ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-          {isQuickMode ? "إغلاق الترحيل السريع" : "وضع الترحيل السريع (طابور مفتوح)"}
+          {isQuickMode ? "إغلاق الترحيل السريع" : "وضع الترحيل السريع "}
         </Button>
       </div>
 
-      {/* 🟢 واجهة الترحيل السريع */}
+      {/* واجهة الترحيل السريع */}
       {isQuickMode && (
         <Card className="bg-blue-50 border-blue-200 border-2 shadow-xl animate-in zoom-in-95 print:hidden mb-6">
           <CardContent className="p-6 space-y-4">
@@ -640,101 +794,99 @@ useEffect(() => {
                 />
               </div>
               <Button onClick={handleQuickSearch} disabled={loading} className="h-11 px-8 bg-blue-600 hover:bg-blue-700">
-                {loading ? <Loader2 className="animate-spin" /> : "إضافة للطابور"}
+                {loading ? <Loader2 className="animate-spin" /> : "إضافة"}
               </Button>
             </div>
 
             {quickList.length > 0 && (
-  <div className="border-2 border-blue-100 rounded-2xl bg-white overflow-hidden shadow-inner">
-    <Table>
-      <TableHeader className="bg-blue-600">
-        <TableRow>
-          {/* 🟢 إضافة عمود الصورة */}
-          <TableHead className="text-white font-bold text-center w-[70px]">الصورة</TableHead>
-          {/* 🟢 جعل محاذاة الاسم في المنتصف */}
-          <TableHead className="text-white font-bold text-center">الاسم</TableHead>
-          <TableHead className="text-white font-bold text-center">السرية/الفصيل</TableHead>
-          <TableHead className="text-white font-bold text-center w-32">الوزن الحالي</TableHead>
-          <TableHead className="text-white font-bold text-center">الحالة (IMC)</TableHead>
-          <TableHead className="w-10"></TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {quickList.map((s, index) => (
-          <TableRow key={s.id} className="border-b border-blue-50 hover:bg-blue-50/30 transition-colors">
-            {/* 🖼️ خلية الصورة المصغرة */}
-            <TableCell className="text-center">
-                <div className="w-10 h-10 rounded-full border-2 border-blue-100 overflow-hidden mx-auto shadow-sm bg-slate-100">
-                    <img 
-                        src={s.image_url ? `${s.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
-                        alt="" 
-                        className="w-full h-full object-cover"
-                        onError={(e) => {(e.target as HTMLImageElement).src = "/placeholder-user.png"}}
-                    />
+              <div className="border-2 border-blue-100 rounded-2xl bg-white overflow-hidden shadow-inner">
+                <Table>
+                  <TableHeader className="bg-blue-600">
+                    <TableRow>
+                      <TableHead className="text-white font-bold text-center w-[70px]">الصورة</TableHead>
+                      <TableHead className="text-white font-bold text-center">الاسم</TableHead>
+                      <TableHead className="text-white font-bold text-center">السرية/الفصيل</TableHead>
+                      <TableHead className="text-white font-bold text-center w-32">الوزن الحالي</TableHead>
+                      <TableHead className="text-white font-bold text-center">الحالة (IMC)</TableHead>
+                      <TableHead className="w-10"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {quickList.map((s, index) => (
+                      <TableRow key={s.id} className="border-b border-blue-50 hover:bg-blue-50/30 transition-colors">
+                        <TableCell className="text-center">
+                            <div className="w-10 h-10 rounded-full border-2 border-blue-100 overflow-hidden mx-auto shadow-sm bg-slate-100">
+                                <img 
+                                    src={s.image_url ? `${s.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
+                                    alt="" 
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {(e.target as HTMLImageElement).src = "/placeholder-user.png"}}
+                                />
+                            </div>
+                        </TableCell>
+
+                        <TableCell className="font-black text-slate-800 text-center text-sm">
+                            {s.name}
+                        </TableCell>
+
+                        <TableCell className="text-center text-[10px] font-bold text-slate-500">
+                            {s.company} / {s.platoon}
+                        </TableCell>
+
+                        <TableCell>
+                          <Input 
+                            type="text"
+                            inputMode="decimal"
+                            className="h-9 text-center font-black border-2 border-amber-200 focus:border-amber-500 bg-amber-50/30"
+                            placeholder="00.0"
+                            value={s.weight}
+                            onChange={(e) => {
+                              const rawInput = e.target.value;
+                              const weightStr = rawInput.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
+                              const newList = [...quickList];
+                              const w = parseFloat(weightStr);
+                              newList[index].weight = weightStr;
+                              newList[index].imc = calculateIMC(w, s.height);
+                              newList[index].status = getIMCStatus(newList[index].imc).text;
+                              setQuickList(newList);
+                            }}
+                          />
+                        </TableCell>
+
+                        <TableCell className="text-center">
+                           <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${getIMCStatus(s.imc).color}`}>
+                             {s.status}
+                           </span>
+                        </TableCell>
+
+                        <TableCell>
+                          <Button variant="ghost" size="icon" onClick={() => setQuickList(quickList.filter(i => i.id !== s.id))} className="hover:bg-red-50 text-red-500">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                
+                <div className="p-4 bg-slate-50 flex justify-end border-t">
+                  <Button 
+                    className="bg-green-600 hover:bg-green-700 text-white font-black px-10 h-11 gap-2 shadow-lg active:scale-95 transition-all"
+                    onClick={handleQuickTransfer}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? <Loader2 className="animate-spin" /> : <Save className="w-5 h-5" />}
+                    ترحيل كافة الأوزان 
+                  </Button>
                 </div>
-            </TableCell>
-
-            {/* 🎯 محاذاة الاسم في المنتصف مع خط عريض */}
-            <TableCell className="font-black text-slate-800 text-center text-sm">
-                {s.name}
-            </TableCell>
-
-            <TableCell className="text-center text-[10px] font-bold text-slate-500">
-                {s.company} / {s.platoon}
-            </TableCell>
-
-            <TableCell>
-              <Input 
-                type="text"
-                inputMode="decimal"
-                className="h-9 text-center font-black border-2 border-amber-200 focus:border-amber-500 bg-amber-50/30"
-                placeholder="00.0"
-                value={s.weight}
-                onChange={(e) => {
-                  const rawInput = e.target.value;
-                  const weightStr = rawInput.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
-                  const newList = [...quickList];
-                  const w = parseFloat(weightStr);
-                  newList[index].weight = weightStr;
-                  newList[index].imc = calculateIMC(w, s.height);
-                  newList[index].status = getIMCStatus(newList[index].imc).text;
-                  setQuickList(newList);
-                }}
-              />
-            </TableCell>
-
-            <TableCell className="text-center">
-               <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${getIMCStatus(s.imc).color}`}>
-                 {s.status}
-               </span>
-            </TableCell>
-
-            <TableCell>
-              <Button variant="ghost" size="icon" onClick={() => setQuickList(quickList.filter(i => i.id !== s.id))} className="hover:bg-red-50 text-red-500">
-                <Trash2 className="w-4 h-4" />
-              </Button>
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-    
-    <div className="p-4 bg-slate-50 flex justify-end border-t">
-      <Button 
-        className="bg-green-600 hover:bg-green-700 text-white font-black px-10 h-11 gap-2 shadow-lg active:scale-95 transition-all"
-        onClick={handleQuickTransfer}
-        disabled={isSaving}
-      >
-        {isSaving ? <Loader2 className="animate-spin" /> : <Save className="w-5 h-5" />}
-        ترحيل كافة الأوزان للقاعدة
-      </Button>
-    </div>
-  </div>
-)}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
+
       {/* الفلاتر */}
+      {!showWeighedOnly && (
       <Card className="print:hidden">
         <CardContent className="p-4 space-y-4">
             <div className="flex items-center gap-4 flex-wrap">
@@ -814,18 +966,19 @@ useEffect(() => {
                 <Button onClick={handleAddSession} size="icon" className="md:hidden bg-green-600 text-white hover:bg-green-700 shrink-0"><Plus className="w-5 h-5" /></Button>
                 <div className="flex-1"></div>
                 <Button 
-    onClick={handleShowList} 
-    disabled={loading || !isPathComplete} 
-    className={`${!isPathComplete ? 'opacity-50 cursor-not-allowed' : ''} bg-slate-900 text-white w-32`}
->
-    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : "عرض القائمة"}
-</Button>
+                    onClick={handleShowList} 
+                    disabled={loading || !isPathComplete} 
+                    className={`${!isPathComplete ? 'opacity-50 cursor-not-allowed' : ''} bg-slate-900 text-white w-32`}
+                >
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin"/> : "عرض القائمة"}
+                </Button>
             </div>
         </CardContent>
       </Card>
+      )}
 
-      {/* المحتوى (شاشة + طباعة) */}
-      {hasSearched && (
+      {/* الجدول - الشاشة */}
+      {(hasSearched || showWeighedOnly) && (
         <>
         <div className="border rounded-lg bg-white shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 print:hidden">
             <div className="overflow-x-auto">
@@ -836,6 +989,15 @@ useEffect(() => {
                             <TableHead rowSpan={2} className="w-[60px] text-center border border-black text-black font-bold print:hidden hidden md:table-cell">الصورة</TableHead>
                             <TableHead rowSpan={2} className="w-[80px] text-center border border-black text-black font-bold hidden md:table-cell">الرقم العسكري</TableHead>
                             <TableHead rowSpan={2} className="max-w-[160px] w-[160px] md:max-w-none md:w-[200px] text-center border border-black text-black font-bold sticky center-0 md:center-[70px] z-30 bg-[#c5b391] shadow-[-2px_0px_5px_rgba(0,0,0,0.2)]">الاسم</TableHead>
+                            
+                            {/* 🆕 عمودي السرية والفصيل في وضع الموزونين فقط */}
+                            {showWeighedOnly && (
+                                <>
+                                    <TableHead rowSpan={2} className="w-[80px] text-center border border-black text-black font-bold text-[10px] md:text-xs bg-amber-100">السرية</TableHead>
+                                    <TableHead rowSpan={2} className="w-[80px] text-center border border-black text-black font-bold text-[10px] md:text-xs bg-amber-100">الفصيل</TableHead>
+                                </>
+                            )}
+                            
                             <TableHead rowSpan={2} className="w-[50px] text-center border border-black text-black font-bold text-[10px] md:text-xs">الطول</TableHead>
                             {sessions.map((session) => {
                                 if (session.isHidden) {
@@ -880,29 +1042,33 @@ useEffect(() => {
                     </TableHeader>
                     <TableBody>
                         {filteredData.length === 0 ? (
-                             <TableRow><TableCell colSpan={10} className="h-24 text-center">لا توجد بيانات</TableCell></TableRow>
+                             <TableRow><TableCell colSpan={15} className="h-24 text-center">لا توجد بيانات</TableCell></TableRow>
                         ) : (
                             paginatedData.map((soldier, index) => (
                                 <TableRow key={soldier.id} className="hover:bg-slate-50">
                                     <TableCell className="text-center border border-slate-300 font-mono text-xs static md:sticky md:right-0 z-10 md:bg-white border-l-0">{(currentPage - 1) * itemsPerPage + index + 1}</TableCell>
                                     <TableCell className="text-center border border-slate-300 hidden md:table-cell">
-    <div className="w-9 h-9 bg-slate-100 rounded-full mx-auto flex items-center justify-center overflow-hidden border-2 border-slate-200 relative group shadow-sm">
-        <img 
-            // 🟢 استخدام الرابط السحابي المباشر مع التايم ستامب لتجنب الكاش
-            src={soldier.image_url ? `${soldier.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
-            alt={soldier.name}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-            onError={(e) => { 
-                // في حال فشل التحميل، نعرض الصورة الافتراضية
-                (e.target as HTMLImageElement).src = "/placeholder-user.png";
-            }} 
-        />
-        {/* أيقونة احتياطية تظهر في الخلفية فقط */}
-        <User className="w-4 h-4 text-slate-300 absolute z-[-1]" />
-    </div>
-</TableCell>
+                                        <div className="w-9 h-9 bg-slate-100 rounded-full mx-auto flex items-center justify-center overflow-hidden border-2 border-slate-200 relative group shadow-sm">
+                                            <img 
+                                                src={soldier.image_url ? `${soldier.image_url}?t=${new Date().getTime()}` : "/placeholder-user.png"} 
+                                                alt={soldier.name}
+                                                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                                                onError={(e) => { (e.target as HTMLImageElement).src = "/placeholder-user.png"; }} 
+                                            />
+                                            <User className="w-4 h-4 text-slate-300 absolute z-[-1]" />
+                                        </div>
+                                    </TableCell>
                                     <TableCell className="text-right border border-slate-300 font-bold text-xs hidden md:table-cell">{soldier.militaryId}</TableCell>
                                     <TableCell className="text-right border border-slate-300 font-medium text-xs sticky right-0 md:right-[40px] z-20 bg-slate-50 dark:bg-slate-950 shadow-[-2px_0px_5px_rgba(0,0,0,0.15)] max-w-[160px] md:max-w-none truncate">{soldier.name}</TableCell>
+                                    
+                                    {/* 🆕 عرض السرية والفصيل في وضع الموزونين */}
+                                    {showWeighedOnly && (
+                                        <>
+                                            <TableCell className="text-center border border-slate-300 font-bold text-xs bg-amber-50">{soldier.company}</TableCell>
+                                            <TableCell className="text-center border border-slate-300 font-bold text-xs bg-amber-50">{soldier.platoon}</TableCell>
+                                        </>
+                                    )}
+                                    
                                     <TableCell className="text-center border border-slate-300 font-mono text-xs bg-slate-50">{soldier.height}</TableCell>
                                     {sessions.map((session) => {
                                         if (session.isHidden) return <TableCell key={session.id} className="border border-slate-300 bg-gray-100 min-w-[40px] p-0"></TableCell>
@@ -911,14 +1077,16 @@ useEffect(() => {
                                         const status = getIMCStatus(imc);
                                         return (
                                             <Fragment key={session.id}>
-                                                <TableCell className="p-1 border border-slate-300"><Input 
-    type="text"             // 👈 التغيير هنا: جعلناه نصاً ليقبل الكتابة العربية
-    inputMode="decimal"     // 👈 إضافة مهمة: تظهر لوحة الأرقام في الموبايل
-    value={weight} 
-    onChange={(e) => handleWeightChange(session.id, soldier.id, e.target.value)} 
-    className="h-8 w-full text-center font-bold bg-white border-transparent hover:border-slate-300 focus:border-blue-500 text-xs px-0"  
-    placeholder="0" 
-/></TableCell>
+                                                <TableCell className="p-1 border border-slate-300">
+                                                    <Input 
+                                                        type="text"
+                                                        inputMode="decimal"
+                                                        value={weight} 
+                                                        onChange={(e) => handleWeightChange(session.id, soldier.id, e.target.value)} 
+                                                        className="h-8 w-full text-center font-bold bg-white border-transparent hover:border-slate-300 focus:border-blue-500 text-xs px-0"  
+                                                        placeholder="0" 
+                                                    />
+                                                </TableCell>
                                                 <TableCell className="text-center border border-slate-300 font-mono text-xs font-bold bg-slate-50">{imc > 0 ? imc.toFixed(1) : "-"}</TableCell>
                                                 <TableCell className="text-center border border-slate-300 p-1">{imc > 0 && (<span className={`text-[9px] font-bold px-1 py-0.5 rounded-full block w-full ${status.color} border whitespace-nowrap overflow-hidden text-ellipsis`}>{status.text}</span>)}</TableCell>
                                             </Fragment>
@@ -960,7 +1128,7 @@ useEffect(() => {
             </div>
         </div>
 
-        {/* 2. جدول الطباعة */}
+        {/* جدول الطباعة */}
         <div className="hidden print:block">
              <div className="print-header w-full border-b-2 border-black pb-4 mb-4 text-black">
                 <div className="flex justify-between items-center w-full">
@@ -969,7 +1137,7 @@ useEffect(() => {
                     </div>
                     <div className="text-center">
                         <h2 className="text-xl font-bold">مـعهد الشرطـة - فـرع التدريب الرياضـي</h2>
-                        <h1 className="text-2xl font-bold underline mt-2">سجل متابعة الأوزان وقياسات IMC</h1>
+                        <h1 className="text-2xl font-bold underline mt-2">{reportTitle}</h1>
                         <p className="text-sm font-bold mt-2 px-4 py-1 border border-black rounded inline-block">{filterText}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
@@ -985,6 +1153,12 @@ useEffect(() => {
                         <th className="border border-black p-1 text-[10px] font-bold text-black w-[30px]">#</th>
                         <th className="border border-black p-1 text-[10px] font-bold text-black w-[80px]">الرقم العسكري</th>
                         <th className="border border-black p-1 text-[10px] font-bold text-black w-[170px]">الاسم</th>
+                        {showWeighedOnly && (
+                            <>
+                                <th className="border border-black p-1 text-[10px] font-bold text-black w-[60px]">السرية</th>
+                                <th className="border border-black p-1 text-[10px] font-bold text-black w-[60px]">الفصيل</th>
+                            </>
+                        )}
                         <th className="border border-black p-1 text-[10px] font-bold text-black w-[50px]">الطول</th>
                         {sessions.map(session => {
                             if (session.isHidden) return null;
@@ -996,7 +1170,7 @@ useEffect(() => {
                         })}
                     </tr>
                     <tr className="bg-[#e0d4bc]">
-                         <th colSpan={4} className="border border-black"></th>
+                         <th colSpan={showWeighedOnly ? 6 : 4} className="border border-black"></th>
                          {sessions.map(session => {
                             if (session.isHidden) return null;
                             return (
@@ -1015,6 +1189,12 @@ useEffect(() => {
                             <td className="border border-black text-center text-[10px] font-mono">{index + 1}</td>
                             <td className="border border-black text-center text-[10px] font-bold">{soldier.militaryId}</td>
                             <td className="border border-black text-center text-[10px] font-medium px-1 whitespace-nowrap">{soldier.name}</td>
+                            {showWeighedOnly && (
+                                <>
+                                    <td className="border border-black text-center text-[10px] font-bold">{soldier.company}</td>
+                                    <td className="border border-black text-center text-[10px] font-bold">{soldier.platoon}</td>
+                                </>
+                            )}
                             <td className="border border-black text-center text-[10px] font-mono">{soldier.height}</td>
                             {sessions.map(session => {
                                 if (session.isHidden) return null;

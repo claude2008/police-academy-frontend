@@ -428,7 +428,7 @@ const confirmPhotoDelete = async () => {
       }
   };
 
-  const openEditModal = (soldier: any) => {
+ const openEditModal = (soldier: any) => {
     setEditingSoldier({
         id: soldier.id,
         military_id: soldier.military_id,
@@ -440,12 +440,15 @@ const confirmPhotoDelete = async () => {
         company: soldier.company || "",
         platoon: soldier.platoon || "",
         nationality: soldier.nationality || "",
-        dob: soldier.dob || "",
+        
+        // 🟢 التعديل السحري هنا: نأخذ أول 10 حروف فقط (YYYY-MM-DD)
+        dob: soldier.dob ? soldier.dob.substring(0, 10) : "",
+        
         height: soldier.height || "",
         initial_weight: soldier.initial_weight || "" 
     })
     setIsEditOpen(true)
-  }
+}
 
   const handleBulkDeleteClick = () => {
     if (filterCourse === "all") {
@@ -552,7 +555,7 @@ const confirmPhotoDelete = async () => {
             height: Number(normalizeInput(String(editingSoldier.height))) || 0, 
             initial_weight: Number(normalizeInput(String(editingSoldier.initial_weight))) || 0
         };
-
+console.log("الحمولة المرسلة للسيرفر:", payload);
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/${editingSoldier.id}`, { 
             method: 'PUT', 
             headers: {
@@ -1181,6 +1184,15 @@ const confirmPhotoDelete = async () => {
                     <div className="space-y-2"><Label>الرتبة</Label><Input value={editingSoldier.rank} onChange={e => setEditingSoldier({...editingSoldier, rank: e.target.value})} /></div>
                     <div className="space-y-2"><Label>الهاتف</Label><Input value={editingSoldier.phone} onChange={e => setEditingSoldier({...editingSoldier, phone: normalizeInput(e.target.value).replace(/\D/g, '')})} /></div>
                     <div className="space-y-2 md:col-span-2"><Label>الجنسية</Label><Input value={editingSoldier.nationality} onChange={e => setEditingSoldier({...editingSoldier, nationality: e.target.value})} /></div>
+                    <div className="space-y-2">
+    <Label className="text-slate-700 font-bold">تاريخ الميلاد</Label>
+    <Input 
+        type="date" 
+        value={editingSoldier.dob || ""} 
+        onChange={e => setEditingSoldier({...editingSoldier, dob: e.target.value})} 
+        className="focus:border-blue-400"
+    />
+</div>
                     <div className="space-y-2"><Label>الدورة</Label><Input value={editingSoldier.course} onChange={e => setEditingSoldier({...editingSoldier, course: e.target.value})} /></div>
                     <div className="space-y-2"><Label>الدفعة</Label><Input value={editingSoldier.batch} onChange={e => setEditingSoldier({...editingSoldier, batch: e.target.value})} /></div>
                     <div className="space-y-2"><Label>السرية</Label><Input value={editingSoldier.company} onChange={e => setEditingSoldier({...editingSoldier, company: e.target.value})} /></div>

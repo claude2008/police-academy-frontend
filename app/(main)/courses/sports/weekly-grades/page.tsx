@@ -671,9 +671,7 @@ useEffect(() => {
             
             {/* 📝 عمود الاسم: تم تعديل المسافة (right-[90px]) ليفسح مجالاً للصورة */}
             <TableHead className="w-[120px] md:w-[180px] text-right border p-1 bg-slate-100 sticky right-[90px] z-30 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">الاسم</TableHead>
-            <TableHead className="w-[70px] text-center border bg-slate-200 text-slate-700 font-bold p-1 sticky right-[270px] z-30 shadow-sm">
-    <span className="text-[10px]">آخر مجموع</span>
-</TableHead>
+           
             <TableHead className="w-[50px] min-w-[50px] md:w-[80px] md:min-w-[80px] text-center border bg-blue-50 text-blue-900 font-bold p-1"><span className="text-[10px] md:text-xs">السلوك</span></TableHead>
             <TableHead className="w-[35px] min-w-[35px] md:w-[80px] md:min-w-[80px] text-center border bg-yellow-50 text-yellow-900 font-bold p-0"><span className="text-[9px] md:text-xs">الجهد</span></TableHead>
             <TableHead className="w-[40px] min-w-[40px] md:w-[80px] md:min-w-[80px] text-center border bg-green-50 text-green-900 font-bold p-0"><span className="text-[8px] md:text-xs tracking-tighter">الاستيعاب</span></TableHead>
@@ -687,6 +685,9 @@ useEffect(() => {
                 </TableHead>
             ))}
             <TableHead className="w-[60px] md:w-[80px] text-center border bg-slate-800 text-white font-bold p-1 static md:sticky md:left-0 z-20">المجموع</TableHead>
+             <TableHead className="w-[70px] text-center border bg-slate-200 text-slate-700 font-bold p-1 sticky right-[270px] z-30 shadow-sm">
+    <span className="text-[10px]">آخر مجموع</span>
+</TableHead>
             <TableHead className="w-[100px] md:w-[150px] text-center border p-1">ملاحظات</TableHead>
         </TableRow>
     </TableHeader>
@@ -718,9 +719,7 @@ useEffect(() => {
                     <TableCell className="p-1 border text-right font-medium text-[10px] md:text-xs sticky right-[90px] bg-white group-hover:bg-slate-50 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] truncate max-w-[100px] md:max-w-none">
                         {soldier.name}
                     </TableCell>
-                    <TableCell className="p-1 border text-center font-bold text-slate-400 bg-slate-50/50 text-xs sticky right-[270px] z-10">
-    {prevScores[soldier.id] !== undefined ? prevScores[soldier.id].toFixed(2) : "--"}
-</TableCell>
+                    
                     <TableCell className="p-1 border text-center font-bold text-blue-700 bg-blue-50/50 text-xs md:text-sm">{soldier.scores.b}</TableCell>
                     <TableCell className="p-0 border text-center bg-yellow-50/50"><Input inputMode="decimal" className="h-8 w-full text-center text-[10px] md:text-sm font-bold p-0 border-transparent hover:border-slate-300 focus:bg-white" value={soldier.scores.e} onChange={(e) => handleScoreChange(soldier.id, 'e', e.target.value)} /></TableCell>
                     <TableCell className="p-0 border text-center bg-green-50/50"><Input inputMode="decimal" className="h-8 w-full text-center text-[10px] md:text-sm font-bold p-0 border-transparent hover:border-slate-300 focus:bg-white" value={soldier.scores.c} onChange={(e) => handleScoreChange(soldier.id, 'c', e.target.value)} /></TableCell>
@@ -787,6 +786,9 @@ useEffect(() => {
                                                         <TableCell className="p-1 border text-center font-bold bg-slate-50 static md:sticky md:left-0 z-10">
                                                             <span className={`px-2 py-1 rounded text-[10px] md:text-xs ${total >= 9 ? 'bg-green-100 text-green-700' : total >= 7 ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'}`}>{total.toFixed(2)}</span>
                                                         </TableCell>
+                                                        <TableCell className="p-1 border text-center font-bold text-slate-400 bg-slate-50/50 text-xs sticky right-[270px] z-10">
+    {prevScores[soldier.id] !== undefined ? prevScores[soldier.id].toFixed(2) : "--"}
+</TableCell>
                                                         <TableCell className="p-1 border text-center">
                                                             <Button variant="ghost" size="sm" className={`h-8 w-full text-xs justify-start px-2 ${soldier.notes ? "text-blue-600 bg-blue-50" : "text-slate-400"}`} onClick={() => openNoteModal(soldier.id, soldier.notes)}>
                                                                 <Edit className="w-3 h-3 ml-1" /><span className="truncate max-w-[60px] md:max-w-[80px]">{soldier.notes || "ملاحظة"}</span>
