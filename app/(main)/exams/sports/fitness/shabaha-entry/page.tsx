@@ -522,7 +522,16 @@ const handlePrintPDF = async () => {
             if (wb.Workbook.Views.length === 0) wb.Workbook.Views.push({});
             wb.Workbook.Views[0].RTL = true;
 
-            XLSX.writeFile(wb, generateFileName("xlsx"));
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+const blob = new Blob([wbout], { type: 'application/octet-stream' });
+const url = URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = generateFileName("xlsx");
+document.body.appendChild(a);
+a.click();
+document.body.removeChild(a);
+setTimeout(() => URL.revokeObjectURL(url), 1000);
             toast.success("تم تصدير الكشف الكامل بنجاح ✅", { id: toastId });
         } else {
             toast.error("فشل جلب البيانات من الخادم", { id: toastId });
@@ -534,7 +543,83 @@ const handlePrintPDF = async () => {
         setIsLoading(false);
     }
 };
+const handleExportAllExcel = async () => {
+    if (!filters.course) {
+        toast.warning("يرجى اختيار الدورة أولاً");
+        return;
+    }
 
+    setIsLoading(true);
+    const toastId = toast.loading(`جاري تحضير كشف كامل لدورة: ${filters.course}...`);
+
+    try {
+        // جلب كل الجنود في الدورة بدون أي فلتر آخر
+        const query = new URLSearchParams({
+            skip: "0",
+            limit: "9999",
+            course: filters.course,
+        });
+
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${query.toString()}`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+
+        if (res.ok) {
+            const result = await res.json();
+            const allSoldiers = result.data || [];
+
+            const exportData = allSoldiers.map((s: any, index: number) => {
+                const saved = assignmentsMap[s.id] || {};
+                return {
+                    "م": index + 1,
+                    "الرقم العسكري": s.military_id,
+                    "الاسم": s.name,
+                    "الرتبة": s.rank || "-",
+                    "الدورة": s.course,
+                    "الدفعة": s.batch || "-",
+                    "السرية": s.company || "-",
+                    "الفصيل": s.platoon || "-",
+                    "رقم الشباحة": saved.shabaha_number || "",
+                    "اللون": SHABAHA_COLORS.find(c => c.value === saved.shabaha_color)?.name || "",
+                    "رقم الشريحة": saved.chip_number || "",
+                    "الملاحظات": saved.notes || "",
+                    "تاريخ الاستخراج": format(new Date(), "yyyy-MM-dd HH:mm")
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "كشف الدورة الكامل");
+
+            if (!wb.Workbook) wb.Workbook = {};
+            if (!wb.Workbook.Views) wb.Workbook.Views = [];
+            if (wb.Workbook.Views.length === 0) wb.Workbook.Views.push({});
+            wb.Workbook.Views[0].RTL = true;
+
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([wbout], { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // اسم الملف يحتوي على اسم الدورة فقط
+            const courseName = filters.course.replace(/ /g, "_");
+            a.download = `كشف_الدورة_الكامل_${courseName}_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+            toast.success(`تم تصدير ${allSoldiers.length} جندي بنجاح ✅`, { id: toastId });
+        } else {
+            toast.error("فشل جلب البيانات", { id: toastId });
+        }
+    } catch (e) {
+        console.error(e);
+        toast.error("حدث خطأ تقني", { id: toastId });
+    } finally {
+        setIsLoading(false);
+    }
+};
   // --- الواجهة ---
   return (
     <ProtectedRoute allowedRoles={["owner","manager","admin","assistant_admin","sports_officer","sports_supervisor", "sports_trainer"]}>
@@ -621,6 +706,17 @@ const handlePrintPDF = async () => {
 )}
         
         <Button variant="outline" onClick={handlePrintPDF} className="gap-2"><Printer className="w-4 h-4"/> طباعة</Button>
+        {/* زر إكسل الكل — يظهر فقط للمالك ومساعد المسؤول بمجرد اختيار الدورة */}
+{["owner", "assistant_admin"].includes(userRole) && filters.course && (
+    <Button 
+        onClick={handleExportAllExcel}
+        className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white border-0"
+        disabled={isLoading}
+    >
+        <Download className="w-4 h-4"/>
+        Excel الكل
+    </Button>
+)}
         <Button variant="outline" onClick={handleExportExcel} className="gap-2 border-green-600 text-green-700 hover:bg-green-50"><Download className="w-4 h-4"/> Excel</Button>
     </div>
 )}

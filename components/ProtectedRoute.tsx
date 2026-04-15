@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 
 interface ProtectedRouteProps {
   children: React.ReactNode
-  allowedRoles?: string[]  // الأدوار المسموحة (اختياري)
+  allowedRoles?: string[]
 }
 
 export default function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
@@ -14,7 +14,7 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
   const router = useRouter()
 
   useEffect(() => {
-    const checkAuth = async () => {
+    const checkAuth = () => {
       const token = localStorage.getItem("token")
       
       if (!token) {
@@ -23,27 +23,12 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
         return
       }
 
-      // التحقق من الدور من الخادم
       if (allowedRoles && allowedRoles.length > 0) {
-        try {
-          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/me`, {
-            headers: { Authorization: `Bearer ${token}` }
-          })
-          
-          if (res.ok) {
-            const user = await res.json()
-            if (!allowedRoles.includes(user.role)) {
-              router.push("/unauthorized")  // صفحة غير مصرح
-              setLoading(false)
-              return
-            }
-          } else {
-            router.push("/")
-            setLoading(false)
-            return
-          }
-        } catch (e) {
-          router.push("/")
+        // ✅ من localStorage مباشرة — لا يحتاج شبكة
+        const user = JSON.parse(localStorage.getItem("user") || "{}")
+        
+        if (!user.role || !allowedRoles.includes(user.role)) {
+          router.push("/unauthorized")
           setLoading(false)
           return
         }
@@ -56,7 +41,11 @@ export default function ProtectedRoute({ children, allowedRoles }: ProtectedRout
     checkAuth()
   }, [router, allowedRoles])
 
-  if (loading) return <div className="flex items-center justify-center min-h-screen">جاري التحقق...</div>
+  if (loading) return (
+    <div className="flex items-center justify-center min-h-screen">
+      جاري التحقق...
+    </div>
+  )
   if (!authorized) return null
 
   return <>{children}</>
