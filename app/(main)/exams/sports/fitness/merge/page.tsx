@@ -90,6 +90,15 @@ const [mergeWarnings, setMergeWarnings] = useState({ missing_scores: [], unlinke
 const [dailyPage, setDailyPage] = useState(1);
 // ترقيم المسودات
 const [draftsPage, setDraftsPage] = useState(1);
+// --- Import Run States ---
+const [showRunImportDialog, setShowRunImportDialog] = useState(false)
+const [runImportPreview, setRunImportPreview] = useState<{military_id: string, run_time: string, found: boolean}[]>([])
+const [runColumnOptions, setRunColumnOptions] = useState<string[]>([])
+const [selectedRunCol, setSelectedRunCol] = useState("")
+const [selectedIdCol, setSelectedIdCol] = useState("")
+const [rawImportData, setRawImportData] = useState<any[]>([])
+const [isImportReady, setIsImportReady] = useState(false)
+const [pendingPreviewData, setPendingPreviewData] = useState<{data: any[], idCol: string, runCol: string} | null>(null)
   // --- Effects ---
   useEffect(() => {
       const userStr = localStorage.getItem('user');
@@ -107,7 +116,17 @@ const [draftsPage, setDraftsPage] = useState(1);
   useEffect(() => {
       if (activeTab === 'merge') fetchDrafts();
   }, [activeTab])
-
+// ✅ يُشغّل المعاينة بعد فتح النافذة مباشرة
+useEffect(() => {
+    if (showRunImportDialog && pendingPreviewData) {
+        buildRunPreviewDirect(
+            pendingPreviewData.data,
+            pendingPreviewData.idCol,
+            pendingPreviewData.runCol
+        );
+        setPendingPreviewData(null);
+    }
+}, [showRunImportDialog, pendingPreviewData]);
         // 🟢 فحص ذكي: هل يوجد أي بيانات حقيقية في عمود السرية؟
 const showCompanyCol = useMemo(() => {
     return tableData.some(row => 
@@ -578,71 +597,155 @@ const handleRunImport = (e: React.ChangeEvent<HTMLInputElement>) => {
 
     const reader = new FileReader();
     reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsName = wb.SheetNames[0];
-        const ws = wb.Sheets[wsName];
-        const jsonData = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        try {
+            const bstr = evt.target?.result;
+            const wb = XLSX.read(bstr, { type: 'binary' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const jsonData: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-        const runMap: Record<string, string> = {};
-        
-        // 1️⃣ بناء "خارطة زمنية" دقيقة تعتمد على الرقم العسكري كفتاح فريد
-        jsonData.forEach((row: any) => {
-            let mID = "";
-            let timeVal = "";
-            Object.keys(row).forEach(key => {
-                const cleanKey = key.trim();
-                // دعم كافة مسميات الأعمدة المحتملة (عربي وإنجليزي)
-                if (cleanKey.includes("الرقم العسكري") || cleanKey === "Military ID") {
-                    mID = String(row[key]).trim();
-                }
-                if (cleanKey.includes("توقيت") || cleanKey === "Time" || cleanKey === "Gun Time" || cleanKey === "الجري") {
-                    timeVal = String(row[key]).trim();
-                }
-            });
-            // لا نضيف للسجل إلا إذا وجدنا رقم عسكري وتوقيت صالحين
-            if (mID && timeVal) runMap[mID] = timeVal;
-        });
-
-        // 2️⃣ دالة مساعدة لتنفيذ الدمج على أي مصفوفة (لضمان تطابق الكود)
-        const applyMerge = (prevArray: any[]) => prevArray.map(soldier => {
-            const sysMilID = String(soldier.military_id || "").trim();
-            if (runMap[sysMilID]) {
-                return { ...soldier, run_time: runMap[sysMilID] };
+            if (jsonData.length === 0) {
+                toast.error("الملف فارغ!");
+                return;
             }
-            return soldier;
-        });
 
-        // 3️⃣ التحديث المزدوج (هنا السر في منع الضياع)
-        // تحديث البيانات المعروضة فوراً
-        setTableData(prev => {
-            const updated = applyMerge(prev);
-            
-            // تحديث الكاش الأساسي أيضاً لكي لا تضيع البيانات عند التبديل بين (خام / مدمج / رسمي)
-            setRawDataCache(currentCache => applyMerge(currentCache));
-            
-            // حساب عدد السجلات التي تم تحديثها فعلياً بناءً على الخريطة
-            const matchCount = updated.filter(s => runMap[String(s.military_id).trim()]).length;
-            
-            if (matchCount > 0) {
-                toast.success(`تم استيراد ${matchCount} توقيت جري بنجاح وتثبيتها في النظام ✅`);
-            } else {
-                toast.warning("لم يتم العثور على أرقام عسكرية مطابقة في الملف المرفوع");
-            }
-            
-            return updated;
-        });
+            const cols = Object.keys(jsonData[0]).map(k => k.trim());
+            setRunColumnOptions(cols);
+            setRawImportData(jsonData);
 
-      } catch (error) { 
-          console.error("Excel Import Error:", error);
-          toast.error("فشل في قراءة ملف الإكسل، تأكد من صيغة الملف"); 
-      }
+            const guessId = cols.find(c =>
+                c.includes("الرقم العسكري") || c.includes("Military") || c.includes("military")
+            ) || cols[0];
+            const guessRun = cols.find(c =>
+                c.includes("الجري") || c.includes("توقيت") || c.includes("Time") || c.includes("Run")
+            ) || cols[1];
+
+            setSelectedIdCol(guessId);
+            setSelectedRunCol(guessRun);
+            setShowRunImportDialog(true);
+
+            // ✅ معاينة تلقائية فورية
+            setPendingPreviewData({ data: jsonData, idCol: guessId, runCol: guessRun });
+
+        } catch {
+            toast.error("فشل قراءة الملف");
+        }
     };
     reader.readAsBinaryString(file);
-    e.target.value = ""; // تصفير الحقل للسماح برفع نفس الملف مجدداً إذا عُدل
-  };
+    e.target.value = "";
+};
 
+// دالة المعاينة — تُستدعى عند تغيير العمود المختار
+// ✅ دالة جديدة: تعمل على البيانات المُمررة مباشرة
+const buildRunPreviewDirect = (data: any[], idCol: string, runCol: string) => {
+    if (!idCol || !runCol || data.length === 0) return;
+
+    const existingIds = new Set(tableData.map(s => String(s.military_id || "").trim()));
+
+    const preview = data
+        .map(row => {
+            const milId = String(row[idCol] || "").trim();
+            let runVal = row[runCol];
+            let runStr = "";
+            if (runVal !== "" && runVal !== null && runVal !== undefined) {
+                runStr = String(runVal).trim();
+            }
+            return {
+                military_id: milId,
+                run_time: runStr,
+                found: existingIds.has(milId)
+            };
+        })
+        .filter(r => r.military_id && r.run_time);
+
+    const notFound = preview.filter(r => !r.found);
+    setIsImportReady(notFound.length === 0);
+    setRunImportPreview(preview);
+};
+
+// ✅ عدّل buildRunPreview لتستخدم الدالة الجديدة
+const buildRunPreview = (idCol: string, runCol: string) => {
+    buildRunPreviewDirect(rawImportData, idCol, runCol);
+};
+
+// دالة تأكيد الحفظ
+const confirmRunImport = () => {
+    const runMap: Record<string, string> = {};
+    runImportPreview.forEach(r => {
+        if (r.found) runMap[r.military_id] = r.run_time;
+    });
+
+    const applyMerge = (arr: any[]) => arr.map(s => {
+        const id = String(s.military_id || "").trim();
+        return runMap[id] ? { ...s, run_time: runMap[id] } : s;
+    });
+
+    setTableData(prev => applyMerge(prev));
+    setRawDataCache(prev => applyMerge(prev));
+
+    if (selectedDraft) {
+        setSelectedDraft(prev => prev ? {
+            ...prev,
+            students_data: applyMerge(prev.students_data)
+        } : prev);
+    }
+
+    toast.success(`✅ تم دمج ${Object.keys(runMap).length} توقيت جري بنجاح`);
+    setShowRunImportDialog(false);
+    setRunImportPreview([]);
+    setRawImportData([]);
+};
+const handleSaveDraftRunTime = async () => {
+    if (!selectedDraft) return;
+
+    const toastId = toast.loading("جاري حفظ بيانات الجري...");
+    try {
+        const updatedStudents = tableData.map(s => ({
+            soldier_id: s.soldier_id || 0,
+            military_id: s.military_id,
+            name: s.name || "جندي",
+            rank: s.rank || "-",
+            company: s.company,
+            platoon: s.platoon,
+            dob: s.dob,
+            push_count: s.push_count || 0,
+            sit_count: s.sit_count || 0,
+            notes: s.notes || "",
+            status: s.status || "present",
+            run_time: s.run_time || ""
+        }));
+
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/drafts/save`, {
+            method: "POST",
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('token')}`
+            },
+            body: JSON.stringify({
+                title: selectedDraft.title,
+                course: selectedDraft.course,
+                batch: selectedDraft.batch || "",
+                company: selectedDraft.company || "",
+                platoon: "عام",
+                exam_date: selectedDraft.exam_date,
+                students: updatedStudents
+            })
+        });
+
+        if (res.ok) {
+            toast.success("تم حفظ بيانات الجري في المسودة ✅", { id: toastId });
+            // تحديث المسودة محلياً أيضاً
+            setSelectedDraft(prev => prev ? {
+                ...prev,
+                students_data: updatedStudents
+            } : prev);
+        } else {
+            const err = await res.json();
+            toast.error(err.detail || "فشل الحفظ", { id: toastId });
+        }
+    } catch (e) {
+        toast.error("خطأ في الاتصال بالسيرفر", { id: toastId });
+    }
+};
  const exportToExcel = () => {
     if (!tableData || tableData.length === 0) return;
 
@@ -894,14 +997,14 @@ const paginatedDrafts = useMemo(() => {
                                     <Button variant="ghost" size="sm" onClick={() => {setTableData(rawDataCache); setPageMode('raw')}} className="text-slate-500 h-9"><ArrowRightLeft className="w-4 h-4 ml-1"/> الخام</Button>
                                 )}
 
-                                {pageMode !== 'raw' && (
-                                    <div className="relative">
-                                        <input type="file" accept=".xlsx, .xls, .csv" onChange={handleRunImport} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                                        <Button variant="outline" size="sm" className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 h-9 bg-white font-bold gap-1">
-                                            <Timer className="w-4 h-4"/> الجري
-                                        </Button>
-                                    </div>
-                                )}
+                               {(pageMode !== 'raw' || selectedDraft) && (
+    <div className="relative">
+        <input type="file" accept=".xlsx, .xls, .csv" onChange={handleRunImport} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+        <Button variant="outline" size="sm" className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 h-9 bg-white font-bold gap-1">
+            <Timer className="w-4 h-4"/> الجري
+        </Button>
+    </div>
+)}
 
                                 <Button onClick={handleMerge} disabled={isProcessing} size="sm" variant={pageMode === 'merged' ? "secondary" : "outline"} className="border-blue-200 text-blue-700 h-9">
                                     <RefreshCw className={`w-4 h-4 ml-1 ${isProcessing ? "animate-spin" : ""}`}/> دمج
@@ -920,7 +1023,46 @@ const paginatedDrafts = useMemo(() => {
                         <Button variant="outline" onClick={exportToExcel} className="text-green-700 border-green-600 h-9 bg-white font-bold gap-1">
                             <FileSpreadsheet className="w-4 h-4" /> Excel
                         </Button>
+{selectedDraft && (
+    <div className="flex gap-2 flex-wrap">
 
+        {/* زر الاستيراد */}
+        <div className="relative">
+            <input type="file" accept=".xlsx, .xls, .csv" onChange={handleRunImport} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+            <Button variant="outline" size="sm" className="border-indigo-200 text-indigo-700 hover:bg-indigo-50 h-9 bg-white font-bold gap-1">
+                <Timer className="w-4 h-4"/> استيراد الجري
+            </Button>
+        </div>
+
+        {/* زر المسح — يظهر فقط إذا يوجد بيانات جري */}
+        {tableData.some(s => s.run_time) && (
+            <Button
+                variant="outline"
+                size="sm"
+                className="border-red-200 text-red-600 hover:bg-red-50 h-9 bg-white font-bold gap-1"
+                onClick={() => {
+                    setTableData(prev => prev.map(s => ({ ...s, run_time: "" })));
+                    setRawDataCache(prev => prev.map(s => ({ ...s, run_time: "" })));
+                    toast.success("تم مسح بيانات الجري ✅");
+                }}
+            >
+                <X className="w-4 h-4"/> مسح الجري
+            </Button>
+        )}
+
+        {/* زر الحفظ — يظهر فقط إذا يوجد بيانات جري */}
+        {tableData.some(s => s.run_time) && (
+            <Button
+                size="sm"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white h-9 font-bold gap-1"
+                onClick={handleSaveDraftRunTime}
+            >
+                <Check className="w-4 h-4"/> حفظ الجري
+            </Button>
+        )}
+
+    </div>
+)}
                         {!selectedDraft && pageMode !== 'raw' && (
                             <Button onClick={() => {setDraftConfig({...draftConfig, course: dialogCourse, batch: dialogBatch}); setIsSaveDraftOpen(true)}} size="sm" className="bg-green-600 hover:bg-green-700 text-white shadow-md h-9">
                                 <Send className="w-4 h-4 ml-1"/> ترحيل
@@ -1375,6 +1517,98 @@ const paginatedDrafts = useMemo(() => {
         </AlertDialogFooter>
     </AlertDialogContent>
 </AlertDialog>
+ {/* --- Dialog استيراد الجري مع اختيار الأعمدة والمعاينة --- */}
+<Dialog open={showRunImportDialog} onOpenChange={setShowRunImportDialog}>
+    <DialogContent dir="rtl" className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-indigo-700">
+                <Timer className="w-5 h-5"/> استيراد بيانات الجري
+            </DialogTitle>
+        </DialogHeader>
+
+        {/* اختيار الأعمدة */}
+        <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-lg border">
+            <div className="space-y-1">
+                <label className="text-sm font-bold text-slate-700">عمود الرقم العسكري</label>
+                <Select value={selectedIdCol} onValueChange={(v) => {
+                    setSelectedIdCol(v);
+                    buildRunPreview(v, selectedRunCol);
+                }}>
+                    <SelectTrigger><SelectValue placeholder="اختر العمود"/></SelectTrigger>
+                    <SelectContent>
+                        {runColumnOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
+            <div className="space-y-1">
+                <label className="text-sm font-bold text-slate-700">عمود وقت الجري</label>
+                <Select value={selectedRunCol} onValueChange={(v) => {
+                    setSelectedRunCol(v);
+                    buildRunPreview(selectedIdCol, v);
+                }}>
+                    <SelectTrigger><SelectValue placeholder="اختر العمود"/></SelectTrigger>
+                    <SelectContent>
+                        {runColumnOptions.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                </Select>
+            </div>
+        </div>
+
+        {/* زر المعاينة */}
+        <Button variant="outline" onClick={() => buildRunPreview(selectedIdCol, selectedRunCol)}
+            className="w-full border-indigo-300 text-indigo-700">
+            🔍 معاينة النتائج
+        </Button>
+
+        {/* جدول المعاينة */}
+        {runImportPreview.length > 0 && (
+            <div className="border rounded-lg overflow-hidden">
+                <div className="bg-slate-100 px-4 py-2 text-sm font-bold flex justify-between">
+                    <span>إجمالي الصفوف: {runImportPreview.length}</span>
+                    <span className={isImportReady ? "text-green-600" : "text-red-600"}>
+                        {isImportReady ? "✅ كل الأرقام متطابقة" : `❌ ${runImportPreview.filter(r => !r.found).length} رقم غير موجود`}
+                    </span>
+                </div>
+                <div className="max-h-60 overflow-y-auto">
+                    <Table>
+                        <TableHeader>
+                            <TableRow className="bg-slate-50">
+                                <TableHead className="text-center font-bold">الرقم العسكري</TableHead>
+                                <TableHead className="text-center font-bold">وقت الجري</TableHead>
+                                <TableHead className="text-center font-bold">الحالة</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {runImportPreview.map((r, i) => (
+                                <TableRow key={i} className={r.found ? "" : "bg-red-50"}>
+                                    <TableCell className="text-center font-mono">{r.military_id}</TableCell>
+                                    <TableCell className="text-center font-bold text-indigo-700">{r.run_time}</TableCell>
+                                    <TableCell className="text-center">
+                                        {r.found 
+                                            ? <Badge className="bg-green-100 text-green-700">✓ موجود</Badge>
+                                            : <Badge className="bg-red-100 text-red-700">✗ غير موجود</Badge>
+                                        }
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+            </div>
+        )}
+
+        <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowRunImportDialog(false)}>إلغاء</Button>
+            <Button 
+                onClick={confirmRunImport}
+                disabled={!isImportReady || runImportPreview.length === 0}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+            >
+                <Check className="w-4 h-4"/> تأكيد الدمج ({runImportPreview.filter(r=>r.found).length} سجل)
+            </Button>
+        </DialogFooter>
+    </DialogContent>
+</Dialog>
         </div>
         </ProtectedRoute>
       );
@@ -1609,7 +1843,7 @@ const paginatedDrafts = useMemo(() => {
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      
+     
     </div>
     </ProtectedRoute>
   )

@@ -202,7 +202,9 @@ useEffect(() => {
  const fetchUsers = async () => {
     setLoading(true);
     try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/`);
+       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/users/?limit=9999`, {
+    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+});
         if (res.ok) {
             const data = await res.json();
 
