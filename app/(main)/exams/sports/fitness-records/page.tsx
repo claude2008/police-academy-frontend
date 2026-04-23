@@ -97,7 +97,7 @@ export default function FitnessRecordsPage() {
     const [innerPlatoon, setInnerPlatoon] = useState("all")
 
     const [customExamType, setCustomExamType] = useState("") 
-
+const [scoreMode, setScoreMode] = useState<"both" | "technical" | "scenario">("both")
     const [deleteTarget, setDeleteTarget] = useState<{id: number, title: string, all_ids: number[]} | null>(null);
 
     const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
@@ -999,7 +999,14 @@ useEffect(() => {
 
 
 
-                total_final: (techCount === 0 && scenCount === 0) ? null : Math.round((avgTech + avgScen) / 2),
+                total_final: (() => {
+    if (techCount === 0 && scenCount === 0) return null;
+    if (scoreMode === "technical") return techCount > 0 ? Math.round(avgTech) : null;
+    if (scoreMode === "scenario") return scenCount > 0 ? Math.round(avgScen) : null;
+    // both: يقسم على عدد الاختبارات الموجودة فعلاً
+    const divisor = (techCount > 0 ? 1 : 0) + (scenCount > 0 ? 1 : 0);
+    return Math.round((avgTech + avgScen) / divisor);
+})(),
 
 
 
@@ -3153,7 +3160,22 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
         )}
 
-
+{/* مربع اختيار نوع الاحتساب — يظهر فقط في اختبار الاشتباك */}
+        {selectedGroup.type === "engagement" && selectedEvaluator === "all" && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                <span className="text-xs font-bold text-amber-800">احتساب المعدل:</span>
+                <Select value={scoreMode} onValueChange={(v: any) => setScoreMode(v)}>
+                    <SelectTrigger className="h-7 w-36 text-xs bg-white border-amber-300">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent dir="rtl">
+                        <SelectItem value="both">الكل (فني + سيناريو)</SelectItem>
+                        <SelectItem value="technical">فني فقط</SelectItem>
+                        <SelectItem value="scenario">سيناريو فقط</SelectItem>
+                    </SelectContent>
+                </Select>
+            </div>
+        )}
 
 
 
