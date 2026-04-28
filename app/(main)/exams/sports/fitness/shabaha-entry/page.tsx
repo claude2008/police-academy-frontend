@@ -51,6 +51,7 @@ export default function ShabahaEntryPage() {
   const [search, setSearch] = useState("")
   const [displayName, setDisplayName] = useState("")
   const [userRole, setUserRole] = useState("")
+  const [isOnline, setIsOnline] = useState(true)
   // الفلاتر
   const [filters, setFilters] = useState({
       course: "",
@@ -80,6 +81,24 @@ const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 // استبدل السطر القديم بهذا
 const [resetTarget, setResetTarget] = useState<'shabaha' | 'chip' | 'notes' | null>(null);
   // --- 1. جلب خيارات الفلاتر ---
+  useEffect(() => {
+    setIsOnline(navigator.onLine)
+    const handleOnline = () => {
+        setIsOnline(true)
+        toast.success("عاد الاتصال بالإنترنت ✅ يمكنك المتابعة")
+    }
+    const handleOffline = () => {
+        setIsOnline(false)
+        toast.error("انقطع الاتصال بالإنترنت! ⚠️ أي بيانات تدخلها لن تُحفظ", { duration: Infinity })
+    }
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+        window.removeEventListener('online', handleOnline)
+        window.removeEventListener('offline', handleOffline)
+    }
+}, [])
+  
   useEffect(() => {
       fetchFilterOptions()
   }, [filters.course, filters.batch, filters.company])
@@ -899,6 +918,7 @@ const handleExportAllExcel = async () => {
                             className="text-center h-9 font-bold text-lg focus:ring-blue-500 border-blue-100 bg-white"
                             placeholder="---"
                             inputMode="numeric"
+                            disabled={!isOnline}
                         />
                     </div>
                     {/* الطباعة: نص فقط (يختفي إذا كان فارغاً) */}
@@ -909,8 +929,9 @@ const handleExportAllExcel = async () => {
 <TableCell className="p-1 text-center">
     <div className="print:hidden">
         <Select 
-            value={currentColorVal} 
-            onValueChange={(val) => {
+    value={currentColorVal} 
+    disabled={!isOnline}
+    onValueChange={(val) => {
                 // إذا اختار "تفريغ"، نرسل قيمة خاصة أو فراغ
                 const finalVal = val === "clear_value" ? "" : val;
                 
@@ -964,6 +985,7 @@ const handleExportAllExcel = async () => {
                             className="text-center h-9 font-bold text-red-600 border-yellow-100 focus:ring-yellow-500 bg-white"
                             placeholder="ID"
                             inputMode="numeric"
+                            disabled={!isOnline}
                         />
                     </div>
                     {/* الطباعة: نص فقط */}
@@ -975,12 +997,13 @@ const handleExportAllExcel = async () => {
                     <div className="print:hidden">
                         <Button 
                             variant="ghost" 
-                            size="sm" 
-                            onClick={() => { 
-                                setCurrentNoteId(soldier.id); 
-                                setTempNote(currentNote); 
-                                setIsNoteOpen(true); 
-                            }}
+size="sm"
+disabled={!isOnline}
+onClick={() => { 
+    setCurrentNoteId(soldier.id); 
+    setTempNote(currentNote); 
+    setIsNoteOpen(true); 
+}}
                             className="hover:bg-blue-50"
                         >
                             {currentNote ? (
