@@ -324,32 +324,31 @@ useEffect(() => {
 
 
  // --- 4. الحفظ عند الخروج من الحقل (onBlur) ---
-  const handleSaveCell = async (id: number, field: string, value: string) => {
-      // أ) حالة الحذف: إذا كانت القيمة فارغة أو تم اختيار "تفريغ"
+ const handleSaveCell = async (id: number, field: string, value: string) => {
       if (!value || value.trim() === "" || value === "clear_value") {
-          // تحديث الواجهة فوراً لتظهر فارغة
           setSoldiers(prev => prev.map(s => s.id === id ? { ...s, [field]: "" } : s));
-          // إرسال طلب الحذف للسيرفر (قيمة فارغة)
           await executeSave(id, field, ""); 
           return;
       }
 
-      // ب) حالة الإدخال: التحقق من التكرار
       if (field !== 'notes') {
-          const isValid = await checkAvailability(id, field, value);
-          
-          if (!isValid) {
-              // 🛑 الحل الجذري لمشكلة اللون البنفسجي:
-              // نجبر الواجهة على العودة للفراغ فوراً
-              setSoldiers(prev => prev.map(s => s.id === id ? { ...s, [field]: "" } : s));
-              
-              
-              
-              return; 
+          const soldier = soldiers.find(s => s.id === id);
+          const saved = assignmentsMap[id] || {};
+
+          // الرقم والاللون بعد التعديل الحالي
+          const newShabaha = field === 'shabaha_number' ? value : (soldier?.shabaha_number ?? saved.shabaha_number ?? "");
+          const newColor   = field === 'shabaha_color'  ? value : (soldier?.shabaha_color  ?? saved.shabaha_color  ?? "");
+
+          // ✅ التحقق فقط إذا كان الرقم واللون موجودَين معاً
+          if (newShabaha && newColor && newColor !== "clear_value") {
+              const isValid = await checkAvailability(id, field, value);
+              if (!isValid) {
+                  setSoldiers(prev => prev.map(s => s.id === id ? { ...s, [field]: "" } : s));
+                  return;
+              }
           }
       }
 
-      // ج) الحفظ الطبيعي
       await executeSave(id, field, value);
   };
 
