@@ -8,8 +8,9 @@ import {
   Dumbbell, FileText, Zap, Database, Search, 
   Layers, ArrowLeft, ShieldCheck, Award, Star,
   Shirt, Download, MoreHorizontal, UserCog,
-  Table, Scale,Swords,Plus // ✅ تم إضافة الأيقونات الناقصة هنا
+  Table, Scale, Swords, Plus
 } from "lucide-react"
+import { loadFeaturesFromAPI } from "@/lib/features-config"
 import { motion, Variants } from "framer-motion"
 import { Card, CardContent } from "@/components/ui/card" 
 import { Badge } from "@/components/ui/badge"
@@ -22,6 +23,39 @@ export default function DashboardPage() {
   const [user, setUser] = useState<any>(null)
   const [isLoadingAuth, setIsLoadingAuth] = useState(true)
   
+  // 🔥 إضافة state للإعدادات
+  // 🔥 إضافة state للإعدادات
+const [features, setFeatures] = useState<Record<string, boolean>>({
+  attendance: true,
+  violations: true,
+  exams: false,
+  digitalExams: false,
+  reports: true,
+  soldiers: true,
+  others: true,
+  trainers: true,
+  courses: true,
+})
+
+// 🔥 تحميل الإعدادات من API
+// 🔥 تحميل الإعدادات من API
+useEffect(() => {
+  async function loadConfig() {
+    const config = await loadFeaturesFromAPI()
+    setFeatures(config)
+    
+    // 🟢 إجبار إعادة الرسم
+    setTimeout(() => {
+      setFeatures({...config})
+    }, 100)
+  }
+  
+  loadConfig()
+  
+  const interval = setInterval(loadConfig, 3000)
+  
+  return () => clearInterval(interval)
+}, [])
   const [selectionState, setSelectionState] = useState<{
     isOpen: boolean;
     step: 'branch_select' | 'action_select' | 'exam_select' | 'report_select';
@@ -38,8 +72,16 @@ export default function DashboardPage() {
 
   const [currentSlide, setCurrentSlide] = useState(0); 
 
- useEffect(() => {
-    // دالة داخلية لتحديث البيانات
+  // 🔥 تحميل الإعدادات من API
+  useEffect(() => {
+    async function loadConfig() {
+      const config = await loadFeaturesFromAPI()
+      setFeatures(config)
+    }
+    loadConfig()
+  }, [])
+
+  useEffect(() => {
     const refreshUser = () => {
         const storedUser = localStorage.getItem("user");
         if (storedUser) {
@@ -48,14 +90,11 @@ export default function DashboardPage() {
         setIsLoadingAuth(false);
     };
 
-    // تنفيذ التحديث عند فتح الصفحة لأول مرة
     refreshUser();
-
-    // 🟢 السر هنا: تحديث البيانات فوراً عند العودة للصفحة (مثلاً من الإعدادات)
     window.addEventListener('focus', refreshUser);
 
     return () => window.removeEventListener('focus', refreshUser);
-}, []);
+  }, []);
 
   const containerVariants: Variants = {
     hidden: { opacity: 0, y: 20 },
@@ -67,32 +106,61 @@ export default function DashboardPage() {
     visible: { scale: 1, opacity: 1, transition: { type: "spring", stiffness: 200, damping: 15 } }
   };
 
+  // 🔥 تحديث menuItems ليستخدم features بدلاً من FEATURES_CONFIG
   const menuItems = [
     { 
-      id: "attendance", label: "التكميل اليومي", icon: <CalendarDays className="w-9 h-9 text-white drop-shadow-md" />, 
-      color: "bg-gradient-to-br from-blue-500 to-blue-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-blue-300/50", notification: 0
+      id: "attendance", 
+      label: "التكميل اليومي", 
+      icon: <CalendarDays className="w-9 h-9 text-white drop-shadow-md" />, 
+      color: "bg-gradient-to-br from-blue-500 to-blue-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", 
+      shadow: "shadow-blue-300/50", 
+      notification: 0,
+      enabled: features.attendance
     },
     { 
-      id: "violations", label: " المخالفات", icon: <ShieldAlert className="w-9 h-9 text-white drop-shadow-md" />, 
-      color: "bg-gradient-to-br from-red-500 to-red-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-red-300/50", 
-      notification: 0 // 🟢 تم التغيير من 5 إلى 0 لإخفاء التنبيه
+      id: "violations", 
+      label: " المخالفات", 
+      icon: <ShieldAlert className="w-9 h-9 text-white drop-shadow-md" />, 
+      color: "bg-gradient-to-br from-red-500 to-red-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", 
+      shadow: "shadow-red-300/50", 
+      notification: 0,
+      enabled: features.violations
     },
     { 
-      id: "exams", label: "الاختبارات", icon: <ClipboardList className="w-9 h-9 text-white drop-shadow-md" />, 
-      color: "bg-gradient-to-br from-purple-500 to-purple-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-purple-300/50", notification: 0
+      id: "exams", 
+      label: "الاختبارات", 
+      icon: <ClipboardList className="w-9 h-9 text-white drop-shadow-md" />, 
+      color: "bg-gradient-to-br from-purple-500 to-purple-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", 
+      shadow: "shadow-purple-300/50", 
+      notification: 0,
+      enabled: features.exams
     },
     { 
-      id: "reports", label: "التقارير", icon: <BarChart3 className="w-9 h-9 text-white drop-shadow-md" />, 
-      color: "bg-gradient-to-br from-amber-500 to-amber-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-amber-300/50", 
-      notification: 0 // 🟢 تم التغيير من 3 إلى 0 لإخفاء التنبيه
+      id: "reports", 
+      label: "التقارير", 
+      icon: <BarChart3 className="w-9 h-9 text-white drop-shadow-md" />, 
+      color: "bg-gradient-to-br from-amber-500 to-amber-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", 
+      shadow: "shadow-amber-300/50", 
+      notification: 0,
+      enabled: features.reports
     },
     { 
-        id: "soldiers", label: "الملف الشخصي", icon: <Users className="w-9 h-9 text-white drop-shadow-md" />, 
-        color: "bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-emerald-300/50", notification: 0
+      id: "soldiers", 
+      label: "الملف الشخصي", 
+      icon: <Users className="w-9 h-9 text-white drop-shadow-md" />, 
+      color: "bg-gradient-to-br from-emerald-500 to-emerald-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", 
+      shadow: "shadow-emerald-300/50", 
+      notification: 0,
+      enabled: features.soldiers
     },
     { 
-        id: "others", label: "أخرى", icon: <MoreHorizontal className="w-9 h-9 text-white drop-shadow-md" />, 
-        color: "bg-gradient-to-br from-slate-500 to-slate-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", shadow: "shadow-slate-300/50", notification: 0
+      id: "others", 
+      label: "أخرى", 
+      icon: <MoreHorizontal className="w-9 h-9 text-white drop-shadow-md" />, 
+      color: "bg-gradient-to-br from-slate-500 to-slate-700 shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3)]", 
+      shadow: "shadow-slate-300/50", 
+      notification: 0,
+      enabled: features.others
     },
   ];
 
@@ -221,11 +289,7 @@ export default function DashboardPage() {
     return () => clearInterval(autoPlayTimer);
   }, [currentSlide, slides.length]);
 
-  // =========================================================
-  // 🚀 المحرك الذكي (The Smart Engine)
-  // =========================================================
- const handleFeatureClick = (featureId: any) => {
-    // 1. القراءة المباشرة من الذاكرة لضمان أحدث البيانات
+  const handleFeatureClick = (featureId: any) => {
     const storedUser = localStorage.getItem("user");
     
     if (!storedUser) {
@@ -242,15 +306,11 @@ export default function DashboardPage() {
     const isSupervisorOrOfficer = ["military_supervisor", "sports_supervisor", "military_officer", "sports_officer", "assistant_admin"].includes(role);
     const isSuperAdmin = ["owner", "manager", "admin"].includes(role);
 
-    // تحديد الفرع تلقائياً بناءً على الرتبة
     let autoBranch: 'military' | 'sports' | null = null;
     if (role.includes("military")) autoBranch = 'military';
     if (role.includes("sports")) autoBranch = 'sports';
     if (role === 'assistant_admin') autoBranch = 'sports';
 
-    // ---------------------------------------------------------
-    // 1. معالجة زر "أخرى" (البيانات الإدارية)
-    // ---------------------------------------------------------
     if (featureId === 'others') {
         if (["military_supervisor", "military_officer"].includes(role)) return; 
 
@@ -278,12 +338,7 @@ export default function DashboardPage() {
         return; 
     }
 
-    // ---------------------------------------------------------
-    // 2. معالجة (التكميل اليومي) و (المخالفات) - المنطق الجديد
-    // ---------------------------------------------------------
     if (featureId === 'attendance' || featureId === 'violations') {
-        
-        // أ. المدرب: يذهب فوراً للتسجيل (بدون نافذة خيارات)
         if (isTrainer) {
             const path = featureId === 'attendance' 
                 ? `/daily-schedule?branch=${autoBranch}` 
@@ -292,7 +347,6 @@ export default function DashboardPage() {
             return;
         }
 
-        // ب. المشرف / الضابط / مساعد المسؤول: تفتح نافذة "الإجراء" فوراً بفرعه المحدد
         if (isSupervisorOrOfficer) {
             setSelectionState({
                 isOpen: true,
@@ -304,7 +358,6 @@ export default function DashboardPage() {
             return;
         }
 
-        // ج. الإدارة العليا: تختار الفرع أولاً
         if (isSuperAdmin) {
             setSelectionState({
                 isOpen: true,
@@ -317,13 +370,9 @@ export default function DashboardPage() {
         }
     }
 
-    // ---------------------------------------------------------
-    // 3. معالجة بقية المميزات (الاختبارات، التقارير، الملف الشخصي)
-    // ---------------------------------------------------------
     if (isTrainer || isSupervisorOrOfficer) {
         const myBranch = autoBranch || 'military'; 
 
-        // التقارير
         if (featureId === 'reports') {
             setSelectionState({
                 isOpen: true,
@@ -335,7 +384,6 @@ export default function DashboardPage() {
             return;
         }
 
-        // الاختبارات
         if (featureId === 'exams') {
             if (role === 'military_trainer') {
                 router.push('/exams/military/MilitaryExams');
@@ -351,9 +399,7 @@ export default function DashboardPage() {
             return;
         }
 
-        // الملف الشخصي (المجندين)
         if (featureId === 'soldiers') {
-            // 🟢 التعديل السحري: إضافة المدربين مع المشرفين للذهاب المباشر
             const directAccessRoles = [
                 "military_trainer", 
                 "sports_trainer", 
@@ -362,13 +408,10 @@ export default function DashboardPage() {
             ];
 
             if (directAccessRoles.includes(role)) {
-                // يذهب فوراً لملف المجندين الخاص بفرعه دون فتح أي نافذة خيارات
                 router.push(`/courses/${myBranch}/soldiers`);
                 return;
             }
 
-            // فقط الضباط ومساعد المسؤول والآدمن هم من تفتح لهم نافذة الخيارات 
-            // (لكي يستطيعوا الدخول لملفات المدربين أيضاً)
             setSelectionState({ 
                 isOpen: true, 
                 step: 'action_select', 
@@ -380,7 +423,6 @@ export default function DashboardPage() {
         }
     }
 
-    // 4. الإدارة العليا لبقية الأزرار
     if (isSuperAdmin) {
         setSelectionState({
             isOpen: true,
@@ -393,29 +435,23 @@ export default function DashboardPage() {
 };
 
  const handleBranchSelect = (branch: 'military' | 'sports') => {
-      // 🟢 1. جلب بيانات المستخدم الحالية
       const role = user?.role || "";
       const isManagerOrAdmin = ["manager", "admin"].includes(role);
 
-      // 🟢 2. إذا كان المستخدم مدير أو مسؤول، نوجهه مباشرة للسجلات (History)
       if (isManagerOrAdmin) {
           if (selectionState.feature === 'attendance') {
-              // التوجه المباشر لسجل التكميل المعتمد حسب الفرع المختار
               router.push(`/daily-audit?branch=${branch}`);
               setSelectionState(prev => ({ ...prev, isOpen: false }));
               return;
           }
 
           if (selectionState.feature === 'violations') {
-              // التوجه المباشر لسجل المخالفات العام
-              // ملاحظة: إذا كان سجل المخالفات يحتاج فرع، نمرره هنا أيضاً
               router.push(`/violations/history`);
               setSelectionState(prev => ({ ...prev, isOpen: false }));
               return;
           }
       }
 
-      // 🔵 3. المنطق القديم لبقية الرتب (مشرف، ضابط، إلخ) أو بقية الأزرار
       if (selectionState.feature === 'soldiers' || selectionState.feature === 'others') {
           setSelectionState(prev => ({ ...prev, selectedBranch: branch, step: 'action_select' })); 
           return;
@@ -432,27 +468,23 @@ export default function DashboardPage() {
     const { feature, selectedBranch } = selectionState;
     if (!selectedBranch) return;
 
-    // 📅 التكميل
     if (feature === 'attendance') {
         if (actionType === 'new') router.push(`/daily-schedule?branch=${selectedBranch}`);
-        if (actionType === 'audit') router.push(`/courses/audit`); // صفحة التدقيق المركزية
-        if (actionType === 'history') router.push(`/daily-audit?branch=${selectedBranch}`); // السجل التاريخي
+        if (actionType === 'audit') router.push(`/courses/audit`);
+        if (actionType === 'history') router.push(`/daily-audit?branch=${selectedBranch}`);
     }
 
-    // 🛑 المخالفات
     if (feature === 'violations') {
         if (actionType === 'new') router.push(`/violations`);
-        if (actionType === 'audit') router.push(`/courses/audit`); // صفحة التدقيق تشمل المخالفات الآن
-        if (actionType === 'history') router.push(`/violations/history`); // السجل التاريخي للمخالفات
+        if (actionType === 'audit') router.push(`/courses/audit`);
+        if (actionType === 'history') router.push(`/violations/history`);
     }
 
-      // 📊 التقارير
       if (feature === 'reports') {
           if (actionType === 'personal') router.push(`/trainers/${selectedBranch}/reports`);
           if (actionType === 'soldier') router.push(`/courses/${selectedBranch}/reports`);
       }
 
-      // 👥 الملف الشخصي
       if (feature === 'soldiers') {
           if (actionType === 'fitness_trainers') router.push(`/trainers/sports/fitness`);
           if (actionType === 'combat_trainers') router.push(`/trainers/sports/combat`);
@@ -460,9 +492,7 @@ export default function DashboardPage() {
           if (actionType === 'soldiers_file') router.push(`/courses/${selectedBranch}/soldiers`);
       }
 
-      // 🛠️ أخرى
 if (feature === 'others') {
-    // 🟢 إضافة التوجيه لصفحة البيانات
     if (actionType === 'soldiers_data') router.push(`/courses/sports/soldiers-data`);
     
     if (actionType === 'weekly_grades') router.push(`/courses/sports/weekly-grades`);
@@ -477,16 +507,14 @@ if (feature === 'others') {
     const { selectedBranch } = selectionState;
     
     if (selectedBranch === 'military') {
-        // 🟢 التعديل هنا ليتوافق مع المسار الشغال في القائمة الجانبية
         if (type === 'results') {
-            router.push('/exams/military/results'); // 👈 هذا هو المسار الذي يفتح الصفحة
+            router.push('/exams/military/results');
         } else {
             router.push('/exams/military/MilitaryExams');
         }
         setSelectionState(prev => ({ ...prev, isOpen: false }));
     } 
     else {
-        // ... مسار التدريب الرياضي يبقى كما هو
         if (type === 'fitness') {
             setSelectionState(prev => ({ ...prev, step: 'action_select', selectedExamType: 'fitness' }));
         } else if (type === 'combat') {
@@ -534,10 +562,17 @@ if (feature === 'others') {
                 <h2 className="text-xl font-black text-slate-800">التطبيقات والخدمات</h2>
             </div>
             <div className="bg-white/60 backdrop-blur-xl border border-white/50 rounded-[2.5rem] p-8 md:p-10 shadow-sm">
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-y-10 gap-x-6 justify-items-center">
-                    {menuItems.map((item) => (
-                        <motion.div 
-                            key={item.id} variants={itemVariants} whileHover={{ scale: 1.1, y: -5 }} whileTap={{ scale: 0.95 }}
+               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-y-10 gap-x-6 justify-items-center">
+    {menuItems
+  .filter(item => item.enabled !== false)
+  .map((item) => (
+        <motion.div 
+            key={item.id + '-' + item.enabled}
+            variants={itemVariants} 
+            initial="hidden"
+            animate="visible"
+            whileHover={{ scale: 1.1, y: -5 }} 
+            whileTap={{ scale: 0.95 }}
                             className="flex flex-col items-center gap-4 cursor-pointer group relative w-full max-w-[120px]"
                             onClick={() => handleFeatureClick(item.id)}
                         >
@@ -620,7 +655,6 @@ if (feature === 'others') {
 
                        <div className="grid grid-cols-1 gap-4">
                            
-                           {/* 1. اختيار الفرع */}
                            {selectionState.step === 'branch_select' && (
                                <div className="grid grid-cols-2 gap-4">
                                    <button onClick={() => handleBranchSelect('military')} className="group flex flex-col items-center gap-3 p-6 rounded-3xl border-2 border-slate-100 hover:border-green-500 hover:bg-green-50 transition-all duration-300">
@@ -634,17 +668,12 @@ if (feature === 'others') {
                                </div>
                            )}
 
-                           {/* 2. اختيار الإجراء - التكميل */}
-                           {/* ابحث عن قسم التكميل والمخالفات داخل الـ Dialog واستبدله بهذا التصميم الثلاثي */}
-
-{/* 📅 خيارات التكميل اليومي */}
 {selectionState.step === 'action_select' && selectionState.feature === 'attendance' && (
     <div className="grid grid-cols-1 gap-3">
         <button onClick={() => executeAction('new')} className="w-full p-4 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-blue-100">
             <Plus className="w-5 h-5"/> تسجيل حالات جديدة
         </button>
         
-        {/* زر التدقيق يظهر فقط للمسؤولين والقيادات */}
         <button onClick={() => executeAction('audit')} className="w-full p-4 bg-green-50 hover:bg-green-100 text-green-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-green-100 shadow-sm">
             <ShieldCheck className="w-5 h-5"/> التدقيق والاعتماد اليومي
         </button>
@@ -655,7 +684,6 @@ if (feature === 'others') {
     </div>
 )}
 
-{/* 🛑 خيارات المخالفات */}
 {selectionState.step === 'action_select' && selectionState.feature === 'violations' && (
     <div className="grid grid-cols-1 gap-3">
         <button onClick={() => executeAction('new')} className="w-full p-4 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-red-100">
@@ -671,7 +699,6 @@ if (feature === 'others') {
         </button>
     </div>
 )}
-                           {/* التقارير */}
                            {selectionState.step === 'action_select' && selectionState.feature === 'reports' && (
                                <>
                                    <button onClick={() => executeAction('personal')} className="w-full p-4 bg-amber-50 hover:bg-amber-100 text-amber-700 font-bold rounded-2xl flex items-center gap-3 transition-all"><Users className="w-5 h-5"/> تقرير شخصي (مدرب)</button>
@@ -679,7 +706,6 @@ if (feature === 'others') {
                                </>
                            )}
 
-                           {/* الملف الشخصي (دليل المجندين) */}
                            {selectionState.step === 'action_select' && selectionState.feature === 'soldiers' && (
                                <div className="space-y-3">
                                    {selectionState.selectedBranch === 'military' ? (
@@ -694,15 +720,11 @@ if (feature === 'others') {
                                </div>
                            )}
 
-                           {/* 🟢 زر أخرى (خيارات حسب الفرع) */}
-                          {/* 🟢 زر أخرى (خيارات حسب الفرع) */}
 {selectionState.step === 'action_select' && selectionState.feature === 'others' && (
     <div className="grid grid-cols-1 gap-3">
         
-        {/* أ. خيارات التدريب الرياضي */}
         {selectionState.selectedBranch === 'sports' && (
             <>
-                {/* 🟢 الزر الجديد المضاف هنا في قسم أخرى */}
                 <button onClick={() => executeAction('soldiers_data')} className="w-full p-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-2xl flex items-center gap-3 transition-all border-2 border-emerald-100 shadow-sm">
                     <Table className="w-5 h-5"/> بيانات المجندين
                 </button>
@@ -715,7 +737,6 @@ if (feature === 'others') {
                     <Scale className="w-5 h-5"/> متابعة الأوزان
                 </button>
                 
-                {/* الملف الإداري يظهر فقط للإدارة العليا */}
                 {["owner", "manager", "admin"].includes(user?.role) && (
                     <button onClick={() => executeAction('admin_file')} className="w-full p-4 bg-slate-800 text-white font-bold rounded-2xl flex items-center gap-3 transition-all hover:bg-slate-700">
                         <FileText className="w-5 h-5"/> الملف الإداري (خاص بالإدارة)
@@ -724,7 +745,6 @@ if (feature === 'others') {
             </>
         )}
 
-        {/* ب. خيارات التدريب العسكري */}
         {selectionState.selectedBranch === 'military' && (
             <button onClick={() => executeAction('admin_file')} className="w-full p-4 bg-slate-800 text-white font-bold rounded-2xl flex items-center gap-3 transition-all hover:bg-slate-700">
                 <FileText className="w-5 h-5"/> الملف الإداري (خاص بالإدارة)
@@ -732,12 +752,10 @@ if (feature === 'others') {
         )}
     </div>
 )}
-                           {/* 3. اختيار الاختبار */}
                            {selectionState.step === 'exam_select' && (
                                <div className="grid grid-cols-1 gap-3">
                                    {selectionState.selectedBranch === 'military' ? (
             <>
-                {/* 🟢 الزر الموحد الجديد بدلاً من الرماية والمشاة */}
                 <button 
                     onClick={() => handleExamTypeSelect('unified')} 
                     className="w-full p-6 bg-gradient-to-r from-green-600 to-emerald-700 text-white font-black rounded-3xl transition-all shadow-lg hover:shadow-green-200 hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3"
@@ -768,7 +786,6 @@ if (feature === 'others') {
                                </div>
                            )}
 
-                           {/* 4. خيارات اللياقة */}
                            {selectionState.step === 'action_select' && selectionState.selectedExamType === 'fitness' && (
                                <div className="grid grid-cols-1 gap-3">
                                    <button onClick={() => handleFitnessAction('shabaha')} className="w-full p-4 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-2xl flex items-center gap-3"><Shirt className="w-5 h-5"/> إدخال الشباحات</button>

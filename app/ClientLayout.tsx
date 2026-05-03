@@ -11,9 +11,10 @@ import {
     Users, ClipboardCheck, Settings, LogOut, Menu, ChevronDown, ChevronLeft,
     Dumbbell, Shield, UserCircle, Activity, Swords, Target, Footprints,
     UserCog, FileText, Scale, GraduationCap, Shirt, FolderKanban, ShieldAlert, User,
-    Loader2,
-    ShieldCheck,Badge,Bell // 👈 أضف هذه الكلمة هنا
+    Loader2, ShieldCheck, Badge, Bell,
+    CalendarDays, ClipboardList  // ✅ الإضافة هنا
 } from "lucide-react"
+import { FEATURES_CONFIG, loadFeaturesFromAPI } from "@/lib/features-config"  // ✅ التصحيح
 // 1. استيراد مكتبة الرسائل (لحل خطأ toast)
 import { toast } from "sonner"
 import NotificationsMenu from "@/components/NotificationsMenu"
@@ -66,7 +67,8 @@ type NavItem = {
 
 // هيكل القائمة الجديد
 // هيكل القائمة المحدث ليشمل المسودات القديمة
-const navigationStructure: NavItem[] = [
+const getNavigationStructure = (config: Record<string, boolean>): NavItem[] => {
+  const baseItems: NavItem[] = [
     { id: "home", name: "الرئيسية", href: "/dashboard", icon: LayoutDashboard },
     
     // 1. إدارة الاختبارات
@@ -81,9 +83,11 @@ const navigationStructure: NavItem[] = [
             { id: "compare", name: "المقارنات", href: "/comparisons", icon: ArrowLeftRight },
         ]
     },
+  ];
 
-    // 2. الاختبارات الرقمية
-    {
+  // 2. الاختبارات الرقمية (شرطي) ✅
+  if (config.digitalExams) {
+    baseItems.push({
         id: "digital-exams",
         name: "الاختبارات الرقمية",
         icon: Users,
@@ -117,9 +121,11 @@ const navigationStructure: NavItem[] = [
                 ]
             },
         ]
-    },
+    });
+  }
 
-    // 3. إدارة المدربين
+  // 3. بقية الأقسام الثابتة
+  baseItems.push(
     {
         id: "trainers-mgmt",
         name: "إدارة المدربين",
@@ -149,8 +155,6 @@ const navigationStructure: NavItem[] = [
             }
         ]
     },
-
-    // 4. الملف الإداري للدورات
     {
         id: "courses-mgmt",
         name: "إدارة الدورات",
@@ -163,14 +167,7 @@ const navigationStructure: NavItem[] = [
                 children: [
                     { id: "cs-sp-sol", name: "بيانات المجندين", href: "/courses/sports/soldiers-data", icon: User },
                     { id: "cs-sp-day-new", name: "تسجيل الحالات", href: "/daily-schedule?branch=sports", icon: ClipboardCheck },
-                    
-                    
-{ 
-  id: "cs-sp-daily-audit-new", 
-  name: " تدقيق التكميل", 
-  href: "/courses/audit", 
-  icon: ShieldCheck 
-},
+                    { id: "cs-sp-daily-audit-new", name: " تدقيق التكميل", href: "/courses/audit", icon: ShieldCheck },
                     { id: "cs-sp-audit", name: "عرض التكميل المعتمد ", href: "/daily-audit?branch=sports", icon: ShieldCheck },
                     { id: "cs-sp-vio-new", name: "تسجيل المخالفات", href: "/violations", icon: ShieldAlert },
                     { id: "cs-sp-vio-history", name: "عرض المخالفات المعتمدة ", href: "/violations/history", icon: FileText },
@@ -178,7 +175,6 @@ const navigationStructure: NavItem[] = [
                     { id: "cs-sp-grad", name: "الدرجات الأسبوعية", href: "/courses/sports/weekly-grades", icon: Table },
                     { id: "cs-sp-wgt", name: "متابعة الأوزان", href: "/courses/sports/weights", icon: Scale },
                     { id: "cs-sp-soldiers", name: "ملف المجند", href: "/courses/sports/soldiers", icon: Users },
-                    
                 ]
             },
             {
@@ -187,31 +183,39 @@ const navigationStructure: NavItem[] = [
                 icon: Shield,
                 children: [
                     { id: "cs-mil-day-new", name: "تسجيل الحالات", href: "/daily-schedule?branch=military", icon: ClipboardCheck },
-                    
-                    { 
-  id: "cs-sp-daily-audit-new", 
-  name: "تدقيق التكميل", 
-  href: "/courses/audit", 
-  icon: ShieldCheck 
-},
+                    { id: "cs-sp-daily-audit-new", name: "تدقيق التكميل", href: "/courses/audit", icon: ShieldCheck },
                     { id: "cs-mil-audit", name: " عرض التكميل المعتمد", href: "/daily-audit?branch=military", icon: ShieldCheck },
                     { id: "cs-mil-vio-new", name: "تسجيل المخالفات ", href: "/violations", icon: ShieldAlert },
-                    
                     { id: "cs-mil-vio-history", name: "عرض المخالفات المعتمدة ", href: "/violations/history", icon: FileText },
                     { id: "cs-mil-rep", name: "تقرير عن مجند ", href: "/courses/military/reports", icon: FileText }, 
                     { id: "cs-mil-soldiers", name: "ملف المجند", href: "/courses/military/soldiers", icon: Users },
-        
                 ]
             }
         ]
     },
-
     { id: "users-mgmt", name: "إدارة المستخدمين", href: "/admin/users", icon: ShieldAlert },
     { id: "scope-mgmt", name: "إدارة نطاق العمل", href: "/scope-management", icon: ShieldCheck },
+    { id: "features-control", name: "لوحة تحكم المميزات", href: "/admin/features", icon: Settings },
     { id: "settings", name: "الإعدادات", href: "/settings", icon: Settings },
-]
+  );
+
+  return baseItems;
+};
+
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
+  const [featuresConfig, setFeaturesConfig] = useState<Record<string, boolean>>(FEATURES_CONFIG)  // ✅ أضفنا النوع
+  const [navigationStructure, setNavigationStructure] = useState<NavItem[]>(getNavigationStructure(FEATURES_CONFIG))
+
+  // جلب الإعدادات عند تحميل الصفحة
+  useEffect(() => {
+    async function loadConfig() {
+      const config = await loadFeaturesFromAPI()
+      setFeaturesConfig(config)
+      setNavigationStructure(getNavigationStructure(config))
+    }
+    loadConfig()
+  }, [])
 	const pathname = usePathname()
 	const [isMounted, setIsMounted] = useState(false)
 	const [openMenus, setOpenMenus] = useState<Record<string, boolean>>({})
