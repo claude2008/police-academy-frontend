@@ -7,6 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Loader2, Save, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
+// دالة للحصول على رابط API الصحيح
+const getApiUrl = () => {
+  // استخدم متغير البيئة في Production، أو localhost في Development
+  return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_API_URL
+    ? process.env.NEXT_PUBLIC_API_URL
+    : 'http://localhost:8000'
+}
+
 interface FeatureSetting {
   id: number
   key: string
@@ -24,7 +32,8 @@ export default function FeaturesControlPage() {
   const fetchSettings = async () => {
     setLoading(true)
     try {
-      const response = await fetch('http://localhost:8000/api/settings/features')
+      const apiUrl = getApiUrl()
+      const response = await fetch(`${apiUrl}/api/settings/features`)
       const data = await response.json()
       setSettings(data)
     } catch (error) {
@@ -40,8 +49,9 @@ export default function FeaturesControlPage() {
     setSaving(true)
     try {
      const token = localStorage.getItem('token')  // 👈 غيّر من access_token إلى token
+      const apiUrl = getApiUrl()
       
-      const response = await fetch(`http://localhost:8000/api/settings/features/${key}`, {
+      const response = await fetch(`${apiUrl}/api/settings/features/${key}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
