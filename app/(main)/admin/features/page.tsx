@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Switch } from "@/components/ui/switch"
 import { Button } from "@/components/ui/button"
@@ -24,10 +25,18 @@ interface FeatureSetting {
 }
 
 export default function FeaturesControlPage() {
+  const router = useRouter()
   const [settings, setSettings] = useState<FeatureSetting[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-
+useEffect(() => {
+    const role = localStorage.getItem('role')
+    if (role !== 'owner') {
+      toast.error('🚫 غير مصرح لك بالدخول لهذه الصفحة')
+      router.push('/dashboard')
+      return
+    }
+  }, [router])
   // جلب الإعدادات من الـ API
   const fetchSettings = async () => {
     setLoading(true)
@@ -88,8 +97,11 @@ export default function FeaturesControlPage() {
   }
 
   useEffect(() => {
+  const role = localStorage.getItem('role')
+  if (role === 'owner') {
     fetchSettings()
-  }, [])
+  }
+}, [])
 
   if (loading) {
     return (

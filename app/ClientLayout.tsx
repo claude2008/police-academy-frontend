@@ -482,6 +482,12 @@ if (item.id === "cs-sp-audit" || item.id === "cs-mil-audit" || item.id === "cs-s
         const allowedToSeeUsers = ["owner", "manager", "admin"].includes(userRole || "");
         if (!allowedToSeeUsers) return null; 
     }
+    // 🔒 حماية لوحة تحكم المميزات - Owner فقط
+if (item.id === "features-control") {
+    if (isLoading || userRole !== "owner") {
+        return null;
+    }
+}
     // ----------------------------------------------------------------
     // 6. إدارة نطاق العمل (تظهر للقيادات والضباط والمشرف العسكري فقط)
     // ----------------------------------------------------------------
