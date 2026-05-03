@@ -16,7 +16,7 @@ const DEFAULT_CONFIG = {
 // دالة لجلب الإعدادات من API
 export async function loadFeaturesFromAPI() {
   try {
-    const response = await fetch('http://localhost:8000/api/settings/features', {
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/settings/features`, {
       cache: 'no-store' // لا تخزن مؤقتاً
     })
     
