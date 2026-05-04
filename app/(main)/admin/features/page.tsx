@@ -30,13 +30,15 @@ export default function FeaturesControlPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 useEffect(() => {
-    const role = localStorage.getItem('role')
-    if (role !== 'owner') {
-      toast.error('🚫 غير مصرح لك بالدخول لهذه الصفحة')
-      router.push('/dashboard')
-      return
-    }
-  }, [router])
+  const userData = localStorage.getItem('user')
+  const role = userData ? JSON.parse(userData).role : null
+  
+  if (role !== 'owner') {
+    toast.error('🚫 غير مصرح لك بالدخول لهذه الصفحة')
+    router.push('/dashboard')
+    return
+  }
+}, [router])
   // جلب الإعدادات من الـ API
   const fetchSettings = async () => {
     setLoading(true)
@@ -96,8 +98,10 @@ useEffect(() => {
     }
   }
 
-  useEffect(() => {
-  const role = localStorage.getItem('role')
+ useEffect(() => {
+  const userData = localStorage.getItem('user')
+  const role = userData ? JSON.parse(userData).role : null
+  
   if (role === 'owner') {
     fetchSettings()
   }
