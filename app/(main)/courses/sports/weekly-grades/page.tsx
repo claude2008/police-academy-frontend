@@ -201,20 +201,27 @@ export default function WeeklyGradesPage() {
 
     // --- Logic ---
     const fetchData = async () => {
-        if (!startDate || !endDate || !weekTitle) {
-            return toast.error("الرجاء إدخال العنوان والتاريخ");
-        }
-        if (filterCourse === "طلبة الدبلوم" && !selectedPeriod) {
-            return toast.error("الرجاء اختيار الفترة الدراسية لطلبة الدبلوم");
-        }
+    if (!startDate || !endDate || !weekTitle) {
+        return toast.error("الرجاء إدخال العنوان والتاريخ");
+    }
+    
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'; // ✅ أضف هذا السطر
+    
+    if (filterCourse === "طلبة الدبلوم" && !selectedPeriod) {
+        return toast.error("الرجاء اختيار الفترة الدراسية لطلبة الدبلوم");
+    }
         if (isPathIncomplete) return;
         setLoading(true);
         setExistingReportId(null); 
 
         try {
             // 1. التحقق من وجود تقرير محفوظ مسبقاً لهذا الأسبوع
+            
             const checkParams = new URLSearchParams({
-                course: filterCourse, batch: filterBatch, company: filterCompany, platoon: filterPlatoon, title: weekTitle, subject: subject
+                
+  course: filterCourse,
+  batch: filterBatch?.trim() || "all",
+  company: filterCompany?.trim() || "all", platoon: filterPlatoon, title: weekTitle, subject: subject
             });
             const checkRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/weekly-reports/check?${checkParams.toString()}`);
             const checkJson = await checkRes.json();
@@ -233,12 +240,14 @@ export default function WeeklyGradesPage() {
 
             // 3. جلب بيانات التكميل (الحضور والمخالفات)
             const attParams = new URLSearchParams({ 
-                class_type: subject === "لياقة بدنية" ? "fitness" : "combat", 
-                start_date: startDate, 
-                end_date: endDate,
-                course: filterCourse,
-                batch: filterBatch
-            })
+    class_type: subject === "لياقة بدنية" ? "fitness" : "combat", 
+    start_date: startDate, 
+    end_date: endDate,
+    course: filterCourse,
+    batch: filterBatch === "لا يوجد" ? "all" : filterBatch  // ✅ التعديل هنا
+})
+            console.log('🔍 attParams:', Object.fromEntries(attParams));
+            console.log('🔍 URL:', `${apiUrl}/attendance/?${attParams}`);
             const attRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/attendance/?${attParams.toString()}`, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
             });
