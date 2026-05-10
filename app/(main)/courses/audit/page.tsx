@@ -102,7 +102,8 @@ export default function SessionAuditPage() {
                 try {
                     // أ) جلب قائمة الحصص
                     const templateRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/template?course=${encodeURIComponent(paramCourse)}&date=${paramDate}&batch=${encodeURIComponent(cleanBatch)}`, {
-                        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+                        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+                        cache: "no-store"
                     });
 
                     const displayId = Number(paramSessionId) + 1;
@@ -218,8 +219,9 @@ export default function SessionAuditPage() {
             const cleanBatch = (course.batch === "لا يوجد" || !course.batch) ? "None" : course.batch;
             
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/session/template?course=${encodeURIComponent(course.course)}&date=${date}&batch=${encodeURIComponent(cleanBatch)}`, {
-                headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
-            });
+    headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` },
+    cache: "no-store"
+});
             if (res.ok) {
                 setSessions(await res.json());
                 setViewMode('sessions');
