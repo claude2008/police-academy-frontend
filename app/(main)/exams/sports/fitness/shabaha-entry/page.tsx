@@ -216,8 +216,19 @@ if (filters.company && filters.company !== "all") {
                 });
             }
 
-            setSoldiers(rawList)
-            setTotalItems(data.total)
+            // دمج مع assignmentsMap لضمان بقاء البيانات المحفوظة ظاهرة
+const mergedList = rawList.map((s: any) => {
+    const saved = assignmentsMap[s.id] || {};
+    return {
+        ...s,
+        shabaha_number: saved.shabaha_number ?? s.shabaha_number ?? "",
+        shabaha_color: saved.shabaha_color ?? s.shabaha_color ?? "",
+        chip_number: saved.chip_number ?? s.chip_number ?? "",
+        notes: saved.notes ?? s.notes ?? "",
+    };
+});
+setSoldiers(mergedList)
+setTotalItems(data.total)
         }
     } catch (e) { 
         toast.error("فشل جلب البيانات") 
@@ -340,7 +351,17 @@ useEffect(() => {
           const newColor   = field === 'shabaha_color'  ? value : (soldier?.shabaha_color  ?? saved.shabaha_color  ?? "");
 
           // ✅ التحقق فقط إذا كان الرقم واللون موجودَين معاً
+          // ✅ التحقق من الشباحة (رقم + لون معاً)
           if (newShabaha && newColor && newColor !== "clear_value") {
+              const isValid = await checkAvailability(id, field, value);
+              if (!isValid) {
+                  setSoldiers(prev => prev.map(s => s.id === id ? { ...s, [field]: "" } : s));
+                  return;
+              }
+          }
+
+          // ✅ التحقق من الشريحة بشكل مستقل
+          if (field === 'chip_number' && value) {
               const isValid = await checkAvailability(id, field, value);
               if (!isValid) {
                   setSoldiers(prev => prev.map(s => s.id === id ? { ...s, [field]: "" } : s));
@@ -365,12 +386,21 @@ const executeSave = async (id: number, field: string, value: string) => {
             },
             body: JSON.stringify(payload)
         });
+
+        if (!res.ok) {
+            // 🔴 قراءة رسالة الخطأ من الباك إند وعرضها
+            const errData = await res.json().catch(() => ({}));
+            const errMsg = errData?.detail || "لا يمكن حفظ هذه القيمة — قد تكون مكررة";
+            toast.error("⚠️ " + errMsg);
+            // إفراغ الخلية التي أدخلها المستخدم
+            setSoldiers(prev => prev.map(s => s.id === id ? { ...s, [field]: "" } : s));
+            return;
+        }
         
-        // 🟢 الحل هنا: يجب تحديث الخريطة فوراً بعد الحفظ لكي تبقى البيانات ظاهرة
         await fetchAssignments(); 
 
-        if (res.ok && field === 'notes') {
-            toast.success("تم حفظ الملاحظة");
+        if (field === 'notes') {
+            toast.success("تم حفظ الملاحظة ✅");
         }
     } catch (e) {
         toast.error("خطأ في الاتصال بالسيرفر");
@@ -457,8 +487,19 @@ const handlePrintPDF = async () => {
 
     if (res.ok) {
         const data = await res.json();
-        setSoldiers(data.data); // تحديث الجدول بكل الجنود
-        setItemsPerPage(data.total); // توسيع الصفحة لتشمل الكل
+        // دمج بيانات السيرفر مع الـ assignmentsMap لضمان ظهور الأرقام
+const mergedData = data.data.map((s: any) => {
+    const saved = assignmentsMap[s.id] || {};
+    return {
+        ...s,
+        shabaha_number: saved.shabaha_number ?? s.shabaha_number ?? "",
+        shabaha_color: saved.shabaha_color ?? s.shabaha_color ?? "",
+        chip_number: saved.chip_number ?? s.chip_number ?? "",
+        notes: saved.notes ?? s.notes ?? "",
+    };
+});
+setSoldiers(mergedData);
+setItemsPerPage(data.total);
         
         // 2. الانتظار قليلاً حتى يرسم المتصفح الجدول الجديد ثم الطباعة
         setTimeout(() => {
