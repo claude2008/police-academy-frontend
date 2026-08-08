@@ -1184,7 +1184,9 @@ export default function WeightsPage() {
                     </tr>
                 </thead>
                 <tbody>
-                    {filteredData.map((soldier, index) => (
+                    {filteredData.filter(soldier => 
+    sessions.some(session => !session.isHidden && parseFloat(session.weights[soldier.id] || "0") > 0)
+).map((soldier, index) => (
                         <tr key={soldier.id}>
                             <td className="border border-black text-center text-[10px] font-mono">{index + 1}</td>
                             <td className="border border-black text-center text-[10px] font-bold">{soldier.militaryId}</td>

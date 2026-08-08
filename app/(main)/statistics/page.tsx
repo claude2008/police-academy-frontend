@@ -187,8 +187,9 @@ useEffect(() => {
       }
 
       filteredData.forEach(item => {
-        const grade = String(item[cat.gradeKey] || "").trim()
-        const notes = String(item.notes || "").trim()
+        const gradeAr: Record<string, string> = { run_grade: 'تقدير الجري', push_grade: 'تقدير الضغط', sit_grade: 'تقدير البطن', grade: 'التقدير العام' }
+        const grade = String(item[cat.gradeKey] || item[gradeAr[cat.gradeKey]] || "").trim()
+        const notes = String(item.notes || item["ملاحظات"] || "").trim()
         const status = String(item.status || "").trim()
         const finalRes = String(item.final_result || "").trim()
 
@@ -198,7 +199,8 @@ useEffect(() => {
         if (notes.includes("طبية") || notes.includes("طبي")) { row.medical++; return }
         if (notes.includes("عيادة")) { row.clinic++; return }
         if (notes.includes("لم يكمل") || notes.includes("قطع مسار") || notes.includes("قطع")) { 
-    row.rest++; 
+    row.rest++;
+    row.failCount++; // لم يكمل = راسب أيضاً
     return; // يخرج هنا فلا يُحسب كناجح أو راسب
 }
         if (notes.includes("إجازة")) { row.vacation++; return }
