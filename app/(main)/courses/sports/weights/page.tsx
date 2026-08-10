@@ -528,9 +528,11 @@ export default function WeightsPage() {
 
   const getIMCStatus = (imc: number) => {
     if (imc === 0) return { text: "-", color: "text-slate-400" };
-    if (imc < 18.5) return { text: "نحيف", color: "text-yellow-600 bg-yellow-100" };
-    if (imc >= 18.5 && imc <= 24.9) return { text: "مثالي", color: "text-green-700 bg-green-100" };
-    if (imc >= 25 && imc <= 29.9) return { text: "وزن زائد", color: "text-orange-600 bg-orange-100" };
+    const rounded = Math.round(imc * 100) / 100;
+    if (rounded < 18.5) return { text: "نحيف", color: "text-yellow-600 bg-yellow-100" };
+    if (rounded < 26) return { text: "مثالي", color: "text-green-700 bg-green-100" };
+    if (rounded < 27) return { text: "عادي", color: "text-blue-600 bg-blue-100" };
+    if (rounded < 30) return { text: "وزن زائد", color: "text-orange-600 bg-orange-100" };
     return { text: "سمنة", color: "text-red-600 bg-red-100" };
   }
 
@@ -1207,7 +1209,7 @@ export default function WeightsPage() {
                                     <Fragment key={session.id}>
                                         <td className="border border-black text-center text-[10px] font-bold">{weight || "-"}</td>
                                         <td className="border border-black text-center text-[10px] font-mono">{imc > 0 ? imc.toFixed(1) : "-"}</td>
-                                        <td className="border border-black text-center text-[9px]">{status.text !== "-" ? status.text : ""}</td>
+                                        <td className={`border border-black text-center text-[9px] font-bold ${status.color} [-webkit-print-color-adjust:exact] [print-color-adjust:exact]`}>{status.text !== "-" ? status.text : ""}</td>
                                     </Fragment>
                                 )
                             })}
