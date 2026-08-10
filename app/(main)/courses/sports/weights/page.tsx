@@ -21,7 +21,7 @@ import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { format } from "date-fns"
 import { ar } from "date-fns/locale"
-import * as XLSX from 'xlsx'
+import * as XLSXStyle from 'xlsx-js-style'
 import ProtectedRoute from "@/components/ProtectedRoute"
 
 // --- أنواع البيانات ---
@@ -539,6 +539,18 @@ export default function WeightsPage() {
   const handleWeightChange = (sessionId: string, soldierId: number, rawInput: string) => {
     const weightStr = rawInput.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
 
+    const STATUS_KEYWORDS = ["غياب", "عيادة", "طبية", "مستشفى", "إجازة", "معفى"];
+    const isStatusText = STATUS_KEYWORDS.some(k => weightStr.includes(k));
+    if (isStatusText) {
+        setSessions(prev => prev.map(s => s.id === sessionId ? {
+            ...s,
+            weights: { ...s.weights, [soldierId]: weightStr },
+            imc: { ...s.imc, [soldierId]: 0 },
+            status: { ...s.status, [soldierId]: weightStr }
+        } : s));
+        return;
+    }
+
     setSessions(sessions.map(s => {
         if (s.id === sessionId) {
             const weight = parseFloat(weightStr);
@@ -615,45 +627,107 @@ export default function WeightsPage() {
   }
 
   const handleExportExcel = () => {
-    const exportData = filteredData.map((s, index) => {
-        const row: any = {
-            "م": index + 1,
-            "الدورة": s.course,
-            "الدفعة": s.batch,
-        }
-        
-        // 🆕 إضافة السرية والفصيل في وضع الموزونين فقط
-        if (showWeighedOnly) {
-            row["السرية"] = s.company;
-            row["الفصيل"] = s.platoon;
-        }
-        
-        row["الرقم العسكري"] = s.militaryId;
-        row["الاسم"] = s.name;
-        row["الطول (سم)"] = s.height;
-        row["الوزن الأولي"] = s.initialWeight;
-        
-        sessions.forEach((session, idx) => {
-            const weight = session.weights[s.id];
-            const imc = session.imc[s.id];
-            const status = session.status[s.id];
-            
-            row[`تاريخ القياس ${idx + 1} (${session.date})`] = weight || "-";
-            row[`IMC ${idx + 1}`] = imc ? imc.toFixed(2) : "-";
-            row[`ملاحظة ${idx + 1}`] = status || "-";
-        })
-        return row;
-    })
+    const STATUS_KEYWORDS = ["غياب", "عيادة", "طبية", "مستشفى", "إجازة", "معفى"];
+    
+    // ألوان التقديرات
+    const colorMap: Record<string, string> = {
+        "نحيف": "FFFDE7",
+        "مثالي": "E8F5E9",
+        "عادي": "E3F2FD",
+        "وزن زائد": "FFF3E0",
+        "سمنة": "FFEBEE",
+    };
+    const purpleColor = "F3E5F5";
+    const headerColor = "C5B391";
 
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "سجل الأوزان");
+    const wb = XLSXStyle.utils.book_new();
+    
+    // بناء البيانات
+    const visibleSessions = sessions.filter(s => !s.isHidden);
+    const rows: any[][] = [];
+    
+    // رأس الجدول
+    const header1: any[] = ["م", "الدورة", "الدفعة"];
+    if (showWeighedOnly) { header1.push("السرية"); header1.push("الفصيل"); }
+    header1.push("الرقم العسكري", "الاسم", "الطول (سم)", "الوزن الأولي");
+    visibleSessions.forEach((session, idx) => {
+        header1.push(`تاريخ القياس ${idx + 1} (${session.date})`, `IMC ${idx + 1}`, `ملاحظة ${idx + 1}`);
+    });
+    rows.push(header1);
+
+    // بيانات الطلاب
+    filteredData.forEach((s, index) => {
+        const row: any[] = [index + 1, s.course, s.batch];
+        if (showWeighedOnly) { row.push(s.company); row.push(s.platoon); }
+        row.push(s.militaryId, s.name, s.height, s.initialWeight);
+        visibleSessions.forEach(session => {
+            const weight = String(session.weights[s.id] || "");
+            const isStatus = STATUS_KEYWORDS.some(k => weight.includes(k));
+            const imc = isStatus ? 0 : calculateIMC(parseFloat(weight || "0"), s.height);
+            const imcStatus = isStatus ? weight : getIMCStatus(imc).text;
+            row.push(weight || "-", imc > 0 ? parseFloat(imc.toFixed(2)) : "-", imcStatus !== "-" ? imcStatus : "-");
+        });
+        rows.push(row);
+    });
+
+    const ws = XLSXStyle.utils.aoa_to_sheet(rows);
+
+    // تطبيق الأنماط
+    const range = XLSXStyle.utils.decode_range(ws['!ref'] || "A1");
+    const fixedCols = showWeighedOnly ? 9 : 7;
+
+    for (let R = range.s.r; R <= range.e.r; R++) {
+        for (let C = range.s.c; C <= range.e.c; C++) {
+            const cellRef = XLSXStyle.utils.encode_cell({ r: R, c: C });
+            if (!ws[cellRef]) ws[cellRef] = { v: "", t: "s" };
+            
+            const isHeader = R === 0;
+            const colOffset = C - fixedCols;
+            const isNoteCol = colOffset >= 0 && colOffset % 3 === 2;
+            
+            let fillColor = "FFFFFF";
+            if (isHeader) {
+                fillColor = headerColor;
+            } else if (isNoteCol) {
+                const cellVal = String(ws[cellRef].v || "");
+                const isStatusCell = STATUS_KEYWORDS.some(k => cellVal.includes(k));
+                if (isStatusCell) fillColor = purpleColor;
+                else if (colorMap[cellVal]) fillColor = colorMap[cellVal];
+            }
+
+            ws[cellRef].s = {
+                fill: { fgColor: { rgb: fillColor } },
+                font: { bold: isHeader, name: "Arial", sz: isHeader ? 11 : 10 },
+                alignment: { horizontal: "center", vertical: "center", wrapText: true },
+                border: {
+                    top: { style: "thin", color: { rgb: "BDBDBD" } },
+                    bottom: { style: "thin", color: { rgb: "BDBDBD" } },
+                    left: { style: "thin", color: { rgb: "BDBDBD" } },
+                    right: { style: "thin", color: { rgb: "BDBDBD" } },
+                }
+            };
+        }
+    }
+
+    // عرض الأعمدة
+    ws['!cols'] = header1.map(() => ({ wch: 18 }));
+
+    XLSXStyle.utils.book_append_sheet(wb, ws, "سجل الأوزان");
+    
     const filename = showWeighedOnly 
         ? `الطلاب_الموزونين_${format(new Date(), "yyyy-MM-dd")}.xlsx`
         : `سجل_الأوزان_${format(new Date(), "yyyy-MM-dd")}.xlsx`;
-    XLSX.writeFile(workbook, filename);
+
+    const wbout = XLSXStyle.write(wb, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([wbout], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
     toast.success("تم تصدير الملف بنجاح");
-  }
+  };
 
   const filterText = [
     filterCourse !== 'all' ? filterCourse : 'جميع الدورات',
@@ -1074,9 +1148,13 @@ export default function WeightsPage() {
                                     <TableCell className="text-center border border-slate-300 font-mono text-xs bg-slate-50">{soldier.height}</TableCell>
                                     {sessions.map((session) => {
                                         if (session.isHidden) return <TableCell key={session.id} className="border border-slate-300 bg-gray-100 min-w-[40px] p-0"></TableCell>
-                                        const weight = session.weights[soldier.id] || "";
-                                        const imc = calculateIMC(parseFloat(weight), soldier.height);
-                                        const status = getIMCStatus(imc);
+                                        const weight = String(session.weights[soldier.id] || "");
+                                        const STATUS_KEYWORDS = ["غياب", "عيادة", "طبية", "مستشفى", "إجازة", "معفى"];
+                                        const isStatusText = STATUS_KEYWORDS.some(k => weight.includes(k));
+                                        const imc = isStatusText ? 0 : calculateIMC(parseFloat(weight), soldier.height);
+                                        const status = isStatusText 
+                                            ? { text: weight, color: "text-purple-700 bg-purple-100 border-purple-300" }
+                                            : getIMCStatus(imc);
                                         return (
                                             <Fragment key={session.id}>
                                                 <TableCell className="p-1 border border-slate-300">
@@ -1090,7 +1168,7 @@ export default function WeightsPage() {
                                                     />
                                                 </TableCell>
                                                 <TableCell className="text-center border border-slate-300 font-mono text-xs font-bold bg-slate-50">{imc > 0 ? imc.toFixed(1) : "-"}</TableCell>
-                                                <TableCell className="text-center border border-slate-300 p-1">{imc > 0 && (<span className={`text-[9px] font-bold px-1 py-0.5 rounded-full block w-full ${status.color} border whitespace-nowrap overflow-hidden text-ellipsis`}>{status.text}</span>)}</TableCell>
+                                                <TableCell className="text-center border border-slate-300 p-1">{(imc > 0 || status.text) && (<span className={`text-[9px] font-bold px-1 py-0.5 rounded-full block w-full ${imc === 0 && status.text ? "text-purple-700 bg-purple-100 border-purple-300" : status.color} border whitespace-nowrap overflow-hidden text-ellipsis`}>{status.text}</span>)}</TableCell>
                                             </Fragment>
                                         )
                                     })}
@@ -1202,9 +1280,13 @@ export default function WeightsPage() {
                             <td className="border border-black text-center text-[10px] font-mono">{soldier.height}</td>
                             {sessions.map(session => {
                                 if (session.isHidden) return null;
-                                const weight = session.weights[soldier.id] || "";
-                                const imc = calculateIMC(parseFloat(weight), soldier.height);
-                                const status = getIMCStatus(imc);
+                                const weight = String(session.weights[soldier.id] || "");
+                                const STATUS_KEYWORDS = ["غياب", "عيادة", "طبية", "مستشفى", "إجازة", "معفى"];
+                                const isStatusText = STATUS_KEYWORDS.some(k => weight.includes(k));
+                                const imc = isStatusText ? 0 : calculateIMC(parseFloat(weight), soldier.height);
+                                const status = isStatusText 
+                                    ? { text: weight, color: "text-purple-700 bg-purple-100 border-purple-300" }
+                                    : getIMCStatus(imc);
                                 return (
                                     <Fragment key={session.id}>
                                         <td className="border border-black text-center text-[10px] font-bold">{weight || "-"}</td>
