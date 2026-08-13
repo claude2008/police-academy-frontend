@@ -650,14 +650,22 @@ const filteredViolations = useMemo(() => {
     });
 }, [profileData.violations_list, vioFrom, vioTo, violationSubjectFilter, violationSessionFilter]);
 const statsSummary = useMemo(() => {
-    const counts: Record<string, number> = {};
-    
+    const datesByStatus: Record<string, Set<string>> = {};
     filteredAttendance.forEach((item: any) => {
         const label = item.status_label || "أخرى";
-        // 🟢 نجمع displayDuration (المدة الذكية) بدلاً من المدة الأصلية
-        counts[label] = (counts[label] || 0) + item.displayDuration;
+        if (!datesByStatus[label]) datesByStatus[label] = new Set();
+        // مفتاح فريد يجمع التاريخ + رقم الحصة معاً
+        const start = new Date(item.start_date);
+        const end = new Date(item.end_date);
+        const sessionKey = item.session_id || "none";
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            datesByStatus[label].add(`${d.toISOString().split('T')[0]}_${sessionKey}`);
+        }
     });
-    
+    const counts: Record<string, number> = {};
+    Object.entries(datesByStatus).forEach(([label, dates]) => {
+        counts[label] = dates.size;
+    });
     return Object.entries(counts); 
 }, [filteredAttendance]);
 
@@ -668,7 +676,7 @@ const selectedSessionName = useMemo(() => {
     return session ? session.name : `الحصة ${Number(sessionFilter[0]) + 1}`;
 }, [sessionFilter, availableSessions]);
     if (!isClient) return null;
-const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "military_officer"].includes(userRole || "");
+const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "military_officer", "sports_supervisor", "sports_trainer", "military_supervisor", "military_trainer"].includes(userRole || "");
     return (
         <ProtectedRoute allowedRoles={["owner","manager","admin","assistant_admin","sports_officer","sports_supervisor", "sports_trainer","military_officer","military_supervisor", "military_trainer"]}>
         <div className="space-y-6 p-2 md:p-6 pb-20 md:pb-32" dir="rtl">
@@ -1269,7 +1277,7 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
 </AccordionItem>
 
                         {/* 3. كرت الأكاديمي */}
-                        {hasFullAccess && (
+                        {canAccessAcademic && (
                         <AccordionItem value="item-3" className="border rounded-xl bg-white px-4 shadow-sm break-avoid relative overflow-hidden">
                             {!canAccessAcademic && <div className="absolute inset-0 bg-slate-50/50 backdrop-blur-[1px] z-10 cursor-not-allowed flex items-center justify-center"><Badge variant="outline" className="bg-white text-slate-400 gap-1"><ShieldAlert className="w-3 h-3"/> للعرض فقط للمسؤولين</Badge></div>}
                             <AccordionTrigger className={cn("hover:no-underline py-4 accordion-trigger-text", !canAccessAcademic && "pointer-events-none")}>
