@@ -74,7 +74,8 @@ const [milSubjectFilter, setMilSubjectFilter] = useState("all"); // الفلتر
     const [weightsPerPage, setWeightsPerPage] = useState(5)
     const [milExamsPage, setMilExamsPage] = useState(1)
     const [milExamsPerPage, setMilExamsPerPage] = useState(10)
-    const [sessionFilter, setSessionFilter] = useState("all");
+    const [sessionFilter, setSessionFilter] = useState<string[]>([]);
+    const [violationSessionFilter, setViolationSessionFilter] = useState<string[]>([]);
 const [availableSessions, setAvailableSessions] = useState<any[]>([]);
     const params = useParams();
     const currentBranch = params.branch as string; 
@@ -442,7 +443,7 @@ useEffect(() => {
     
     setProfileData(data);
     setAvailableSessions(data.course_sessions || []);
-    setSessionFilter("all");
+    setSessionFilter([]);
 }
     } catch (e) { 
         console.error(e); 
@@ -458,7 +459,7 @@ useEffect(() => {
     setProfileData({ weights: [], status_stats: {}, violation_stats: {}, reports: [], military_exams: [] }); 
     
     // 🆕 تصفير فلاتر الحصص
-    setSessionFilter("all");
+    setSessionFilter([]);
     setAvailableSessions([]);
 }
     
@@ -610,9 +611,9 @@ const filteredAttendance = useMemo(() => {
         let displayDuration = Number(item.duration) || 0;
         let isAttendedInFirstDay = false;
 
-        if (sessionFilter !== "all" && globalStatuses.includes(item.status_key)) {
-            // إذا كانت الحصة المختارة ليست من ضمن الحصص التي شملها الإعفاء في اليوم الأول
-            if (!item.involved_sessions?.includes(String(sessionFilter))) {
+        if (sessionFilter.length > 0 && globalStatuses.includes(item.status_key)) {
+            const isInAnySelected = sessionFilter.some(sf => item.involved_sessions?.includes(sf));
+            if (!isInAnySelected) {
                 displayDuration = Math.max(0, displayDuration - 1);
                 isAttendedInFirstDay = true; 
             }
@@ -627,10 +628,9 @@ const filteredAttendance = useMemo(() => {
         
         // فلترة الحصة
         let matchesSession = true;
-        if (sessionFilter !== "all") {
-            const isGlobal = globalStatuses.includes(item.status_key);
-            const isSpecificallyLogged = item.involved_sessions?.includes(String(sessionFilter));
-            matchesSession = isGlobal || isSpecificallyLogged;
+        if (sessionFilter.length > 0) {
+            const isSpecificallyLogged = sessionFilter.some(sf => item.involved_sessions?.includes(sf));
+            matchesSession = isSpecificallyLogged === true;
         }
 
         return matchesDate && matchesSession && item.displayDuration > 0;
@@ -644,11 +644,11 @@ const filteredViolations = useMemo(() => {
         const matchesSubject = violationSubjectFilter === 'all' || item.branch === violationSubjectFilter;
         
         // 🆕 فلترة الحصة للمخالفات
-        const matchesSession = sessionFilter === "all" || String(item.session_id) === String(sessionFilter);
+        const matchesSession = violationSessionFilter.length === 0 || violationSessionFilter.includes(String(item.session_id));
         
         return matchesDate && matchesSubject && matchesSession;
     });
-}, [profileData.violations_list, vioFrom, vioTo, violationSubjectFilter, sessionFilter]);
+}, [profileData.violations_list, vioFrom, vioTo, violationSubjectFilter, violationSessionFilter]);
 const statsSummary = useMemo(() => {
     const counts: Record<string, number> = {};
     
@@ -662,10 +662,10 @@ const statsSummary = useMemo(() => {
 }, [filteredAttendance]);
 
 const selectedSessionName = useMemo(() => {
-    if (sessionFilter === "all") return "كل الحصص";
+    if (sessionFilter.length === 0) return "كل الحصص";
     // البحث عن اسم الحصة في المصفوفة بناءً على المعرف
-    const session = availableSessions.find(s => String(s.id) === String(sessionFilter));
-    return session ? session.name : `الحصة ${Number(sessionFilter) + 1}`;
+    const session = availableSessions.find(s => String(s.id) === String(sessionFilter[0]));
+    return session ? session.name : `الحصة ${Number(sessionFilter[0]) + 1}`;
 }, [sessionFilter, availableSessions]);
     if (!isClient) return null;
 const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_officer", "military_officer"].includes(userRole || "");
@@ -1392,7 +1392,14 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
     <AccordionTrigger className="hover:no-underline py-4 accordion-trigger-text">
         <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-50 rounded-lg"><CalIcon className="w-5 h-5 text-blue-600" /></div>
-            <span className="font-bold text-slate-800 text-lg">سجل الحالات الإدارية والطبية</span>
+            <span className="font-bold text-slate-800 text-lg">
+    سجل الحالات الإدارية والطبية
+    {(reportFrom || reportTo) && (
+        <span className="text-sm font-normal text-slate-500 mr-2 print:inline hidden">
+            {reportFrom && reportTo ? `من ${reportFrom} إلى ${reportTo}` : reportFrom ? `من ${reportFrom}` : `إلى ${reportTo}`}
+        </span>
+    )}
+</span>
             <Badge className="bg-blue-600 text-white mr-2">{filteredAttendance.length}</Badge>
         </div>
     </AccordionTrigger>
@@ -1425,25 +1432,28 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
     {/* 🆕 1. قائمة اختيار الحصة */}
     <div className="flex items-center gap-2">
         <span className="text-[10px] font-black text-slate-400">تصفية:</span>
-        <Select value={sessionFilter} onValueChange={setSessionFilter}>
-            <SelectTrigger className="w-[180px] h-8 text-[10px] bg-white border-blue-200 font-bold shadow-sm">
-                <SelectValue placeholder="اختر الحصة..." />
-            </SelectTrigger>
-            <SelectContent dir="rtl">
-    <SelectItem value="all" className="text-xs">كل الحصص</SelectItem>
-    
-    {/* 🔍 فحص سريع داخل الواجهة */}
-    {availableSessions.length === 0 && (
-        <div className="text-[9px] p-2 text-red-400 italic">لا توجد حصص مسجلة لهذه الدورة</div>
-    )}
-
+        <div className="flex flex-wrap gap-1 items-center no-print">
+    <button
+        onClick={() => setSessionFilter([])}
+        className={`text-[10px] px-2 py-1 rounded-full border font-bold transition-colors ${sessionFilter.length === 0 ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-300 hover:border-blue-400"}`}
+    >
+        كل الحصص
+    </button>
     {availableSessions.map((sess: any, idx: number) => (
-        <SelectItem key={idx} value={String(idx)} className="text-xs">
+        <button
+            key={idx}
+            onClick={() => {
+                const sid = String(idx);
+                setSessionFilter(prev => 
+                    prev.includes(sid) ? prev.filter(s => s !== sid) : [...prev, sid]
+                )
+            }}
+            className={`text-[10px] px-2 py-1 rounded-full border font-bold transition-colors ${sessionFilter.includes(String(idx)) ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-300 hover:border-blue-400"}`}
+        >
             {`ح${idx + 1}: ${sess.name || sess}`}
-        </SelectItem>
+        </button>
     ))}
-</SelectContent>
-        </Select>
+</div>
     </div>
 
     {/* 2. زر البحث بالتاريخ (كما هو مع تحسين بسيط في المسافة) */}
@@ -1461,11 +1471,11 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
     </Button>
 
     {/* 🆕 3. زر تصفية سريع (اختياري) لإعادة الضبط */}
-    {sessionFilter !== "all" && (
+    {sessionFilter.length > 0 && (
         <Button 
             variant="ghost" 
             size="sm" 
-            onClick={() => setSessionFilter("all")}
+            onClick={() => setSessionFilter([])}
             className="h-8 text-[9px] text-red-500 hover:text-red-600 font-bold"
         >
             <RotateCcw className="w-3 h-3 ml-1" /> إعادة ضبط
@@ -1485,6 +1495,7 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                     <TableRow>
                         <TableHead className="font-bold text-slate-900 text-center w-28">تاريخ البداية</TableHead>
                         <TableHead className="font-bold text-slate-900 text-center w-28">تاريخ النهاية</TableHead>
+                        <TableHead className="text-center font-bold text-slate-900">الحصة</TableHead>
                         <TableHead className="text-center font-bold text-slate-900">الحالة</TableHead>
                         <TableHead className="text-center font-bold text-slate-900">المدة</TableHead>
                         <TableHead className="text-right font-bold text-slate-900">الملاحظات</TableHead>
@@ -1497,6 +1508,11 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                             <TableCell className="font-mono text-xs text-center border-l border-slate-100 font-bold">{item.start_date}</TableCell>
                             <TableCell className="font-mono text-xs text-center border-l border-slate-100 font-bold text-red-600/80">
     {item.end_date}
+</TableCell>
+                            <TableCell className="text-center text-[11px] font-bold text-slate-600">
+{item.session_id !== null && item.session_id !== undefined 
+    ? `ح${Number(item.session_id) + 1}: ${item.session_name || ""}` 
+    : "-"}
 </TableCell>
                             <TableCell className="text-center">
                                 <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-100 font-bold text-[10px]">
@@ -1556,7 +1572,14 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
     <AccordionTrigger className="hover:no-underline py-4 accordion-trigger-text">
         <div className="flex items-center gap-3">
             <div className="p-2 bg-red-50 rounded-lg"><ShieldAlert className="w-5 h-5 text-red-600" /></div>
-            <span className="font-bold text-slate-800 text-lg">سجل المخالفات والجزاءات</span>
+            <span className="font-bold text-slate-800 text-lg">
+    سجل المخالفات والجزاءات
+    {(vioFrom || vioTo) && (
+        <span className="text-sm font-normal text-slate-500 mr-2 print:inline hidden">
+            {vioFrom && vioTo ? `من ${vioFrom} إلى ${vioTo}` : vioFrom ? `من ${vioFrom}` : `إلى ${vioTo}`}
+        </span>
+    )}
+</span>
             <Badge className="bg-red-600 text-white mr-2">{filteredViolations.length}</Badge>
         </div>
     </AccordionTrigger>
@@ -1577,11 +1600,35 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
             </div>
         )}
 
+        <div className="flex flex-wrap gap-1 items-center mb-2 no-print">
+    <button
+        onClick={() => setViolationSessionFilter([])}
+        className={`text-[10px] px-2 py-1 rounded-full border font-bold transition-colors ${violationSessionFilter.length === 0 ? "bg-red-600 text-white border-red-600" : "bg-white text-slate-600 border-slate-300 hover:border-red-400"}`}
+    >
+        كل الحصص
+    </button>
+    {availableSessions.map((sess: any, idx: number) => (
+        <button
+            key={idx}
+            onClick={() => {
+                const sid = String(idx);
+                setViolationSessionFilter(prev => 
+                    prev.includes(sid) ? prev.filter(s => s !== sid) : [...prev, sid]
+                )
+            }}
+            className={`text-[10px] px-2 py-1 rounded-full border font-bold transition-colors ${violationSessionFilter.includes(String(idx)) ? "bg-red-600 text-white border-red-600" : "bg-white text-slate-600 border-slate-300 hover:border-red-400"}`}
+        >
+            {`ح${idx + 1}: ${sess.name || sess}`}
+        </button>
+    ))}
+</div>
+
         <div className="overflow-x-auto border rounded-lg shadow-sm">
             <Table className="text-right border-collapse">
                 <TableHeader className="bg-[#c5b391] bg-beige-print">
                     <TableRow className="divide-x divide-black/10">
                         <TableHead className="font-bold text-black text-center w-28">التاريخ</TableHead>
+                        <TableHead className="font-bold text-black text-center w-24">الحصة</TableHead>
                         <TableHead className="font-bold text-black text-right">المخالفة</TableHead>
                         <TableHead className="font-bold text-black text-center w-24">الجزاء</TableHead>
                         <TableHead className="font-bold text-black text-center w-20">الخصم</TableHead>
@@ -1592,6 +1639,11 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                     {filteredViolations.map((vio: any) => (
                         <TableRow key={vio.id} className="hover:bg-red-50/30 transition-colors border-b">
                             <TableCell className="font-mono text-[10px] text-center text-red-700 border-l border-slate-100 font-bold">{vio.date}</TableCell>
+                            <TableCell className="text-center text-[11px] font-bold text-slate-600">
+{vio.session_id !== null && vio.session_id !== undefined
+    ? `ح${Number(vio.session_id) + 1}${availableSessions[Number(vio.session_id)]?.name ? `: ${availableSessions[Number(vio.session_id)].name}` : ""}`
+    : "-"}
+</TableCell>
                             <TableCell className="text-right py-3 max-w-[400px]">
                                 <div className="font-bold text-slate-800 text-xs whitespace-normal break-words leading-relaxed">{vio.type}</div>
                                 {vio.note && <p className="text-[10px] text-slate-500 mt-1 italic whitespace-normal">{vio.note}</p>}
