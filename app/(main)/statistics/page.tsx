@@ -200,8 +200,9 @@ useEffect(() => {
         if (notes.includes("عيادة")) { row.clinic++; return }
         if (notes.includes("لم يكمل") || notes.includes("قطع مسار") || notes.includes("قطع")) { 
     row.rest++;
-    row.failCount++; // لم يكمل = راسب أيضاً
-    return; // يخرج هنا فلا يُحسب كناجح أو راسب
+    row.failCount++;
+    row.totalPresent++;
+    return;
 }
         if (notes.includes("إجازة")) { row.vacation++; return }
         if (notes.includes("ملحق")) { row.attached++; return }
@@ -600,7 +601,7 @@ function StatsTable({ title, stats, type, getSmartPct, isPrint = false }: any) {
                                 <TableCell className={`${cellClass} font-bold`} dir="ltr">{getValue(row.pass, row, 'grade')}</TableCell>
                                 <TableCell className={`${cellClass} font-bold text-green-700 dark:text-green-400`} dir="ltr">{getValue(row.successCount, row, 'grade')}</TableCell>
                                 <TableCell className={`${cellClass} font-bold text-red-600 dark:text-red-400`} dir="ltr">{getValue(row.failCount, row, 'grade')}</TableCell>
-                                <TableCell className={`${cellClass} font-bold bg-slate-50 dark:bg-slate-800/50`}>{isPercent ? "100%" : row.totalPresent}</TableCell>
+                                <TableCell className={`${cellClass} font-bold bg-slate-50 dark:bg-slate-800/50`}>{isPercent ? `${row.totalForce > 0 ? Math.round((row.totalPresent / row.totalForce) * 100) : 0}%` : row.totalPresent}</TableCell>
                                 <TableCell className={`${cellClass} font-bold text-orange-600 dark:text-orange-400`} dir="ltr">{getValue(row.mercy, row, 'status')}</TableCell>
                                 {/* الحالات (تقسم على الكلي) */}
                                 <TableCell className={`${cellClass} font-bold`}>{isPercent && row.absent === 0 ? "-" : getValue(row.absent, row, 'status')}</TableCell>

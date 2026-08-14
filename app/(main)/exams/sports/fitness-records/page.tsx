@@ -4577,7 +4577,7 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
                                     </span>
 
-                                    {["owner", "admin", "manager"].includes(userRole) && (
+                                    {["owner", "admin", "manager", "assistant_admin"].includes(userRole) && (
 
                                         <Button variant="ghost" size="icon" className="text-red-300 hover:text-red-600 h-8 w-8 hover:bg-red-50" 
 

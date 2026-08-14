@@ -131,6 +131,7 @@ const [isAxisModalOpen, setIsAxisModalOpen] = useState(false);
 const [isAddSectionOpen, setIsAddSectionOpen] = useState(false);
 const [newSectionData, setNewSectionData] = useState({ name: "", key: "" });
 const [showOnlyActive, setShowOnlyActive] = useState(false); // حالة فلترة القوالب
+const [hideInactiveLoaded, setHideInactiveLoaded] = useState(false);
   // إعدادات اللياقة والتفضيلات
   const [calcSettings, setCalcSettings] = useState({
     distance: "3200", pass_rate: 60, base_score: 100, mercy_mode: false, rows_per_page: "10"
@@ -578,6 +579,7 @@ useEffect(() => {
     fetchMilitaryConfigs();
     fetchEngagementConfigs();
     fetchTrainingTemplates();
+    fetchHideInactiveSetting();
     fetchDisciplinaryRegulations();
     fetchAllConfigs(); // 👈 أضفنا هذه الدالة هنا لجلب الاختبارات الشاملة (الجديدة)
     fetchMilitarySections();
@@ -629,6 +631,19 @@ useEffect(() => {
   const canManageMilitaryStandards = MILITARY_STANDARDS_ROLES.includes(userRole || "");
   const canAccessStandards = STANDARDS_ACCESS_ROLES.includes(userRole || "");
   const isDark = theme === 'dark';
+const fetchHideInactiveSetting = async () => {
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/settings/features`, {
+            headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            const setting = data.find((s: any) => s.key === 'hide_inactive_templates');
+            if (setting) setShowOnlyActive(setting.value === 'true' || setting.value === true);
+        }
+    } catch (e) {}
+    setHideInactiveLoaded(true);
+};
 const fetchTrainingTemplates = async () => {
   try {
     const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/training/templates`, {
@@ -2296,7 +2311,17 @@ if (!mounted) return null
         <Switch 
           id="show-active" 
           checked={showOnlyActive} 
-          onCheckedChange={setShowOnlyActive} 
+          onCheckedChange={async (val) => {
+    setShowOnlyActive(val);
+    await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/settings/features/hide_inactive_templates`, {
+        method: 'PUT',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}` 
+        },
+        body: JSON.stringify({ value: String(val) })
+    });
+}} 
         />
         <Label htmlFor="show-active" className="text-[10px] font-black text-slate-600 cursor-pointer">
           إخفاء الأرشيف (غير النشط)
