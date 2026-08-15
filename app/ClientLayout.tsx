@@ -289,6 +289,17 @@ const handleLogout = async () => {
         verifySession();
     }, [pathname]); // ⬅️ هذا هو السر: إعادة التحقق عند كل تغيير في الرابط
 
+useEffect(() => {
+    const handleQuotaExceeded = (e: any) => {
+        toast.error(e.detail?.message || "⚠️ النظام مشغول حالياً. يرجى المحاولة لاحقاً.", {
+            duration: 10000,
+            position: "top-center",
+        });
+    };
+    window.addEventListener("db-quota-exceeded", handleQuotaExceeded);
+    return () => window.removeEventListener("db-quota-exceeded", handleQuotaExceeded);
+}, []);
+
 
 // 🟢 أضفنا خاصية isHome
 const NavIcon = ({ active, color, icon, isHome = false }: any) => (

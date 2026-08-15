@@ -125,22 +125,6 @@ const targetRecordId = searchParams.get('record_id') // 👈 استخراج ال
 
     fetchRecords();
 
-    const handleFocus = () => {
-
-        console.log("تمت العودة للصفحة، جاري تحديث البيانات...");
-
-        fetchRecords();
-
-    };
-
-    window.addEventListener('focus', handleFocus);
-
-    return () => {
-
-        window.removeEventListener('focus', handleFocus);
-
-    };
-
 }, []);
 
 

@@ -52,7 +52,7 @@ useEffect(() => {
   
   loadConfig()
   
-  const interval = setInterval(loadConfig, 3000)
+  const interval = setInterval(loadConfig, 86400000)
   
   return () => clearInterval(interval)
 }, [])
