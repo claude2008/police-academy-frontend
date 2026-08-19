@@ -60,7 +60,7 @@ export function setupFetchInterceptor() {
       if (response.status === 402 && isApiRequest) {
           // إظهار رسالة للمستخدم عند تجاوز حد قاعدة البيانات
           window.dispatchEvent(new CustomEvent("db-quota-exceeded", {
-              detail: { message: "⚠️ النظام مشغول حالياً أو تجاوز الحد المسموح. البيانات لم تُحفظ. يرجى المحاولة لاحقاً ..." }
+              detail: { message: "⚠️ النظام مشغول حالياً أو تجاوز الحد المسموح. البيانات لم تُحفظ. يرجى المحاولة لاحقاً..." }
           }));
       }
 

@@ -36,11 +36,11 @@ export default function NotificationsMenu() {
     }
   }
 
-  useEffect(() => {
-    fetchNotifications()
-    const interval = setInterval(fetchNotifications, 120000) 
-    return () => clearInterval(interval)
-  }, [])
+  // useEffect(() => {
+  //   fetchNotifications()
+  //   const interval = setInterval(fetchNotifications, 120000) 
+  //   return () => clearInterval(interval)
+  // }, [])
 
   const handleNotificationClick = async (notif: any) => {
     // 1. 🟢 إغلاق القائمة فوراً لتعطي شعوراً بالاستجابة السريعة
