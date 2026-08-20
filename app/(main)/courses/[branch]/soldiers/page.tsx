@@ -612,7 +612,7 @@ const filteredAttendance = useMemo(() => {
         let isAttendedInFirstDay = false;
 
         if (sessionFilter.length > 0 && globalStatuses.includes(item.status_key)) {
-            const isInAnySelected = sessionFilter.some(sf => item.involved_sessions?.includes(sf));
+            const isInAnySelected = sessionFilter.some(sf => (item.involved_sessions || []).includes(sf));
             if (!isInAnySelected) {
                 displayDuration = Math.max(0, displayDuration - 1);
                 isAttendedInFirstDay = true; 
@@ -629,7 +629,7 @@ const filteredAttendance = useMemo(() => {
         // فلترة الحصة
         let matchesSession = true;
         if (sessionFilter.length > 0) {
-            const isSpecificallyLogged = sessionFilter.some(sf => item.involved_sessions?.includes(sf));
+            const isSpecificallyLogged = sessionFilter.some(sf => (item.involved_sessions || []).includes(sf));
             matchesSession = isSpecificallyLogged === true;
         }
 
