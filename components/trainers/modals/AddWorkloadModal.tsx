@@ -28,7 +28,11 @@ export default function AddWorkloadModal({ isOpen, onClose, trainer, onSuccess }
         start_date: "",
         duration: "", 
         end_date: "",
-        notes: ""
+        notes: "",
+        course_type: "",
+        daily_hours: "",
+        case_hours: "",
+        actual_hours: ""
     }
     const [formData, setFormData] = useState(initialData)
 
@@ -72,7 +76,11 @@ export default function AddWorkloadModal({ isOpen, onClose, trainer, onSuccess }
                 start_date: formData.start_date,
                 duration: formData.duration, // المدة الآن مضمونة أنها إنجليزية
                 end_date: formData.end_date,
-                notes: formData.notes
+                notes: formData.notes,
+                course_type: formData.course_type || null,
+                daily_hours: formData.daily_hours ? parseFloat(formData.daily_hours) : null,
+                case_hours: formData.case_hours ? parseFloat(formData.case_hours) : null,
+                actual_hours: formData.actual_hours ? parseFloat(formData.actual_hours) : null
             }
             
             const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/trainer/workload`, {
@@ -153,7 +161,7 @@ export default function AddWorkloadModal({ isOpen, onClose, trainer, onSuccess }
                             </Select>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-xs font-bold">عدد الساعات</label>
+                            <label className="text-xs font-bold">الساعات العملية</label>
                             {/* 👇👇 التعديل 1: الساعات تتحول فوراً */}
                             <Input 
                                 type="text"
@@ -164,6 +172,63 @@ export default function AddWorkloadModal({ isOpen, onClose, trainer, onSuccess }
                                     let clean = normalizeInput(val); // تحويل
                                     clean = clean.replace(/\D/g, ''); // تنظيف
                                     setFormData({...formData, hours: clean});
+                                }} 
+                            />
+                        </div>
+                    </div>
+
+                    {/* الصف الجديد: نوع الدورة والحقول الإضافية */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold">نوع الدورة</label>
+                            <Select value={formData.course_type} onValueChange={(v) => setFormData({...formData, course_type: v})}>
+                                <SelectTrigger><SelectValue placeholder="اختر..." /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="لياقة بدنية">لياقة بدنية</SelectItem>
+                                    <SelectItem value="اشتباك ودفاع عن النفس">اشتباك ودفاع عن النفس</SelectItem>
+                                    <SelectItem value="تدريب عسكري">تدريب عسكري</SelectItem>
+                                    <SelectItem value="مشاة">مشاة</SelectItem>
+                                    <SelectItem value="رماية">رماية</SelectItem>
+                                    <SelectItem value="أخرى">أخرى</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold">مدة التدريب اليومي</label>
+                            <Input 
+                                type="text"
+                                value={formData.daily_hours} 
+                                placeholder="ساعات"
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    let clean = normalizeInput(val).replace(/[^\d.]/g, '');
+                                    setFormData({...formData, daily_hours: clean});
+                                }} 
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold">عدد ساعات الحالات</label>
+                            <Input 
+                                type="text"
+                                value={formData.case_hours} 
+                                placeholder="مثال: 0"
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    let clean = normalizeInput(val).replace(/[^\d.]/g, '');
+                                    setFormData({...formData, case_hours: clean});
+                                }} 
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="text-xs font-bold">الساعات الفعلية</label>
+                            <Input 
+                                type="text"
+                                value={formData.actual_hours} 
+                                placeholder="مثال: 40"
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    let clean = normalizeInput(val).replace(/[^\d.]/g, '');
+                                    setFormData({...formData, actual_hours: clean});
                                 }} 
                             />
                         </div>

@@ -126,25 +126,29 @@ const canDelete = currentUser && ALLOWED_DELETE_ROLES.includes(currentUser.role)
             <Card className="border-none shadow-none">
                 <CardContent className="p-0">
                     <div className="overflow-x-auto rounded-lg border border-slate-200">
-                        <Table className="text-center w-full text-xs md:text-sm">
+                        <Table className="text-center w-full text-xs md:text-sm print:text-[7px] print:table-fixed print:w-full">
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[10%]">السنة</TableHead>
-                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100">اسم الدورة</TableHead>
-                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[12%]">المهمة</TableHead>
-                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[12%]">الصفة</TableHead>
-                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[12%]">المدة</TableHead>
-                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[18%]">التاريخ</TableHead>
-                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[10%]">الساعات</TableHead>
-                                    <TableHead className="text-center font-bold text-black bg-purple-100 w-[10%]">إجراء</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[10%] print:p-0.5">السنة</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 print:p-0.5">اسم الدورة</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[12%] print:p-0.5">المهمة</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[12%] print:p-0.5">الصفة</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[12%] print:p-0.5">المدة</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[18%] print:p-0.5">التاريخ</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 w-[10%] print:p-0.5">الساعات العملية</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 print:hidden">نوع الدورة</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 print:hidden">مدة التدريب اليومي</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 print:hidden">عدد ساعات الحالات</TableHead>
+                                    <TableHead className="text-center font-bold text-black border-l bg-purple-100 print:p-0.5">الساعات الفعلية</TableHead>
+                                    <TableHead className="text-center font-bold text-black bg-purple-100 w-[10%] print:hidden">إجراء</TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {loading ? (
-                                    <TableRow><TableCell colSpan={8} className="h-24 text-center">جارِ التحميل...</TableCell></TableRow>
+                                    <TableRow><TableCell colSpan={12} className="h-24 text-center print:p-0.5">جارِ التحميل...</TableCell></TableRow>
                                 ) : filteredData.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={8} className="h-32 text-center text-slate-400">
+                                        <TableCell colSpan={12} className="h-32 text-center text-slate-400 print:p-0.5">
                                             <div className="flex flex-col items-center justify-center gap-2">
                                                 <Shield className="w-8 h-8 opacity-20" />
                                                 <p>لا يوجد عبء وظيفي {selectedYear !== 'all' ? `لسنة ${selectedYear}` : ''}</p>
@@ -154,16 +158,16 @@ const canDelete = currentUser && ALLOWED_DELETE_ROLES.includes(currentUser.role)
                                 ) : (
                                     paginatedData.map((row) => (
                                         <TableRow key={row.id} className="hover:bg-slate-50">
-                                            <TableCell className="border-l text-slate-500">{row.year}</TableCell>
-                                            <TableCell className="border-l font-bold">{row.course_name}</TableCell>
-                                            <TableCell className="border-l">{row.task}</TableCell>
-                                            <TableCell className="border-l">
+                                            <TableCell className="border-l text-slate-500 print:p-0.5">{row.year}</TableCell>
+                                            <TableCell className="border-l font-bold print:p-0.5">{row.course_name}</TableCell>
+                                            <TableCell className="border-l print:p-0.5">{row.task}</TableCell>
+                                            <TableCell className="border-l print:p-0.5">
                                                 <span className={`px-2 py-0.5 rounded text-[10px] ${row.assignment_type === 'أساسي' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                                                     {row.assignment_type}
                                                 </span>
                                             </TableCell>
-                                            <TableCell className="border-l">{row.duration || "-"}</TableCell>
-                                           <TableCell className="border-l text-[10px] whitespace-nowrap">
+                                            <TableCell className="border-l print:p-0.5">{row.duration || "-"}</TableCell>
+                                           <TableCell className="border-l text-[10px] whitespace-nowrap print:p-0.5">
                                                 {row.start_date ? (
                                                     <div className="flex flex-col gap-1">
                                                         <span>{row.start_date}</span>
@@ -174,10 +178,14 @@ const canDelete = currentUser && ALLOWED_DELETE_ROLES.includes(currentUser.role)
                                                     <span className="text-slate-300">-</span>
                                                 )}
                                             </TableCell>
-                                            <TableCell className="border-l font-mono">{row.hours}</TableCell>
+                                            <TableCell className="border-l font-mono print:p-0.5">{row.hours}</TableCell>
+                                            <TableCell className="border-l print:hidden">{row.course_type || "-"}</TableCell>
+                                            <TableCell className="border-l font-mono print:hidden">{row.daily_hours ?? "-"}</TableCell>
+                                            <TableCell className="border-l font-mono print:hidden">{row.case_hours ?? "-"}</TableCell>
+                                            <TableCell className="border-l font-mono print:p-0.5">{row.actual_hours ?? "-"}</TableCell>
                                             {/* 🛡️ الزر لن يظهر إلا لمن يملك الصلاحية */}
 {canDelete && (
-    <TableCell>
+    <TableCell className="print:hidden">
         <Button 
             variant="ghost" 
             size="sm" 
@@ -207,6 +215,25 @@ const canDelete = currentUser && ALLOWED_DELETE_ROLES.includes(currentUser.role)
                     )}
                 </CardContent>
             </Card>
+
+            {filteredData.length > 0 && (
+                <div className="flex justify-center gap-4 mt-4">
+                    <div className="flex flex-col items-center bg-blue-50 border-2 border-blue-200 rounded-2xl px-8 py-4 shadow">
+                        <span className="text-xs font-bold text-blue-500 mb-1">مجموع الساعات الفعلية</span>
+                        <span className="text-3xl font-black text-blue-700">
+                            {filteredData.reduce((sum, r) => sum + (Number(r.actual_hours) || 0), 0)}
+                        </span>
+                        <span className="text-xs text-blue-400">ساعة</span>
+                    </div>
+                    <div className="flex flex-col items-center bg-red-50 border-2 border-red-200 rounded-2xl px-8 py-4 shadow">
+                        <span className="text-xs font-bold text-red-500 mb-1">مجموع ساعات الحالات</span>
+                        <span className="text-3xl font-black text-red-700">
+                            {filteredData.reduce((sum, r) => sum + (Number(r.case_hours) || 0), 0)}
+                        </span>
+                        <span className="text-xs text-red-400">ساعة</span>
+                    </div>
+                </div>
+            )}
 
             {/* 👇👇👇 نافذة الحذف الجديدة والجميلة 👇👇👇 */}
             <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
