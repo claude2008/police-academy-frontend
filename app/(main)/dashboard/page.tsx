@@ -71,6 +71,7 @@ useEffect(() => {
   });
 
   const [currentSlide, setCurrentSlide] = useState(0); 
+  const [showPortfolio, setShowPortfolio] = useState(false)
 
   // 🔥 تحميل الإعدادات من API
   useEffect(() => {
@@ -556,6 +557,19 @@ if (feature === 'others') {
           </div>
         </motion.div>
 
+        {["owner","manager","admin","assistant_admin","sports_officer","military_officer"].includes(user?.role || "") && (
+    <div 
+        onClick={() => setShowPortfolio(true)}
+        className="cursor-pointer bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all mt-3"
+    >
+        <div className="flex items-center gap-2 mb-1">
+            <span className="text-xl">🎯</span>
+            <span className="font-black text-indigo-800 text-sm">العروض التقديمية</span>
+        </div>
+        <p className="text-[11px] text-indigo-500">نماذج وعروض تفاعلية للنظام</p>
+    </div>
+)}
+
         <div className="relative">
             <div className="flex items-center gap-2 mb-6 px-2">
                 <div className="p-2 bg-amber-100 rounded-lg"><Zap className="w-5 h-5 text-amber-600" /></div>
@@ -802,6 +816,48 @@ if (feature === 'others') {
                </motion.div>
             </DialogContent>
         </Dialog>
+
+        {showPortfolio && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowPortfolio(false)}>
+        <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl mx-4" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-5">
+                <h2 className="font-black text-lg text-slate-800">🎯 العروض التقديمية</h2>
+                <button onClick={() => setShowPortfolio(false)} className="text-slate-400 hover:text-slate-700 text-xl font-bold">✕</button>
+            </div>
+            <div className="flex flex-col gap-3">
+                {[
+                    {
+                        title: "الخطة السنوية للموسم الرياضي",
+                        description: "الخطة السنوية 2026-2027",
+                        url: "https://predeploy-8e7c22d8-acadroadmap-jpbtuqmy-hdsvna67vzrcspzt.manus.space/",
+                        icon: "📅"
+                    },
+                    {
+                        title: "متابعة الدفعة 21",
+                        description: "نتائج الاختبارات وإحصائياتها",
+                        url: "https://gilded-panda-9c542c.netlify.app/",
+                        icon: "📊"
+                    },
+                ].map((item, idx) => (
+                    <a 
+                        key={idx}
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-2xl p-4 transition-all group"
+                    >
+                        <span className="text-2xl">{item.icon}</span>
+                        <div className="flex-1">
+                            <p className="font-black text-sm text-slate-800">{item.title}</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">{item.description}</p>
+                        </div>
+                        <span className="text-indigo-400 group-hover:text-indigo-600 transition-colors text-lg">←</span>
+                    </a>
+                ))}
+            </div>
+        </div>
+    </div>
+)}
 
       </motion.div>
     </ProtectedRoute>
