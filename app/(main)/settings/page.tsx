@@ -208,6 +208,7 @@ const [engagementData, setEngagementData] = useState<EngagementTab[]>([
   },
   { id: 'scenario', name: 'اختبار السيناريو', axes: [] }
 ]);
+const [engagementCalcMode, setEngagementCalcMode] = useState<"average" | "sum">("average")
 // حالة للتبديل بين المبيت والثابت في لائحة المستجدين
 const [recruitSystem, setRecruitSystem] = useState<'sleeping' | 'fixed'>('sleeping');
 const [activeEngTab, setActiveEngTab] = useState("technical");
@@ -759,13 +760,17 @@ const saveEngagementConfigs = async () => {
   setLoading(true);
   try {
     // نقوم بإرسال البيانات كما هي موجودة في الـ State
+    const payload = engagementData.map((tab: any) => ({
+      ...tab,
+      calculation_mode: engagementCalcMode
+    }))
     const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/exams/engagement-configs`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${localStorage.getItem("token")}`
       },
-      body: JSON.stringify(engagementData) 
+      body: JSON.stringify(payload) 
     });
 
     if (res.ok) {
@@ -868,6 +873,8 @@ const fetchEngagementConfigs = async () => {
           id: item.key 
         }));
         setEngagementData(formattedData);
+        const techConfig = formattedData.find((c: any) => c.key === "technical" || c.id === "technical" || c.subject === "engagement_technical")
+        if (techConfig?.calculation_mode) setEngagementCalcMode(techConfig.calculation_mode)
       }
     }
   } catch (e) { 
@@ -1844,6 +1851,17 @@ if (!mounted) return null
     </CardContent>
     {/* 🛠️ البحث عن هذا الزر في أسفل تاب الاشتباك وتعديله */}
 <CardFooter className="bg-slate-50 p-4 flex justify-end border-t">
+  <div className="flex items-center gap-2 mb-3">
+    <span className="text-sm font-bold text-slate-700">احتساب النتيجة:</span>
+    <select 
+        value={engagementCalcMode} 
+        onChange={e => setEngagementCalcMode(e.target.value as "average" | "sum")}
+        className="border rounded-lg px-3 py-1.5 text-sm font-bold text-slate-700 bg-white"
+    >
+        <option value="average">معدل</option>
+        <option value="sum">جمع</option>
+    </select>
+  </div>
   <Button 
     onClick={saveEngagementConfigs} // 👈 أضف هذا السطر هنا
     disabled={loading}              // 👈 وأضف هذا لتعطيل الزر أثناء التحميل

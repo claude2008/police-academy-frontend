@@ -39,6 +39,7 @@ export default function EngagementExamsPage() {
   const [examConfigs, setExamConfigs] = useState<any[]>([])
   const [activeConfig, setActiveConfig] = useState<any>(null)
   const [rawSoldiersData, setRawSoldiersData] = useState<any[]>([]);
+  const [calcMode, setCalcMode] = useState<"average" | "sum">("average")
 
   // 1. حساب المجموع الكلي الأقصى للمحاور النشطة فقط
 const maxTotalScore = useMemo(() => {
@@ -95,6 +96,8 @@ const maxTotalScore = useMemo(() => {
         });
 
         setExamConfigs(orderedData);
+        const techConfig = data.find((c: any) => c.key === "technical")
+        if (techConfig?.calculation_mode) setCalcMode(techConfig.calculation_mode)
         
         // تثبيت التبويب النشط على أول عنصر بعد الترتيب (الذي سيكون الفني)
         if (orderedData.length > 0 && activeTab === "") {
@@ -182,7 +185,9 @@ const maxTotalScore = useMemo(() => {
 
     // 2. 🟢 التعديل: القسمة على عدد المحاور النشطة فقط
     const axesCount = activeAxes.length || 1;
-    const averageResult = Math.round(totalAccumulated / axesCount);
+    const averageResult = calcMode === "sum" 
+        ? Math.round(totalAccumulated)
+        : Math.round(totalAccumulated / axesCount);
 
     const updated = [
         ...students, 
@@ -221,6 +226,7 @@ const maxTotalScore = useMemo(() => {
             batch: "mixed_sync",
             company: students[0]?.company || "عام",
             platoon: students[0]?.platoon || "عام",
+            calculation_mode: calcMode,
             
             // 🟢 إصلاح المتغيرات داخل students_data (السطر 226-229 في رسائل الخطأ)
             students_data: students.map((s: any) => {
@@ -359,7 +365,7 @@ const maxTotalScore = useMemo(() => {
     <div className="flex flex-col items-center">
         <span>المجموع</span>
         <span className="text-[10px] text-red-900 font-black">
-            ({Math.round(maxTotalScore / (activeConfig?.axes?.filter((a: any) => a.is_active !== false).length || 1))})
+            ({calcMode === "sum" ? maxTotalScore : Math.round(maxTotalScore / (activeConfig?.axes?.filter((a: any) => a.is_active !== false).length || 1))})
         </span>
     </div>
 </TableHead>

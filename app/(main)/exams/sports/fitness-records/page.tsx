@@ -987,6 +987,8 @@ useEffect(() => {
     if (techCount === 0 && scenCount === 0) return null;
     if (scoreMode === "technical") return techCount > 0 ? Math.round(avgTech) : null;
     if (scoreMode === "scenario") return scenCount > 0 ? Math.round(avgScen) : null;
+    if (scoreMode === "sum") return (techCount > 0 && scenCount > 0) ? Math.round(avgTech + avgScen) : 
+        (techCount > 0 ? Math.round(avgTech) : scenCount > 0 ? Math.round(avgScen) : null);
     // both: يقسم على عدد الاختبارات الموجودة فعلاً
     const divisor = (techCount > 0 ? 1 : 0) + (scenCount > 0 ? 1 : 0);
     return Math.round((avgTech + avgScen) / divisor);
@@ -1014,7 +1016,7 @@ useEffect(() => {
 
 
 
-    }, [selectedGroup]);
+    }, [selectedGroup, scoreMode]);
 
 
 
@@ -3153,9 +3155,10 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent dir="rtl">
-                        <SelectItem value="both">الكل (فني + سيناريو)</SelectItem>
+                        <SelectItem value="both">معدل (فني + سيناريو)</SelectItem>
                         <SelectItem value="technical">فني فقط</SelectItem>
                         <SelectItem value="scenario">سيناريو فقط</SelectItem>
+                        <SelectItem value="sum">جمع (فني + سيناريو)</SelectItem>
                     </SelectContent>
                 </Select>
             </div>
