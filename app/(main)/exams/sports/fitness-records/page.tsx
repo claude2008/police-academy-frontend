@@ -97,7 +97,7 @@ export default function FitnessRecordsPage() {
     const [innerPlatoon, setInnerPlatoon] = useState("all")
 
     const [customExamType, setCustomExamType] = useState("") 
-const [scoreMode, setScoreMode] = useState<"both" | "technical" | "scenario">("both")
+const [scoreMode, setScoreMode] = useState<"both" | "technical" | "scenario" | "sum">("both")
     const [deleteTarget, setDeleteTarget] = useState<{id: number, title: string, all_ids: number[]} | null>(null);
 
     const [trainerScores, setTrainerScores] = useState<Record<string, number>>({});
