@@ -72,6 +72,19 @@ useEffect(() => {
 
   const [currentSlide, setCurrentSlide] = useState(0); 
   const [showPortfolio, setShowPortfolio] = useState(false)
+  const [portfolioItems, setPortfolioItems] = useState<any[]>([])
+  const [showAddPortfolio, setShowAddPortfolio] = useState(false)
+  const [editingPortfolio, setEditingPortfolio] = useState<any>(null)
+  const [portfolioForm, setPortfolioForm] = useState({ title: '', description: '', url: '', icon: '🎯' })
+
+  const fetchPortfolio = async () => {
+    try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/portfolio`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+        })
+        if (res.ok) setPortfolioItems(await res.json())
+    } catch (e) {}
+  }
 
   // 🔥 تحميل الإعدادات من API
   useEffect(() => {
@@ -80,6 +93,7 @@ useEffect(() => {
       setFeatures(config)
     }
     loadConfig()
+    fetchPortfolio()
   }, [])
 
   useEffect(() => {
@@ -827,23 +841,18 @@ if (feature === 'others') {
         <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl mx-4" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center mb-5">
                 <h2 className="font-black text-lg text-slate-800">🎯 العروض التقديمية</h2>
-                <button onClick={() => setShowPortfolio(false)} className="text-slate-400 hover:text-slate-700 text-xl font-bold">✕</button>
+                <div className="flex items-center gap-2">
+                    {user?.role === 'owner' && (
+                        <button
+                            onClick={() => { setEditingPortfolio(null); setPortfolioForm({title:'', description:'', url:'', icon:'🎯'}); setShowAddPortfolio(true); }}
+                            className="text-xs bg-indigo-600 text-white px-3 py-1 rounded-full hover:bg-indigo-700"
+                        >+ إضافة</button>
+                    )}
+                    <button onClick={() => setShowPortfolio(false)} className="text-slate-400 hover:text-slate-700 text-xl font-bold">✕</button>
+                </div>
             </div>
             <div className="flex flex-col gap-3">
-                {[
-                    {
-                        title: "الخطة السنوية للموسم الرياضي",
-                        description: "الخطة السنوية 2026-2027",
-                        url: "https://predeploy-8e7c22d8-acadroadmap-jpbtuqmy-hdsvna67vzrcspzt.manus.space/",
-                        icon: "📅"
-                    },
-                    {
-                        title: "متابعة الدفعة 21",
-                        description: "نتائج الاختبارات وإحصائياتها",
-                        url: "https://gilded-panda-9c542c.netlify.app/",
-                        icon: "📊"
-                    },
-                ].map((item, idx) => (
+                {portfolioItems.map((item, idx) => (
                     <a 
                         key={idx}
                         href={item.url}
@@ -851,14 +860,53 @@ if (feature === 'others') {
                         rel="noopener noreferrer"
                         className="flex items-center gap-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-2xl p-4 transition-all group"
                     >
-                        <span className="text-2xl">{item.icon}</span>
+                        <span className="text-2xl">{item.icon || '🎯'}</span>
                         <div className="flex-1">
                             <p className="font-black text-sm text-slate-800">{item.title}</p>
                             <p className="text-[11px] text-slate-500 mt-0.5">{item.description}</p>
                         </div>
-                        <span className="text-indigo-400 group-hover:text-indigo-600 transition-colors text-lg">←</span>
+                        <div className="flex items-center gap-2">
+                            {user?.role === 'owner' && (
+                                <button
+                                    onClick={(e) => { e.preventDefault(); setEditingPortfolio(item); setPortfolioForm({title: item.title, description: item.description || '', url: item.url, icon: item.icon || '🎯'}); setShowAddPortfolio(true); }}
+                                    className="text-slate-400 hover:text-blue-600 text-xs px-2 py-1 rounded-lg hover:bg-blue-50"
+                                >تعديل</button>
+                            )}
+                            <span className="text-indigo-400 group-hover:text-indigo-600 transition-colors text-lg">←</span>
+                        </div>
                     </a>
                 ))}
+            </div>
+        </div>
+    </div>
+)}
+
+{showAddPortfolio && (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
+        <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl mx-4">
+            <h3 className="font-black text-slate-800 mb-4">{editingPortfolio ? 'تعديل العرض' : 'إضافة عرض جديد'}</h3>
+            <div className="flex flex-col gap-3">
+                <input placeholder="العنوان" value={portfolioForm.title} onChange={e => setPortfolioForm(p => ({...p, title: e.target.value}))} className="border rounded-xl px-3 py-2 text-sm" />
+                <input placeholder="وصف مختصر" value={portfolioForm.description} onChange={e => setPortfolioForm(p => ({...p, description: e.target.value}))} className="border rounded-xl px-3 py-2 text-sm" />
+                <input placeholder="الرابط https://..." value={portfolioForm.url} onChange={e => setPortfolioForm(p => ({...p, url: e.target.value}))} className="border rounded-xl px-3 py-2 text-sm" />
+                <input placeholder="الأيقونة 🎯" value={portfolioForm.icon} onChange={e => setPortfolioForm(p => ({...p, icon: e.target.value}))} className="border rounded-xl px-3 py-2 text-sm" />
+            </div>
+            <div className="flex gap-2 mt-4">
+                <button onClick={async () => {
+                    const url = `${process.env.NEXT_PUBLIC_API_URL}/portfolio${editingPortfolio ? '/'+editingPortfolio.id : ''}`
+                    const method = editingPortfolio ? 'PUT' : 'POST'
+                    await fetch(url, { method, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` }, body: JSON.stringify(portfolioForm) })
+                    fetchPortfolio()
+                    setShowAddPortfolio(false)
+                }} className="flex-1 bg-indigo-600 text-white rounded-xl py-2 text-sm font-bold hover:bg-indigo-700">حفظ</button>
+                {editingPortfolio && (
+                    <button onClick={async () => {
+                        await fetch(`${process.env.NEXT_PUBLIC_API_URL}/portfolio/${editingPortfolio.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+                        fetchPortfolio()
+                        setShowAddPortfolio(false)
+                    }} className="bg-red-50 text-red-600 rounded-xl px-4 py-2 text-sm font-bold hover:bg-red-100">حذف</button>
+                )}
+                <button onClick={() => setShowAddPortfolio(false)} className="bg-slate-100 text-slate-600 rounded-xl px-4 py-2 text-sm font-bold">إلغاء</button>
             </div>
         </div>
     </div>
