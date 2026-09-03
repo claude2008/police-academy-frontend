@@ -72,6 +72,7 @@ useEffect(() => {
 
   const [currentSlide, setCurrentSlide] = useState(0); 
   const [showPortfolio, setShowPortfolio] = useState(false)
+  const [selectedPortfolioItem, setSelectedPortfolioItem] = useState<{title: string, url: string} | null>(null)
 
   // 🔥 تحميل الإعدادات من API
   useEffect(() => {
@@ -839,12 +840,10 @@ if (feature === 'others') {
                         icon: "📊"
                     },
                 ].map((item, idx) => (
-                    <a 
+                    <div
                         key={idx}
-                        href={item.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-2xl p-4 transition-all group"
+                        onClick={() => setSelectedPortfolioItem({title: item.title, url: item.url})}
+                        className="flex items-center gap-3 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-300 rounded-2xl p-4 transition-all group cursor-pointer"
                     >
                         <span className="text-2xl">{item.icon}</span>
                         <div className="flex-1">
@@ -852,10 +851,41 @@ if (feature === 'others') {
                             <p className="text-[11px] text-slate-500 mt-0.5">{item.description}</p>
                         </div>
                         <span className="text-indigo-400 group-hover:text-indigo-600 transition-colors text-lg">←</span>
-                    </a>
+                    </div>
                 ))}
             </div>
         </div>
+    </div>
+)}
+
+{selectedPortfolioItem && (
+    <div className="fixed inset-0 z-[60] flex flex-col bg-white">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
+            <span className="font-black text-sm">{selectedPortfolioItem.title}</span>
+            <div className="flex items-center gap-2">
+                <a 
+                    href={selectedPortfolioItem.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-xs bg-white/20 hover:bg-white/30 px-3 py-1 rounded-full transition-all"
+                >
+                    فتح في تبويب ↗
+                </a>
+                <button 
+                    onClick={() => setSelectedPortfolioItem(null)}
+                    className="text-white/70 hover:text-white text-xl font-bold px-2"
+                >
+                    ✕
+                </button>
+            </div>
+        </div>
+        {/* Iframe */}
+        <iframe
+            src={selectedPortfolioItem.url}
+            className="flex-1 w-full border-none"
+            title={selectedPortfolioItem.title}
+        />
     </div>
 )}
 
