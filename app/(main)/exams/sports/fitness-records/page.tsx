@@ -2199,7 +2199,7 @@ const handleFetchTrainerScores = async () => {
 
 
 
-                if (viewMode === "official") {
+                if (viewMode === "official" || (viewMode === "field" && trainerScores && Object.keys(trainerScores).length > 0)) {
 
 
 
