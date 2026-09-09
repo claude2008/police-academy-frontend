@@ -13,6 +13,21 @@ export function setupFetchInterceptor() {
   const originalFetch = window.fetch;
 
   window.fetch = async function (input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+    const inputUrl = typeof input === 'string' ? input : 
+        input instanceof URL ? input.href : 
+        (input as Request).url || ''
+
+    const isMediaPipe = (
+        inputUrl.includes('jsdelivr.net') || 
+        inputUrl.includes('mediapipe') ||
+        inputUrl.includes('.wasm') ||
+        inputUrl.includes('.tflite')
+    )
+
+    if (isMediaPipe) {
+        return originalFetch(input, init)
+    }
+
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
     
     // تحديد هل الطلب للسيرفر الخاص بنا؟

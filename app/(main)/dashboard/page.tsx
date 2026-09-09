@@ -589,6 +589,24 @@ if (feature === 'others') {
     </div>
 )}
 
+        {["owner","assistant_admin"].includes(user?.role || "") && (
+    <div 
+        onClick={() => router.push("/fitness-counter")}
+        className="cursor-pointer bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl p-4 shadow-md hover:shadow-xl hover:scale-[1.02] transition-all mt-3 group"
+    >
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+                <span className="text-2xl">🤖</span>
+                <div>
+                    <p className="font-black text-white text-sm">العد الذكي</p>
+                    <p className="text-[11px] text-emerald-200">تجريبي</p>
+                </div>
+            </div>
+            <span className="text-white/70 group-hover:text-white group-hover:translate-x-1 transition-all text-lg">←</span>
+        </div>
+    </div>
+)}
+
         <div className="relative">
             <div className="flex items-center gap-2 mb-6 px-2">
                 <div className="p-2 bg-amber-100 rounded-lg"><Zap className="w-5 h-5 text-amber-600" /></div>
