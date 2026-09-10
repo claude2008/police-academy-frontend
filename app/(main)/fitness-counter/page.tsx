@@ -268,6 +268,14 @@ export default function FitnessCounterPage() {
       if (!videoRef.current?.videoWidth) {
         addDebug("⚠️ no video frames after 5s — readyState=" + videoRef.current?.readyState)
       }
+      addDebug(
+        "tracks=" +
+          (streamRef.current?.getVideoTracks().length ?? 0) +
+          " live=" +
+          streamRef.current?.getVideoTracks()[0]?.readyState +
+          " srcObject=" +
+          !!videoRef.current?.srcObject
+      )
     }, 5000)
   }
 
