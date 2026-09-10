@@ -112,6 +112,7 @@ export default function FitnessCounterPage() {
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [previewReady, setPreviewReady] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
+  const [needsTap, setNeedsTap] = useState(false)
   const [bodyReady, setBodyReady] = useState(false)
   const [mediapipeReady, setMediapipeReady] = useState(false)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
@@ -257,22 +258,22 @@ export default function FitnessCounterPage() {
     video.setAttribute("webkit-playsinline", "true")
     video.muted = true
     setVideoReady(false)
+    setNeedsTap(false)
     video.srcObject = stream
-    video.load()
     video.play()
-      .then(() => addDebug("playing"))
+      .then(() => {
+        addDebug("playing")
+        setNeedsTap(false)
+      })
       .catch((e) => {
         addDebug("play err " + String(e))
-        setCameraError("تعذر تشغيل الكاميرا: " + String(e))
+        setNeedsTap(true)
       })
     setTimeout(() => {
-      if (videoRef.current && videoRef.current.readyState === 0 && streamRef.current) {
-        addDebug("retry attach")
-        videoRef.current.srcObject = null
-        videoRef.current.srcObject = streamRef.current
-        videoRef.current.play().catch((e) => addDebug("retry play err " + String(e)))
+      if (videoRef.current && videoRef.current.readyState === 0) {
+        setNeedsTap(true)
       }
-    }, 800)
+    }, 3000)
     setTimeout(() => {
       if (!videoRef.current?.videoWidth) {
         addDebug("⚠️ no video frames after 5s — readyState=" + videoRef.current?.readyState)
@@ -730,10 +731,29 @@ export default function FitnessCounterPage() {
                       style={mirrorStyle}
                     />
                   )}
-                  {stage === "prepare" && !videoReady && !cameraError && (
+                  {stage === "prepare" && !videoReady && !cameraError && !needsTap && (
                     <div className="absolute inset-0 flex items-center justify-center text-white/80 gap-2 z-[5] pointer-events-none">
                       <Camera className="w-5 h-5 animate-pulse" /> جاري تشغيل الكاميرا...
                     </div>
+                  )}
+                  {needsTap && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        videoRef.current
+                          ?.play()
+                          .then(() => {
+                            addDebug("tap play ok")
+                            setNeedsTap(false)
+                          })
+                          .catch((e) => addDebug("tap play err " + String(e)))
+                      }}
+                      className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
+                    >
+                      <span className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-lg rounded-full px-8 py-4 shadow-lg">
+                        ▶️ اضغط لتشغيل الكاميرا
+                      </span>
+                    </button>
                   )}
                   <button
                     type="button"
