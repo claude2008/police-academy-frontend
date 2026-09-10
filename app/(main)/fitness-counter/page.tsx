@@ -111,6 +111,7 @@ export default function FitnessCounterPage() {
   const [timeLeft, setTimeLeft] = useState(DURATION_SEC)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [previewReady, setPreviewReady] = useState(false)
+  const [videoReady, setVideoReady] = useState(false)
   const [bodyReady, setBodyReady] = useState(false)
   const [mediapipeReady, setMediapipeReady] = useState(false)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
@@ -175,6 +176,7 @@ export default function FitnessCounterPage() {
     if (videoRef.current) {
       videoRef.current.srcObject = null
     }
+    setVideoReady(false)
     if (timerRef.current) {
       clearInterval(timerRef.current)
       timerRef.current = null
@@ -246,19 +248,27 @@ export default function FitnessCounterPage() {
   }
 
   const attachVideoStream = async (stream: MediaStream) => {
+    if (!videoRef.current) {
+      addDebug("❌ video element is null")
+      return
+    }
     const video = videoRef.current
-    if (!video) return
     video.setAttribute("playsinline", "true")
     video.setAttribute("webkit-playsinline", "true")
     video.muted = true
+    setVideoReady(false)
     video.srcObject = stream
-    try {
-      await video.play()
-      addDebug("playing")
-    } catch (e) {
-      addDebug("play err " + String(e))
-      setCameraError("تعذر تشغيل الكاميرا: " + String(e))
-    }
+    video.play()
+      .then(() => addDebug("playing"))
+      .catch((e) => {
+        addDebug("play err " + String(e))
+        setCameraError("تعذر تشغيل الكاميرا: " + String(e))
+      })
+    setTimeout(() => {
+      if (!videoRef.current?.videoWidth) {
+        addDebug("⚠️ no video frames after 5s — readyState=" + videoRef.current?.readyState)
+      }
+    }, 5000)
   }
 
   const detectRep = (landmarks: any) => {
@@ -447,6 +457,7 @@ export default function FitnessCounterPage() {
   const startPrepareCamera = useCallback(async () => {
     setCameraError(null)
     setPreviewReady(false)
+    setVideoReady(false)
     setBodyReady(false)
     setWarning("")
     try {
@@ -490,6 +501,7 @@ export default function FitnessCounterPage() {
     facingModeRef.current = next
     setCameraError(null)
     setPreviewReady(false)
+    setVideoReady(false)
     setBodyReady(false)
     try {
       if (streamRef.current) {
@@ -553,6 +565,7 @@ export default function FitnessCounterPage() {
   }, [bodyReady, mediapipeReady, finishSession])
 
   const selectExercise = (ex: Exercise) => {
+    setVideoReady(false)
     setExercise(ex)
     exerciseRef.current = ex
     updateStage("prepare")
@@ -566,6 +579,7 @@ export default function FitnessCounterPage() {
     setReps(0)
     setTimeLeft(DURATION_SEC)
     setBodyReady(false)
+    setVideoReady(false)
     setWarning("")
     updateStage("select")
   }
@@ -576,6 +590,7 @@ export default function FitnessCounterPage() {
     setReps(0)
     setTimeLeft(DURATION_SEC)
     setBodyReady(false)
+    setVideoReady(false)
     setWarning("")
     updateStage("prepare")
   }
@@ -653,11 +668,12 @@ export default function FitnessCounterPage() {
                 <div className="relative bg-black w-full aspect-video md:w-[640px] md:h-[480px] md:mx-auto rounded-2xl overflow-hidden">
                   <video
                     ref={videoRef}
-                    className={`w-full h-full object-cover rounded-2xl ${stage === "active" ? "opacity-0 absolute inset-0" : ""}`}
+                    className="w-full h-full object-cover rounded-2xl absolute inset-0 transition-opacity"
                     playsInline
                     muted
                     autoPlay
                     onLoadedMetadata={() => {
+                      setVideoReady(true)
                       addDebug(
                         "video " +
                           videoRef.current?.videoWidth +
@@ -665,7 +681,14 @@ export default function FitnessCounterPage() {
                           videoRef.current?.videoHeight
                       )
                     }}
-                    style={mirrorStyle}
+                    onPlaying={() => {
+                      setVideoReady(true)
+                      addDebug("playing event")
+                    }}
+                    style={{
+                      ...mirrorStyle,
+                      opacity: stage === "active" ? 0 : videoReady ? 1 : 0,
+                    }}
                   />
                   {stage === "active" && (
                     <canvas
@@ -674,8 +697,8 @@ export default function FitnessCounterPage() {
                       style={mirrorStyle}
                     />
                   )}
-                  {stage === "prepare" && !previewReady && !cameraError && (
-                    <div className="absolute inset-0 flex items-center justify-center text-white/80 gap-2 z-10">
+                  {stage === "prepare" && !videoReady && !cameraError && (
+                    <div className="absolute inset-0 flex items-center justify-center text-white/80 gap-2 z-10 pointer-events-none">
                       <Camera className="w-5 h-5 animate-pulse" /> جاري تشغيل الكاميرا...
                     </div>
                   )}
