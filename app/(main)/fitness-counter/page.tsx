@@ -258,12 +258,21 @@ export default function FitnessCounterPage() {
     video.muted = true
     setVideoReady(false)
     video.srcObject = stream
+    video.load()
     video.play()
       .then(() => addDebug("playing"))
       .catch((e) => {
         addDebug("play err " + String(e))
         setCameraError("تعذر تشغيل الكاميرا: " + String(e))
       })
+    setTimeout(() => {
+      if (videoRef.current && videoRef.current.readyState === 0 && streamRef.current) {
+        addDebug("retry attach")
+        videoRef.current.srcObject = null
+        videoRef.current.srcObject = streamRef.current
+        videoRef.current.play().catch((e) => addDebug("retry play err " + String(e)))
+      }
+    }, 800)
     setTimeout(() => {
       if (!videoRef.current?.videoWidth) {
         addDebug("⚠️ no video frames after 5s — readyState=" + videoRef.current?.readyState)
@@ -275,6 +284,20 @@ export default function FitnessCounterPage() {
           streamRef.current?.getVideoTracks()[0]?.readyState +
           " srcObject=" +
           !!videoRef.current?.srcObject
+      )
+      const v = videoRef.current
+      const r = v?.getBoundingClientRect()
+      addDebug(
+        "size " +
+          Math.round(r?.width ?? 0) +
+          "x" +
+          Math.round(r?.height ?? 0) +
+          " disp=" +
+          (v ? getComputedStyle(v).display : "?") +
+          " vis=" +
+          (v ? getComputedStyle(v).visibility : "?") +
+          " op=" +
+          (v ? getComputedStyle(v).opacity : "?")
       )
     }, 5000)
   }
@@ -676,10 +699,15 @@ export default function FitnessCounterPage() {
                 <div className="relative bg-black w-full aspect-video md:w-[640px] md:h-[480px] md:mx-auto rounded-2xl overflow-hidden">
                   <video
                     ref={videoRef}
-                    className="w-full h-full object-cover rounded-2xl absolute inset-0 transition-opacity"
+                    className="w-full h-full object-cover rounded-2xl absolute inset-0 z-0"
                     playsInline
                     muted
                     autoPlay
+                    onLoadStart={() => addDebug("evt loadstart")}
+                    onCanPlay={() => addDebug("evt canplay")}
+                    onSuspend={() => addDebug("evt suspend")}
+                    onStalled={() => addDebug("evt stalled")}
+                    onError={() => addDebug("evt error " + videoRef.current?.error?.code)}
                     onLoadedMetadata={() => {
                       setVideoReady(true)
                       addDebug(
@@ -693,20 +721,17 @@ export default function FitnessCounterPage() {
                       setVideoReady(true)
                       addDebug("playing event")
                     }}
-                    style={{
-                      ...mirrorStyle,
-                      opacity: stage === "active" ? 0 : videoReady ? 1 : 0,
-                    }}
+                    style={mirrorStyle}
                   />
                   {stage === "active" && (
                     <canvas
                       ref={canvasRef}
-                      className="w-full h-full object-cover rounded-2xl absolute inset-0"
+                      className="w-full h-full object-cover rounded-2xl absolute inset-0 z-10"
                       style={mirrorStyle}
                     />
                   )}
                   {stage === "prepare" && !videoReady && !cameraError && (
-                    <div className="absolute inset-0 flex items-center justify-center text-white/80 gap-2 z-10 pointer-events-none">
+                    <div className="absolute inset-0 flex items-center justify-center text-white/80 gap-2 z-[5] pointer-events-none">
                       <Camera className="w-5 h-5 animate-pulse" /> جاري تشغيل الكاميرا...
                     </div>
                   )}
