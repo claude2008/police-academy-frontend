@@ -115,13 +115,17 @@ export default function FitnessCounterPage() {
   const [needsTap, setNeedsTap] = useState(false)
   const [bodyReady, setBodyReady] = useState(false)
   const [mediapipeReady, setMediapipeReady] = useState(false)
+  const [diag, setDiag] = useState("")
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
   const [warning, setWarning] = useState("")
   const [strictness, setStrictness] = useState<Strictness>("normal")
   const [thresholds, setThresholds] = useState(PRESETS.normal)
   const thresholdsRef = useRef(PRESETS.normal)
+  const mediapipeReadyRef = useRef(false)
+  const lastDiagAtRef = useRef(0)
 
   useEffect(() => { thresholdsRef.current = thresholds }, [thresholds])
+  useEffect(() => { mediapipeReadyRef.current = mediapipeReady }, [mediapipeReady])
 
   useEffect(() => {
     if (strictness !== "custom") setThresholds(PRESETS[strictness])
@@ -380,6 +384,7 @@ export default function FitnessCounterPage() {
         minTrackingConfidence: 0.5,
       })
       pose.onResults((results: any) => {
+        setDiag(d => "RESULTS OK | " + d)
         const canvas = canvasRef.current
         const ctx = canvas?.getContext("2d")
         if (canvas && ctx) {
@@ -425,9 +430,22 @@ export default function FitnessCounterPage() {
           video &&
           (stageRef.current === "prepare" || stageRef.current === "active")
         ) {
+          const now = Date.now()
+          if (now - lastDiagAtRef.current > 500) {
+            lastDiagAtRef.current = now
+            setDiag(
+              "vw=" + (video.videoWidth || 0) +
+              " vh=" + (video.videoHeight || 0) +
+              " rs=" + video.readyState +
+              " pose=" + !!poseRef.current +
+              " mp=" + mediapipeReadyRef.current
+            )
+          }
           try {
             await poseRef.current.send({ image: video })
-          } catch {}
+          } catch (e) {
+            setDiag("send err: " + String(e))
+          }
           poseLoopRef.current = requestAnimationFrame(processFrame)
         }
       }
@@ -470,6 +488,8 @@ export default function FitnessCounterPage() {
       }
       if ((window as any).Pose) {
         await startPoseTracking()
+      } else {
+        setDiag("❌ window.Pose never loaded")
       }
     } catch (err: any) {
       if (err?.message === "permission") {
@@ -731,6 +751,11 @@ export default function FitnessCounterPage() {
                     </>
                   )}
                 </div>
+                {diag && (
+                  <p className="font-mono text-[10px] text-slate-700 px-3 py-1 break-all" dir="ltr">
+                    {diag}
+                  </p>
+                )}
                 {stage === "prepare" && (
                   <div className="p-6 space-y-4">
                     <h2 className="text-xl font-black text-center">تجهيز تمرين {exerciseLabel}</h2>
