@@ -589,7 +589,7 @@ if (feature === 'others') {
     </div>
 )}
 
-        {["owner","assistant_admin"].includes(user?.role || "") && (
+        {["owner"].includes(user?.role || "") && (
     <div 
         onClick={() => router.push("/fitness-counter")}
         className="cursor-pointer bg-gradient-to-br from-emerald-600 to-teal-600 rounded-2xl p-4 shadow-md hover:shadow-xl hover:scale-[1.02] transition-all mt-3 group"
