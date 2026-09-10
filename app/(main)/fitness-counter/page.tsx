@@ -116,6 +116,7 @@ export default function FitnessCounterPage() {
   const [bodyReady, setBodyReady] = useState(false)
   const [mediapipeReady, setMediapipeReady] = useState(false)
   const [diag, setDiag] = useState("")
+  const trace = (m: string) => setDiag(d => d + " > " + m)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
   const [warning, setWarning] = useState("")
   const [strictness, setStrictness] = useState<Strictness>("normal")
@@ -192,6 +193,7 @@ export default function FitnessCounterPage() {
 
   useEffect(() => {
     const loadMediaPipe = async () => {
+        trace("effect")
         const loadScript = (src: string): Promise<void> => {
             return new Promise((resolve, reject) => {
                 if (document.querySelector(`script[src="${src}"]`)) {
@@ -208,13 +210,18 @@ export default function FitnessCounterPage() {
         }
 
         try {
+            trace("load pose.js")
             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js')
+            trace("load drawing.js")
             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js')
             await new Promise(resolve => setTimeout(resolve, 500))
+            trace("scripts ok")
             setMediapipeReady(true)
+            trace("mp ready")
         } catch (err) {
             console.error('MediaPipe load failed:', err)
             setMediapipeReady(false)
+            trace("script ERR " + String(err))
         }
     }
     loadMediaPipe()
@@ -357,6 +364,7 @@ export default function FitnessCounterPage() {
   }
 
   const startPoseTracking = useCallback(async () => {
+    trace("spt enter")
     const video = videoRef.current
     if (!video) return
 
@@ -449,9 +457,11 @@ export default function FitnessCounterPage() {
           poseLoopRef.current = requestAnimationFrame(processFrame)
         }
       }
+      trace("raf start")
       poseLoopRef.current = requestAnimationFrame(processFrame)
     } catch (err) {
       console.error('Pose init failed:', err)
+      trace("spt ERR " + String(err))
       alert('فشل تحميل نموذج الذكاء الاصطناعي، حاول مرة أخرى')
       return
     }
@@ -481,15 +491,23 @@ export default function FitnessCounterPage() {
       streamRef.current = stream
       await attachVideoStream(stream)
       setPreviewReady(true)
+      trace("cam ok")
 
-      // Wait for MediaPipe Pose if scripts still loading
-      for (let i = 0; i < 50 && !(window as any).Pose; i++) {
-        await new Promise((r) => setTimeout(r, 200))
-      }
-      if ((window as any).Pose) {
-        await startPoseTracking()
-      } else {
-        setDiag("❌ window.Pose never loaded")
+      try {
+        // Wait for MediaPipe Pose if scripts still loading
+        trace("waiting pose")
+        for (let i = 0; i < 50 && !(window as any).Pose; i++) {
+          await new Promise((r) => setTimeout(r, 200))
+        }
+        trace("loop done pose=" + !!(window as any).Pose)
+        if ((window as any).Pose) {
+          trace("starting pose")
+          await startPoseTracking()
+        } else {
+          setDiag(d => d + " > ❌ window.Pose never loaded")
+        }
+      } catch (e) {
+        trace("chain ERR " + String(e))
       }
     } catch (err: any) {
       if (err?.message === "permission") {
@@ -619,6 +637,11 @@ export default function FitnessCounterPage() {
               <ArrowRight className="w-4 h-4" /> لوحة التحكم
             </Button>
           </div>
+          {diag !== "" && (
+            <p className="font-mono text-[10px] text-red-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 break-all" dir="ltr">
+              {diag}
+            </p>
+          )}
 
           {stage === "select" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -751,11 +774,6 @@ export default function FitnessCounterPage() {
                     </>
                   )}
                 </div>
-                {diag && (
-                  <p className="font-mono text-[10px] text-slate-700 px-3 py-1 break-all" dir="ltr">
-                    {diag}
-                  </p>
-                )}
                 {stage === "prepare" && (
                   <div className="p-6 space-y-4">
                     <h2 className="text-xl font-black text-center">تجهيز تمرين {exerciseLabel}</h2>
