@@ -115,18 +115,13 @@ export default function FitnessCounterPage() {
   const [needsTap, setNeedsTap] = useState(false)
   const [bodyReady, setBodyReady] = useState(false)
   const [mediapipeReady, setMediapipeReady] = useState(false)
-  const [diag, setDiag] = useState("")
-  const trace = (m: string) => setDiag(d => d + " > " + m)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
   const [warning, setWarning] = useState("")
   const [strictness, setStrictness] = useState<Strictness>("normal")
   const [thresholds, setThresholds] = useState(PRESETS.normal)
   const thresholdsRef = useRef(PRESETS.normal)
-  const mediapipeReadyRef = useRef(false)
-  const lastDiagAtRef = useRef(0)
 
   useEffect(() => { thresholdsRef.current = thresholds }, [thresholds])
-  useEffect(() => { mediapipeReadyRef.current = mediapipeReady }, [mediapipeReady])
 
   useEffect(() => {
     if (strictness !== "custom") setThresholds(PRESETS[strictness])
@@ -193,7 +188,6 @@ export default function FitnessCounterPage() {
 
   useEffect(() => {
     const loadMediaPipe = async () => {
-        trace("effect")
         const loadScript = (src: string): Promise<void> => {
             return new Promise((resolve, reject) => {
                 if (document.querySelector(`script[src="${src}"]`)) {
@@ -210,18 +204,13 @@ export default function FitnessCounterPage() {
         }
 
         try {
-            trace("load pose.js")
             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js')
-            trace("load drawing.js")
             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js')
             await new Promise(resolve => setTimeout(resolve, 500))
-            trace("scripts ok")
             setMediapipeReady(true)
-            trace("mp ready")
         } catch (err) {
             console.error('MediaPipe load failed:', err)
             setMediapipeReady(false)
-            trace("script ERR " + String(err))
         }
     }
     loadMediaPipe()
@@ -349,7 +338,6 @@ export default function FitnessCounterPage() {
 
       const groundRef = { x: landmarks[s.hip].x, y: landmarks[s.hip].y + 0.3 }
       const angle = calculateAngle(landmarks[s.shoulder], landmarks[s.hip], groundRef)
-      console.log("SITUP torso:", angle.toFixed(0), "phase:", phaseRef.current)
 
       if (angle > t.down) {
         phaseRef.current = "down"
@@ -364,53 +352,39 @@ export default function FitnessCounterPage() {
   }
 
   const startPoseTracking = useCallback(async () => {
-    trace("spt enter")
     const video = videoRef.current
-    if (!video) {
-      trace("spt no video")
-      return
-    }
+    if (!video) return
 
-    trace("cleanup start")
     if (poseRef.current) {
       try {
         const old = poseRef.current
         poseRef.current = null
         old.close()   // do NOT await this
-      } catch (e) {
-        trace("close err " + String(e))
-      }
+      } catch {}
     }
     if (poseLoopRef.current != null) {
       cancelAnimationFrame(poseLoopRef.current)
       poseLoopRef.current = null
     }
-    trace("cleanup done")
 
     try {
       const PoseClass = (window as any).Pose
       if (!PoseClass) throw new Error('Pose not loaded')
-      trace("new Pose")
       const pose = new PoseClass({
           locateFile: (file: string) => 
               `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
       })
-      trace("initialize")
       await Promise.race([
         pose.initialize(),
         new Promise((_, rej) => setTimeout(() => rej(new Error("init timeout")), 10000))
       ])
-      trace("init ok")
-      trace("setOptions")
       pose.setOptions({
         modelComplexity: 1,
         smoothLandmarks: true,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5,
       })
-      trace("options ok")
       pose.onResults((results: any) => {
-        setDiag(d => "RESULTS OK | " + d)
         const canvas = canvasRef.current
         const ctx = canvas?.getContext("2d")
         if (canvas && ctx) {
@@ -447,7 +421,6 @@ export default function FitnessCounterPage() {
           setWarning("⚠️ تأكد من ظهور الجسم كاملاً في الكاميرا")
         }
       })
-      trace("onResults set")
 
       poseRef.current = pose
 
@@ -457,31 +430,16 @@ export default function FitnessCounterPage() {
           video &&
           (stageRef.current === "prepare" || stageRef.current === "active")
         ) {
-          const now = Date.now()
-          if (now - lastDiagAtRef.current > 500) {
-            lastDiagAtRef.current = now
-            setDiag(
-              "vw=" + (video.videoWidth || 0) +
-              " vh=" + (video.videoHeight || 0) +
-              " rs=" + video.readyState +
-              " pose=" + !!poseRef.current +
-              " mp=" + mediapipeReadyRef.current
-            )
-          }
           try {
             await poseRef.current.send({ image: video })
-          } catch (e) {
-            setDiag("send err: " + String(e))
-          }
+          } catch {}
           poseLoopRef.current = requestAnimationFrame(processFrame)
         }
       }
-      trace("raf start")
       poseLoopRef.current = requestAnimationFrame(processFrame)
     } catch (err) {
       console.error('Pose init failed:', err)
-      trace("spt ERR " + String(err))
-      alert('فشل تحميل نموذج الذكاء الاصطناعي، حاول مرة أخرى')
+      setCameraError("فشل تحميل نموذج الذكاء الاصطناعي، حاول مرة أخرى")
       return
     }
   }, [])
@@ -499,8 +457,11 @@ export default function FitnessCounterPage() {
       }
       // Stop any leftover pose from a previous session
       if (poseRef.current) {
-        try { poseRef.current.close() } catch {}
-        poseRef.current = null
+        try {
+          const old = poseRef.current
+          poseRef.current = null
+          old.close()
+        } catch {}
       }
       if (poseLoopRef.current != null) {
         cancelAnimationFrame(poseLoopRef.current)
@@ -510,23 +471,18 @@ export default function FitnessCounterPage() {
       streamRef.current = stream
       await attachVideoStream(stream)
       setPreviewReady(true)
-      trace("cam ok")
 
       try {
-        // Wait for MediaPipe Pose if scripts still loading
-        trace("waiting pose")
         for (let i = 0; i < 50 && !(window as any).Pose; i++) {
           await new Promise((r) => setTimeout(r, 200))
         }
-        trace("loop done pose=" + !!(window as any).Pose)
         if ((window as any).Pose) {
-          trace("starting pose")
           await startPoseTracking()
         } else {
-          setDiag(d => d + " > ❌ window.Pose never loaded")
+          setCameraError("فشل تحميل نموذج الذكاء الاصطناعي، حاول مرة أخرى")
         }
       } catch (e) {
-        trace("chain ERR " + String(e))
+        setCameraError("فشل تحميل نموذج الذكاء الاصطناعي، حاول مرة أخرى")
       }
     } catch (err: any) {
       if (err?.message === "permission") {
@@ -656,11 +612,6 @@ export default function FitnessCounterPage() {
               <ArrowRight className="w-4 h-4" /> لوحة التحكم
             </Button>
           </div>
-          {diag !== "" && (
-            <p className="font-mono text-[10px] text-red-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 break-all" dir="ltr">
-              {diag}
-            </p>
-          )}
 
           {stage === "select" && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -830,22 +781,6 @@ export default function FitnessCounterPage() {
                       <Button variant="outline" onClick={goHome} className="font-bold">
                         رجوع
                       </Button>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {EXERCISE_TIPS.map((tip) => (
-                        <div
-                          key={tip.title}
-                          className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm"
-                        >
-                          <div className="flex items-start gap-3">
-                            <span className="text-2xl leading-none">{tip.icon}</span>
-                            <div>
-                              <p className="font-black text-slate-900 text-sm">{tip.title}</p>
-                              <p className="text-slate-600 text-sm font-medium mt-1 leading-relaxed">{tip.text}</p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
                     </div>
                     {exercise === "pushup" && (
                       <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 space-y-3" dir="rtl">
