@@ -366,31 +366,49 @@ export default function FitnessCounterPage() {
   const startPoseTracking = useCallback(async () => {
     trace("spt enter")
     const video = videoRef.current
-    if (!video) return
+    if (!video) {
+      trace("spt no video")
+      return
+    }
 
+    trace("cleanup start")
     if (poseRef.current) {
-      try { poseRef.current.close() } catch {}
-      poseRef.current = null
+      try {
+        const old = poseRef.current
+        poseRef.current = null
+        old.close()   // do NOT await this
+      } catch (e) {
+        trace("close err " + String(e))
+      }
     }
     if (poseLoopRef.current != null) {
       cancelAnimationFrame(poseLoopRef.current)
       poseLoopRef.current = null
     }
+    trace("cleanup done")
 
     try {
       const PoseClass = (window as any).Pose
       if (!PoseClass) throw new Error('Pose not loaded')
+      trace("new Pose")
       const pose = new PoseClass({
           locateFile: (file: string) => 
               `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
       })
-      await pose.initialize()
+      trace("initialize")
+      await Promise.race([
+        pose.initialize(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("init timeout")), 10000))
+      ])
+      trace("init ok")
+      trace("setOptions")
       pose.setOptions({
         modelComplexity: 1,
         smoothLandmarks: true,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5,
       })
+      trace("options ok")
       pose.onResults((results: any) => {
         setDiag(d => "RESULTS OK | " + d)
         const canvas = canvasRef.current
@@ -429,6 +447,7 @@ export default function FitnessCounterPage() {
           setWarning("⚠️ تأكد من ظهور الجسم كاملاً في الكاميرا")
         }
       })
+      trace("onResults set")
 
       poseRef.current = pose
 
