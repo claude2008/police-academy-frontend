@@ -117,8 +117,6 @@ export default function FitnessCounterPage() {
   const [mediapipeReady, setMediapipeReady] = useState(false)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
   const [warning, setWarning] = useState("")
-  const [debugInfo, setDebugInfo] = useState<string[]>([])
-  const addDebug = (m: string) => setDebugInfo(p => [...p.slice(-9), m])
   const [strictness, setStrictness] = useState<Strictness>("normal")
   const [thresholds, setThresholds] = useState(PRESETS.normal)
   const thresholdsRef = useRef(PRESETS.normal)
@@ -189,10 +187,6 @@ export default function FitnessCounterPage() {
   }, [stopStream])
 
   useEffect(() => {
-    addDebug("secure:" + window.isSecureContext)
-  }, [])
-
-  useEffect(() => {
     const loadMediaPipe = async () => {
         const loadScript = (src: string): Promise<void> => {
             return new Promise((resolve, reject) => {
@@ -210,12 +204,10 @@ export default function FitnessCounterPage() {
         }
 
         try {
-            addDebug("mp loading")
             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js')
             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js')
             await new Promise(resolve => setTimeout(resolve, 500))
             setMediapipeReady(true)
-            addDebug("mp ready")
         } catch (err) {
             console.error('MediaPipe load failed:', err)
             setMediapipeReady(false)
@@ -226,20 +218,14 @@ export default function FitnessCounterPage() {
 
   const requestCameraStream = async (facing: "user" | "environment") => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(getVideoConstraints(facing))
-      addDebug("stream OK " + stream.getVideoTracks()[0]?.label)
-      return stream
+      return await navigator.mediaDevices.getUserMedia(getVideoConstraints(facing))
     } catch (err: any) {
-      addDebug("cam err " + err.name)
       if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
         throw new Error("permission")
       }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-        addDebug("stream OK " + stream.getVideoTracks()[0]?.label)
-        return stream
+        return await navigator.mediaDevices.getUserMedia({ video: true })
       } catch (err2: any) {
-        addDebug("cam err " + err2.name)
         if (err2?.name === "NotAllowedError" || err2?.name === "PermissionDeniedError") {
           throw new Error("permission")
         }
@@ -249,10 +235,7 @@ export default function FitnessCounterPage() {
   }
 
   const attachVideoStream = async (stream: MediaStream) => {
-    if (!videoRef.current) {
-      addDebug("❌ video element is null")
-      return
-    }
+    if (!videoRef.current) return
     const video = videoRef.current
     video.setAttribute("playsinline", "true")
     video.setAttribute("webkit-playsinline", "true")
@@ -262,11 +245,9 @@ export default function FitnessCounterPage() {
     video.srcObject = stream
     video.play()
       .then(() => {
-        addDebug("playing")
         setNeedsTap(false)
       })
-      .catch((e) => {
-        addDebug("play err " + String(e))
+      .catch(() => {
         setNeedsTap(true)
       })
     setTimeout(() => {
@@ -274,33 +255,6 @@ export default function FitnessCounterPage() {
         setNeedsTap(true)
       }
     }, 3000)
-    setTimeout(() => {
-      if (!videoRef.current?.videoWidth) {
-        addDebug("⚠️ no video frames after 5s — readyState=" + videoRef.current?.readyState)
-      }
-      addDebug(
-        "tracks=" +
-          (streamRef.current?.getVideoTracks().length ?? 0) +
-          " live=" +
-          streamRef.current?.getVideoTracks()[0]?.readyState +
-          " srcObject=" +
-          !!videoRef.current?.srcObject
-      )
-      const v = videoRef.current
-      const r = v?.getBoundingClientRect()
-      addDebug(
-        "size " +
-          Math.round(r?.width ?? 0) +
-          "x" +
-          Math.round(r?.height ?? 0) +
-          " disp=" +
-          (v ? getComputedStyle(v).display : "?") +
-          " vis=" +
-          (v ? getComputedStyle(v).visibility : "?") +
-          " op=" +
-          (v ? getComputedStyle(v).opacity : "?")
-      )
-    }, 5000)
   }
 
   const detectRep = (landmarks: any) => {
@@ -412,7 +366,6 @@ export default function FitnessCounterPage() {
     }
 
     try {
-      addDebug("mp loading")
       const PoseClass = (window as any).Pose
       if (!PoseClass) throw new Error('Pose not loaded')
       const pose = new PoseClass({
@@ -697,37 +650,25 @@ export default function FitnessCounterPage() {
           {(stage === "prepare" || stage === "active") && exercise && (
             <Card className="rounded-3xl overflow-hidden shadow-md">
               <CardContent className="p-0">
-                <div className="relative bg-black w-full aspect-video md:w-[640px] md:h-[480px] md:mx-auto rounded-2xl overflow-hidden">
+                <div className="relative bg-slate-900 w-full aspect-video md:w-[640px] md:h-[480px] md:mx-auto rounded-2xl overflow-hidden">
                   <video
                     ref={videoRef}
-                    className="w-full h-full object-cover rounded-2xl absolute inset-0 z-0"
+                    className="w-full h-full object-contain rounded-2xl absolute inset-0 z-0"
                     playsInline
                     muted
                     autoPlay
-                    onLoadStart={() => addDebug("evt loadstart")}
-                    onCanPlay={() => addDebug("evt canplay")}
-                    onSuspend={() => addDebug("evt suspend")}
-                    onStalled={() => addDebug("evt stalled")}
-                    onError={() => addDebug("evt error " + videoRef.current?.error?.code)}
                     onLoadedMetadata={() => {
                       setVideoReady(true)
-                      addDebug(
-                        "video " +
-                          videoRef.current?.videoWidth +
-                          "x" +
-                          videoRef.current?.videoHeight
-                      )
                     }}
                     onPlaying={() => {
                       setVideoReady(true)
-                      addDebug("playing event")
                     }}
                     style={mirrorStyle}
                   />
                   {stage === "active" && (
                     <canvas
                       ref={canvasRef}
-                      className="w-full h-full object-cover rounded-2xl absolute inset-0 z-10"
+                      className="w-full h-full object-contain rounded-2xl absolute inset-0 z-10"
                       style={mirrorStyle}
                     />
                   )}
@@ -743,10 +684,9 @@ export default function FitnessCounterPage() {
                         videoRef.current
                           ?.play()
                           .then(() => {
-                            addDebug("tap play ok")
                             setNeedsTap(false)
                           })
-                          .catch((e) => addDebug("tap play err " + String(e)))
+                          .catch(() => {})
                       }}
                       className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
                     >
@@ -791,16 +731,6 @@ export default function FitnessCounterPage() {
                     </>
                   )}
                 </div>
-                {debugInfo.length > 0 && (
-                  <div
-                    className="bg-black text-white font-mono text-[10px] leading-relaxed p-2 mx-3 mt-2 mb-1 rounded max-h-[160px] overflow-y-auto"
-                    dir="ltr"
-                  >
-                    {debugInfo.map((m, i) => (
-                      <div key={i}>{m}</div>
-                    ))}
-                  </div>
-                )}
                 {stage === "prepare" && (
                   <div className="p-6 space-y-4">
                     <h2 className="text-xl font-black text-center">تجهيز تمرين {exerciseLabel}</h2>
@@ -823,6 +753,38 @@ export default function FitnessCounterPage() {
                         {warning}
                       </p>
                     )}
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={startActiveSession}
+                        disabled={!bodyReady || !mediapipeReady}
+                        className={`flex-1 h-12 font-black gap-2 ${
+                          !bodyReady || !mediapipeReady
+                            ? "opacity-50 cursor-not-allowed bg-gray-400 hover:bg-gray-400"
+                            : "bg-emerald-600 hover:bg-emerald-700"
+                        }`}
+                      >
+                        <Play className="w-5 h-5" /> ابدأ
+                      </Button>
+                      <Button variant="outline" onClick={goHome} className="font-bold">
+                        رجوع
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {EXERCISE_TIPS.map((tip) => (
+                        <div
+                          key={tip.title}
+                          className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm"
+                        >
+                          <div className="flex items-start gap-3">
+                            <span className="text-2xl leading-none">{tip.icon}</span>
+                            <div>
+                              <p className="font-black text-slate-900 text-sm">{tip.title}</p>
+                              <p className="text-slate-600 text-sm font-medium mt-1 leading-relaxed">{tip.text}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                     {exercise === "pushup" && (
                       <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 space-y-3" dir="rtl">
                         <h3 className="font-black text-slate-900 text-sm">⚙️ مستوى الدقة</h3>
@@ -1008,22 +970,6 @@ export default function FitnessCounterPage() {
                         )}
                       </div>
                     )}
-                    <div className="flex gap-3">
-                      <Button
-                        onClick={startActiveSession}
-                        disabled={!bodyReady || !mediapipeReady}
-                        className={`flex-1 h-12 font-black gap-2 ${
-                          !bodyReady || !mediapipeReady
-                            ? "opacity-50 cursor-not-allowed bg-gray-400 hover:bg-gray-400"
-                            : "bg-emerald-600 hover:bg-emerald-700"
-                        }`}
-                      >
-                        <Play className="w-5 h-5" /> ابدأ
-                      </Button>
-                      <Button variant="outline" onClick={goHome} className="font-bold">
-                        رجوع
-                      </Button>
-                    </div>
                   </div>
                 )}
                 {stage === "active" && (
