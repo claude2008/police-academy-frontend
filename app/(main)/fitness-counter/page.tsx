@@ -115,6 +115,8 @@ export default function FitnessCounterPage() {
   const [mediapipeReady, setMediapipeReady] = useState(false)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
   const [warning, setWarning] = useState("")
+  const [debugInfo, setDebugInfo] = useState<string[]>([])
+  const addDebug = (m: string) => setDebugInfo(p => [...p.slice(-9), m])
   const [strictness, setStrictness] = useState<Strictness>("normal")
   const [thresholds, setThresholds] = useState(PRESETS.normal)
   const thresholdsRef = useRef(PRESETS.normal)
@@ -184,6 +186,10 @@ export default function FitnessCounterPage() {
   }, [stopStream])
 
   useEffect(() => {
+    addDebug("secure:" + window.isSecureContext)
+  }, [])
+
+  useEffect(() => {
     const loadMediaPipe = async () => {
         const loadScript = (src: string): Promise<void> => {
             return new Promise((resolve, reject) => {
@@ -201,10 +207,12 @@ export default function FitnessCounterPage() {
         }
 
         try {
+            addDebug("mp loading")
             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js')
             await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js')
             await new Promise(resolve => setTimeout(resolve, 500))
             setMediapipeReady(true)
+            addDebug("mp ready")
         } catch (err) {
             console.error('MediaPipe load failed:', err)
             setMediapipeReady(false)
@@ -215,19 +223,41 @@ export default function FitnessCounterPage() {
 
   const requestCameraStream = async (facing: "user" | "environment") => {
     try {
-      return await navigator.mediaDevices.getUserMedia(getVideoConstraints(facing))
+      const stream = await navigator.mediaDevices.getUserMedia(getVideoConstraints(facing))
+      addDebug("stream OK " + stream.getVideoTracks()[0]?.label)
+      return stream
     } catch (err: any) {
+      addDebug("cam err " + err.name)
       if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
         throw new Error("permission")
       }
       try {
-        return await navigator.mediaDevices.getUserMedia({ video: true })
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+        addDebug("stream OK " + stream.getVideoTracks()[0]?.label)
+        return stream
       } catch (err2: any) {
+        addDebug("cam err " + err2.name)
         if (err2?.name === "NotAllowedError" || err2?.name === "PermissionDeniedError") {
           throw new Error("permission")
         }
         throw err2
       }
+    }
+  }
+
+  const attachVideoStream = async (stream: MediaStream) => {
+    const video = videoRef.current
+    if (!video) return
+    video.setAttribute("playsinline", "true")
+    video.setAttribute("webkit-playsinline", "true")
+    video.muted = true
+    video.srcObject = stream
+    try {
+      await video.play()
+      addDebug("playing")
+    } catch (e) {
+      addDebug("play err " + String(e))
+      setCameraError("تعذر تشغيل الكاميرا: " + String(e))
     }
   }
 
@@ -340,6 +370,7 @@ export default function FitnessCounterPage() {
     }
 
     try {
+      addDebug("mp loading")
       const PoseClass = (window as any).Pose
       if (!PoseClass) throw new Error('Pose not loaded')
       const pose = new PoseClass({
@@ -434,10 +465,7 @@ export default function FitnessCounterPage() {
       }
       const stream = await requestCameraStream(facingModeRef.current)
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
+      await attachVideoStream(stream)
       setPreviewReady(true)
 
       // Wait for MediaPipe Pose if scripts still loading
@@ -470,10 +498,7 @@ export default function FitnessCounterPage() {
       }
       const stream = await requestCameraStream(next)
       streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-      }
+      await attachVideoStream(stream)
       setPreviewReady(true)
       if (stageRef.current === "prepare" || stageRef.current === "active") {
         await startPoseTracking()
@@ -631,6 +656,15 @@ export default function FitnessCounterPage() {
                     className={`w-full h-full object-cover rounded-2xl ${stage === "active" ? "opacity-0 absolute inset-0" : ""}`}
                     playsInline
                     muted
+                    autoPlay
+                    onLoadedMetadata={() => {
+                      addDebug(
+                        "video " +
+                          videoRef.current?.videoWidth +
+                          "x" +
+                          videoRef.current?.videoHeight
+                      )
+                    }}
                     style={mirrorStyle}
                   />
                   {stage === "active" && (
@@ -681,6 +715,16 @@ export default function FitnessCounterPage() {
                     </>
                   )}
                 </div>
+                {debugInfo.length > 0 && (
+                  <div
+                    className="bg-black text-white font-mono text-[10px] leading-relaxed p-2 mx-3 mt-2 mb-1 rounded max-h-[160px] overflow-y-auto"
+                    dir="ltr"
+                  >
+                    {debugInfo.map((m, i) => (
+                      <div key={i}>{m}</div>
+                    ))}
+                  </div>
+                )}
                 {stage === "prepare" && (
                   <div className="p-6 space-y-4">
                     <h2 className="text-xl font-black text-center">تجهيز تمرين {exerciseLabel}</h2>
