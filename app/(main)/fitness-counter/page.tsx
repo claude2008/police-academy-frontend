@@ -10,19 +10,20 @@ import { Card, CardContent } from "@/components/ui/card"
 type Stage = "select" | "prepare" | "active" | "result"
 type Exercise = "pushup" | "situp"
 type Strictness = "easy" | "normal" | "strict" | "custom"
+type Attempt = { bottom: number; top: number | null; counted: boolean }
 
 const DURATION_SEC = 60
 
 const PRESETS = {
-  easy:   { elbowDown: 110, elbowUp: 150, knee: 130, hip: 120 },
-  normal: { elbowDown: 100, elbowUp: 155, knee: 145, hip: 135 },
-  strict: { elbowDown: 90,  elbowUp: 160, knee: 160, hip: 150 },
+  easy:   { elbowDown: 110, elbowUp: 150, knee: 130, hip: 120, cooldownMs: 500 },
+  normal: { elbowDown: 100, elbowUp: 155, knee: 145, hip: 135, cooldownMs: 650 },
+  strict: { elbowDown: 90,  elbowUp: 160, knee: 160, hip: 150, cooldownMs: 800 },
 }
 
 const SITUP_PRESETS = {
-  easy:   { up: 85, down: 130, kneeMax: 165, handRatio: 1.4 },
-  normal: { up: 75, down: 140, kneeMax: 155, handRatio: 1.1 },
-  strict: { up: 65, down: 150, kneeMax: 145, handRatio: 0.9 },
+  easy:   { up: 85, down: 130, kneeMax: 165, handRatio: 1.4, cooldownMs: 450 },
+  normal: { up: 75, down: 140, kneeMax: 155, handRatio: 1.1, cooldownMs: 600 },
+  strict: { up: 65, down: 150, kneeMax: 145, handRatio: 0.9, cooldownMs: 750 },
 }
 
 const STRICTNESS_LABELS: Record<Strictness, string> = {
@@ -130,11 +131,104 @@ export default function FitnessCounterPage() {
   const [situpStrictness, setSitupStrictness] = useState<Strictness>("normal")
   const [situpThresholds, setSitupThresholds] = useState(SITUP_PRESETS.normal)
   const situpThresholdsRef = useRef(SITUP_PRESETS.normal)
+  const [calibData, setCalibData] = useState<number[]>([])
+  const [calibOn, setCalibOn] = useState(false)
+  const [calibCopied, setCalibCopied] = useState(false)
+  const [trackingLoss, setTrackingLoss] = useState(0)
+  const [skippedJumps, setSkippedJumps] = useState(0)
+  const [calibTick, setCalibTick] = useState(0)
+  const [fps, setFps] = useState(0)
+  const calibRef = useRef(false)
+  const fpsTickRef = useRef({ count: 0, lastTs: Date.now() })
+  const attempts = useRef<Attempt[]>([])
+  const currentMin = useRef<number>(999)
+  const currentMax = useRef<number>(0)
+  const lastCalibAngle = useRef<number | null>(null)
+  const lastValidAngle = useRef<number | null>(null)
+  const rejectArmed = useRef(false)
+  const rejectMin = useRef(999)
+  const trackingLossRef = useRef(0)
+  const skippedJumpsRef = useRef(0)
+
+  const pushAttempt = (entry: Attempt) => {
+    attempts.current.push(entry)
+    if (attempts.current.length > 100) {
+      attempts.current.splice(0, attempts.current.length - 100)
+    }
+  }
+
+  const resetCalibSession = () => {
+    setCalibData([])
+    setTrackingLoss(0)
+    setSkippedJumps(0)
+    setCalibTick(0)
+    setCalibCopied(false)
+    attempts.current = []
+    currentMin.current = 999
+    currentMax.current = 0
+    lastCalibAngle.current = null
+    rejectArmed.current = false
+    rejectMin.current = 999
+    trackingLossRef.current = 0
+    skippedJumpsRef.current = 0
+  }
+
+  const recordCalibAngle = (angle: number, counted: boolean) => {
+    const rounded = Math.round(angle)
+    if (lastCalibAngle.current != null && Math.abs(rounded - lastCalibAngle.current) > 30) {
+      trackingLossRef.current += 1
+      setTrackingLoss(trackingLossRef.current)
+    }
+    lastCalibAngle.current = rounded
+
+    currentMin.current = Math.min(currentMin.current, angle)
+    currentMax.current = Math.max(currentMax.current, angle)
+    setCalibData((prev) => [...prev, rounded])
+
+    if (counted) {
+      pushAttempt({
+        bottom: Math.round(currentMin.current),
+        top: Math.round(currentMax.current),
+        counted: true,
+      })
+      currentMin.current = 999
+      currentMax.current = 0
+      rejectArmed.current = false
+      rejectMin.current = 999
+      setCalibTick((t) => t + 1)
+      return
+    }
+
+    if (angle < 150) {
+      rejectArmed.current = true
+      rejectMin.current = Math.min(rejectMin.current, angle)
+    } else if (angle > 150 && rejectArmed.current) {
+      pushAttempt({
+        bottom: Math.round(rejectMin.current),
+        top: null,
+        counted: false,
+      })
+      rejectArmed.current = false
+      rejectMin.current = 999
+      setCalibTick((t) => t + 1)
+    }
+  }
+
+  const buildCalibSummary = () => {
+    return attempts.current
+      .map((a, i) => {
+        const top = a.top == null ? "—" : String(a.top)
+        const status = a.counted ? "محسوب" : "مرفوض"
+        return `${i + 1} | ${a.bottom} | ${top} | ${status}`
+      })
+      .join("\n")
+  }
 
   useEffect(() => { situpThresholdsRef.current = situpThresholds }, [situpThresholds])
   useEffect(() => {
     if (situpStrictness !== "custom") setSitupThresholds(SITUP_PRESETS[situpStrictness])
   }, [situpStrictness])
+  useEffect(() => { calibRef.current = calibOn }, [calibOn])
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -278,14 +372,28 @@ export default function FitnessCounterPage() {
       const elbow = landmarks[s.elbow]
       const wrist = landmarks[s.wrist]
       const angle = calculateAngle(shoulder, elbow, wrist)
+      const prev = lastValidAngle.current
+      if (prev !== null && Math.abs(angle - prev) > 35) {
+        // impossible jump — tracking glitch, skip this frame entirely
+        skippedJumpsRef.current += 1
+        setSkippedJumps(skippedJumpsRef.current)
+        return
+      }
+      lastValidAngle.current = angle
+      let counted = false
       if (angle < t.elbowDown) {
         phaseRef.current = "down"
       } else if (angle > t.elbowUp && phaseRef.current === "down") {
-        if (now - lastRepTime.current < 800) return
-        lastRepTime.current = now
-        phaseRef.current = "up"
-        repsRef.current += 1
-        setReps(repsRef.current)
+        if (now - lastRepTime.current >= t.cooldownMs) {
+          lastRepTime.current = now
+          phaseRef.current = "up"
+          repsRef.current += 1
+          setReps(repsRef.current)
+          counted = true
+        }
+      }
+      if (calibRef.current) {
+        recordCalibAngle(angle, counted)
       }
     } else if (exerciseRef.current === "situp") {
       const t = situpThresholdsRef.current
@@ -338,15 +446,29 @@ export default function FitnessCounterPage() {
 
       const groundRef = { x: landmarks[s.hip].x, y: landmarks[s.hip].y + 0.3 }
       const angle = calculateAngle(landmarks[s.shoulder], landmarks[s.hip], groundRef)
+      const prev = lastValidAngle.current
+      if (prev !== null && Math.abs(angle - prev) > 35) {
+        // impossible jump — tracking glitch, skip this frame entirely
+        skippedJumpsRef.current += 1
+        setSkippedJumps(skippedJumpsRef.current)
+        return
+      }
+      lastValidAngle.current = angle
+      let counted = false
 
       if (angle > t.down) {
         phaseRef.current = "down"
       } else if (angle < t.up && phaseRef.current === "down") {
-        if (now - lastRepTime.current < 800) return
-        lastRepTime.current = now
-        phaseRef.current = "up"
-        repsRef.current += 1
-        setReps(repsRef.current)
+        if (now - lastRepTime.current >= t.cooldownMs) {
+          lastRepTime.current = now
+          phaseRef.current = "up"
+          repsRef.current += 1
+          setReps(repsRef.current)
+          counted = true
+        }
+      }
+      if (calibRef.current) {
+        recordCalibAngle(angle, counted)
       }
     }
   }
@@ -385,6 +507,14 @@ export default function FitnessCounterPage() {
         minTrackingConfidence: 0.5,
       })
       pose.onResults((results: any) => {
+        const tick = fpsTickRef.current
+        tick.count += 1
+        const nowTs = Date.now()
+        if (nowTs - tick.lastTs >= 1000) {
+          setFps(tick.count)
+          tick.count = 0
+          tick.lastTs = nowTs
+        }
         const canvas = canvasRef.current
         const ctx = canvas?.getContext("2d")
         if (canvas && ctx) {
@@ -532,6 +662,7 @@ export default function FitnessCounterPage() {
 
   const finishSession = useCallback(() => {
     handFailFrames.current = 0
+    lastValidAngle.current = null
     stopStream()
     updateStage("result")
   }, [stopStream])
@@ -543,6 +674,9 @@ export default function FitnessCounterPage() {
     phaseRef.current = null
     lastRepTime.current = 0
     handFailFrames.current = 0
+    lastValidAngle.current = null
+    skippedJumpsRef.current = 0
+    setSkippedJumps(0)
     setTimeLeft(DURATION_SEC)
     timeLeftRef.current = DURATION_SEC
     setCameraError(null)
@@ -571,6 +705,7 @@ export default function FitnessCounterPage() {
 
   const goHome = () => {
     handFailFrames.current = 0
+    lastValidAngle.current = null
     stopStream()
     setExercise(null)
     exerciseRef.current = null
@@ -584,6 +719,7 @@ export default function FitnessCounterPage() {
 
   const retry = () => {
     handFailFrames.current = 0
+    lastValidAngle.current = null
     stopStream()
     setReps(0)
     setTimeLeft(DURATION_SEC)
@@ -734,6 +870,17 @@ export default function FitnessCounterPage() {
                           </span>
                         </div>
                       )}
+                      <div className="absolute top-14 right-3 z-10 pointer-events-none">
+                        <span
+                          className={`text-xs font-bold rounded-full px-3 py-1 ${
+                            fps > 0 && fps < 15
+                              ? "bg-amber-500/90 text-white"
+                              : "bg-black/70 text-white"
+                          }`}
+                        >
+                          معدل المعالجة: {fps} إطار/ثانية
+                        </span>
+                      </div>
                       <button
                         type="button"
                         onClick={finishSession}
@@ -788,10 +935,10 @@ export default function FitnessCounterPage() {
                         <div className="grid grid-cols-4 gap-2">
                           {(
                             [
-                              { key: "easy" as const, label: "🟢 متساهل", caption: `الكوع < ${PRESETS.easy.elbowDown}°` },
-                              { key: "normal" as const, label: "🟡 متوسط", caption: `الكوع < ${PRESETS.normal.elbowDown}°` },
-                              { key: "strict" as const, label: "🔴 صارم", caption: `الكوع < ${PRESETS.strict.elbowDown}°` },
-                              { key: "custom" as const, label: "⚙️ مخصص", caption: `الكوع < ${thresholds.elbowDown}°` },
+                              { key: "easy" as const, label: "🟢 متساهل", caption: `${PRESETS.easy.elbowDown}° / ${PRESETS.easy.elbowUp}°` },
+                              { key: "normal" as const, label: "🟡 متوسط", caption: `${PRESETS.normal.elbowDown}° / ${PRESETS.normal.elbowUp}°` },
+                              { key: "strict" as const, label: "🔴 صارم", caption: `${PRESETS.strict.elbowDown}° / ${PRESETS.strict.elbowUp}°` },
+                              { key: "custom" as const, label: "⚙️ مخصص", caption: `${thresholds.elbowDown}° / ${thresholds.elbowUp}°` },
                             ]
                           ).map((opt) => (
                             <button
@@ -822,9 +969,36 @@ export default function FitnessCounterPage() {
                                 max={130}
                                 step={5}
                                 value={thresholds.elbowDown}
-                                onChange={(e) =>
-                                  setThresholds({ ...thresholds, elbowDown: Number(e.target.value) })
-                                }
+                                onChange={(e) => {
+                                  const next = Number(e.target.value)
+                                  const maxDown = thresholds.elbowUp - 20
+                                  setThresholds({
+                                    ...thresholds,
+                                    elbowDown: Math.min(next, maxDown),
+                                  })
+                                }}
+                                className="w-full accent-emerald-600"
+                              />
+                            </label>
+                            <label className="block space-y-1">
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="text-xs font-bold text-slate-800">زاوية الكوع (الصعود)</span>
+                                <span className="text-xs font-black text-emerald-700" dir="ltr">{thresholds.elbowUp}°</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={130}
+                                max={175}
+                                step={5}
+                                value={thresholds.elbowUp}
+                                onChange={(e) => {
+                                  const next = Number(e.target.value)
+                                  const minUp = thresholds.elbowDown + 20
+                                  setThresholds({
+                                    ...thresholds,
+                                    elbowUp: Math.max(next, minUp),
+                                  })
+                                }}
                                 className="w-full accent-emerald-600"
                               />
                             </label>
@@ -858,6 +1032,23 @@ export default function FitnessCounterPage() {
                                 value={thresholds.hip}
                                 onChange={(e) =>
                                   setThresholds({ ...thresholds, hip: Number(e.target.value) })
+                                }
+                                className="w-full accent-emerald-600"
+                              />
+                            </label>
+                            <label className="block space-y-1">
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="text-xs font-bold text-slate-800">أقل زمن بين التكرارات (مللي ثانية)</span>
+                                <span className="text-xs font-black text-emerald-700" dir="ltr">{thresholds.cooldownMs}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={300}
+                                max={1000}
+                                step={50}
+                                value={thresholds.cooldownMs}
+                                onChange={(e) =>
+                                  setThresholds({ ...thresholds, cooldownMs: Number(e.target.value) })
                                 }
                                 className="w-full accent-emerald-600"
                               />
@@ -963,6 +1154,23 @@ export default function FitnessCounterPage() {
                                 className="w-full accent-emerald-600"
                               />
                             </label>
+                            <label className="block space-y-1">
+                              <div className="flex justify-between items-center gap-2">
+                                <span className="text-xs font-bold text-slate-800">أقل زمن بين التكرارات (مللي ثانية)</span>
+                                <span className="text-xs font-black text-emerald-700" dir="ltr">{situpThresholds.cooldownMs}</span>
+                              </div>
+                              <input
+                                type="range"
+                                min={300}
+                                max={1000}
+                                step={50}
+                                value={situpThresholds.cooldownMs}
+                                onChange={(e) =>
+                                  setSitupThresholds({ ...situpThresholds, cooldownMs: Number(e.target.value) })
+                                }
+                                className="w-full accent-emerald-600"
+                              />
+                            </label>
                           </div>
                         )}
                       </div>
@@ -978,6 +1186,90 @@ export default function FitnessCounterPage() {
                     )}
                     {cameraError && (
                       <p className="text-red-600 text-sm font-bold">{cameraError}</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCalibOn((on) => {
+                          if (!on) resetCalibSession()
+                          return !on
+                        })
+                      }}
+                      className={`text-xs font-bold rounded-full px-4 py-2 border transition-colors ${
+                        calibOn
+                          ? "bg-amber-100 border-amber-400 text-amber-900"
+                          : "bg-slate-100 border-slate-200 text-slate-700"
+                      }`}
+                    >
+                      📊 تسجيل الزوايا {calibOn ? "(يعمل)" : ""}
+                    </button>
+                    {calibOn && (calibData.length > 0 || attempts.current.length > 0) && (
+                      <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2 text-right" dir="rtl">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-bold text-slate-800 flex-1" dir="rtl">
+                            محسوبة: {attempts.current.filter((a) => a.counted).length}
+                            {"   |   "}
+                            مرفوضة: {attempts.current.filter((a) => !a.counted).length}
+                            {"   |   "}
+                            معدل المعالجة: {fps} إطار/ثانية
+                            <span className="hidden">{calibTick}</span>
+                          </p>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                await navigator.clipboard.writeText(buildCalibSummary())
+                                setCalibCopied(true)
+                                setTimeout(() => setCalibCopied(false), 2000)
+                              } catch {}
+                            }}
+                            className="shrink-0 text-xs font-black rounded-full px-3 py-1.5 bg-sky-600 text-white hover:bg-sky-700"
+                          >
+                            {calibCopied ? "✅ تم النسخ" : "📋 نسخ"}
+                          </button>
+                        </div>
+                        {attempts.current.length > 0 && (
+                          <div className="max-h-[300px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+                            <table className="w-full text-xs font-bold text-slate-800" dir="rtl">
+                              <thead className="sticky top-0 bg-slate-100">
+                                <tr>
+                                  <th className="px-2 py-1.5 text-center">#</th>
+                                  <th className="px-2 py-1.5 text-center">النزول</th>
+                                  <th className="px-2 py-1.5 text-center">الصعود</th>
+                                  <th className="px-2 py-1.5 text-center">الحالة</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {attempts.current.map((a, i) => (
+                                  <tr
+                                    key={i}
+                                    className={a.counted ? "bg-emerald-50" : "bg-amber-50"}
+                                  >
+                                    <td className="px-2 py-1 text-center" dir="ltr">{i + 1}</td>
+                                    <td className="px-2 py-1 text-center" dir="ltr">{a.bottom}</td>
+                                    <td className="px-2 py-1 text-center" dir="ltr">
+                                      {a.top == null ? "—" : a.top}
+                                    </td>
+                                    <td className="px-2 py-1 text-center">
+                                      {a.counted ? "✅" : "❌"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {(skippedJumps > 0 || trackingLoss > 0) && (
+                          <div className="text-[11px] font-bold text-slate-600 space-y-0.5">
+                            {skippedJumps > 0 && (
+                              <p>إطارات متجاهلة (قفزات غير منطقية): {skippedJumps}</p>
+                            )}
+                            {trackingLoss > 0 && (
+                              <p className="text-amber-700">⚠️ فقدان تتبّع: {trackingLoss} مرة</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
