@@ -2,17 +2,53 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowRight, Camera, Dumbbell, Play, RotateCcw, SwitchCamera, Timer } from "lucide-react"
+import { ArrowRight, Camera, Dumbbell, Play, SwitchCamera, Timer } from "lucide-react"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 
-type Stage = "select" | "prepare" | "active" | "result"
+type Stage = "select" | "prepare" | "waiting" | "countdown" | "active" | "result"
 type Exercise = "pushup" | "situp"
 type Strictness = "easy" | "normal" | "strict" | "custom"
-type Attempt = { bottom: number; top: number | null; counted: boolean }
+type Attempt = { bottom: number; top: number | null; counted: boolean; at: number }
+type SavedSession = {
+  id: number
+  exercise: Exercise
+  reps: number
+  durationSec: number
+  savedAt: string
+  attempts: Attempt[]
+}
 
-const DURATION_SEC = 60
+const TEST_DURATION_SECONDS = 60
+const SESSIONS_KEY = "smart-counter-sessions"
+
+const loadSavedSessions = (): SavedSession[] => {
+  if (typeof window === "undefined") return []
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((s: SavedSession) => ({
+      ...s,
+      attempts: Array.isArray(s.attempts)
+        ? s.attempts.map((a) => ({
+            bottom: a.bottom,
+            top: a.top ?? null,
+            counted: !!a.counted,
+            at: typeof a.at === "number" ? a.at : 0,
+          }))
+        : [],
+    }))
+  } catch {
+    return []
+  }
+}
+
+const persistSavedSessions = (sessions: SavedSession[]) => {
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions))
+}
 
 const PRESETS = {
   easy:   { elbowDown: 110, elbowUp: 150, knee: 130, hip: 120, cooldownMs: 500 },
@@ -109,7 +145,8 @@ export default function FitnessCounterPage() {
   const [exercise, setExercise] = useState<Exercise | null>(null)
   const exerciseRef = useRef(exercise)
   const [reps, setReps] = useState(0)
-  const [timeLeft, setTimeLeft] = useState(DURATION_SEC)
+  const [timeLeft, setTimeLeft] = useState(TEST_DURATION_SECONDS)
+  const [countdown, setCountdown] = useState(5)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [previewReady, setPreviewReady] = useState(false)
   const [videoReady, setVideoReady] = useState(false)
@@ -118,6 +155,12 @@ export default function FitnessCounterPage() {
   const [mediapipeReady, setMediapipeReady] = useState(false)
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user')
   const [warning, setWarning] = useState("")
+  const [resultAttempts, setResultAttempts] = useState<Attempt[]>([])
+  const [elapsedSec, setElapsedSec] = useState(0)
+  const [sessionSaved, setSessionSaved] = useState(false)
+  const [savedSessions, setSavedSessions] = useState<SavedSession[]>([])
+  const [expandedSessionId, setExpandedSessionId] = useState<number | null>(null)
+  const [exportCopied, setExportCopied] = useState(false)
   const [strictness, setStrictness] = useState<Strictness>("normal")
   const [thresholds, setThresholds] = useState(PRESETS.normal)
   const thresholdsRef = useRef(PRESETS.normal)
@@ -149,12 +192,19 @@ export default function FitnessCounterPage() {
   const rejectMin = useRef(999)
   const trackingLossRef = useRef(0)
   const skippedJumpsRef = useRef(0)
+  const sessionStartTimeRef = useRef(0)
 
   const pushAttempt = (entry: Attempt) => {
     attempts.current.push(entry)
     if (attempts.current.length > 100) {
       attempts.current.splice(0, attempts.current.length - 100)
     }
+  }
+
+  const getRejectAscentThreshold = () => {
+    // Pushup: elbowUp. Situp: keep prior 150° cycle gate (torso open/close).
+    if (exerciseRef.current === "situp") return 150
+    return thresholdsRef.current.elbowUp
   }
 
   const resetCalibSession = () => {
@@ -185,12 +235,28 @@ export default function FitnessCounterPage() {
     currentMax.current = Math.max(currentMax.current, angle)
     setCalibData((prev) => [...prev, rounded])
 
+    const at = Date.now() - sessionStartTimeRef.current
+
     if (counted) {
-      pushAttempt({
+      const entry: Attempt = {
         bottom: Math.round(currentMin.current),
         top: Math.round(currentMax.current),
         counted: true,
-      })
+        at,
+      }
+      const last = attempts.current[attempts.current.length - 1]
+      const nowMs = Date.now() - sessionStartTimeRef.current
+      if (
+        last &&
+        last.counted === false &&
+        Math.abs(last.bottom - entry.bottom) <= 3 &&
+        Math.abs(nowMs - last.at) <= 1500
+      ) {
+        attempts.current[attempts.current.length - 1] = entry
+      } else {
+        pushAttempt(entry)
+      }
+      // Reset rejection tracker immediately so ascent/recovery cannot start a new attempt
       currentMin.current = 999
       currentMax.current = 0
       rejectArmed.current = false
@@ -199,18 +265,23 @@ export default function FitnessCounterPage() {
       return
     }
 
-    if (angle < 150) {
+    const ascentThreshold = getRejectAscentThreshold()
+    if (angle < ascentThreshold) {
       rejectArmed.current = true
       rejectMin.current = Math.min(rejectMin.current, angle)
-    } else if (angle > 150 && rejectArmed.current) {
-      pushAttempt({
-        bottom: Math.round(rejectMin.current),
-        top: null,
-        counted: false,
-      })
+    } else if (angle > ascentThreshold && rejectArmed.current) {
+      // Real rejected attempt: local min at least 25° below ascent threshold
+      if (rejectMin.current <= ascentThreshold - 25) {
+        pushAttempt({
+          bottom: Math.round(rejectMin.current),
+          top: null,
+          counted: false,
+          at,
+        })
+        setCalibTick((t) => t + 1)
+      }
       rejectArmed.current = false
       rejectMin.current = 999
-      setCalibTick((t) => t + 1)
     }
   }
 
@@ -219,7 +290,8 @@ export default function FitnessCounterPage() {
       .map((a, i) => {
         const top = a.top == null ? "—" : String(a.top)
         const status = a.counted ? "محسوب" : "مرفوض"
-        return `${i + 1} | ${a.bottom} | ${top} | ${status}`
+        const sec = (a.at / 1000).toFixed(1)
+        return `${i + 1} | ${a.bottom} | ${top} | ${status} | ${sec}`
       })
       .join("\n")
   }
@@ -229,6 +301,54 @@ export default function FitnessCounterPage() {
     if (situpStrictness !== "custom") setSitupThresholds(SITUP_PRESETS[situpStrictness])
   }, [situpStrictness])
   useEffect(() => { calibRef.current = calibOn }, [calibOn])
+  useEffect(() => {
+    setSavedSessions(loadSavedSessions())
+  }, [])
+
+  const ensureAudio = () => {
+    const AC =
+      typeof window !== "undefined"
+        ? window.AudioContext || (window as any).webkitAudioContext
+        : null
+    if (!AC) return null
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AC()
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      void audioCtxRef.current.resume()
+    }
+    return audioCtxRef.current
+  }
+
+  const playBeep = (freq: number, durationMs: number) => {
+    const ctx = audioCtxRef.current || ensureAudio()
+    if (!ctx) return
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = "sine"
+    osc.frequency.value = freq
+    gain.gain.value = 0.2
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    const now = ctx.currentTime
+    osc.start(now)
+    osc.stop(now + durationMs / 1000)
+  }
+
+  const clearCountdownTimer = () => {
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current)
+      countdownTimerRef.current = null
+    }
+  }
+
+  const evaluateBodyVisible = (landmarks: any): boolean => {
+    if (!landmarks) return false
+    const s = getBestSide(landmarks)
+    return [s.shoulder, s.hip, s.knee, s.ankle].every(
+      (i) => (landmarks[i]?.visibility || 0) > 0.5
+    )
+  }
 
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -238,12 +358,18 @@ export default function FitnessCounterPage() {
   const rafRef = useRef<number | null>(null)
   const poseLoopRef = useRef<number | null>(null)
   const repsRef = useRef(0)
-  const timeLeftRef = useRef(DURATION_SEC)
+  const timeLeftRef = useRef(TEST_DURATION_SECONDS)
   const phaseRef = useRef<"down" | "up" | null>(null)
   const lastRepTime = useRef(0)
   const handFailFrames = useRef(0)
   const facingModeRef = useRef(facingMode)
   facingModeRef.current = facingMode
+  const audioCtxRef = useRef<AudioContext | null>(null)
+  const postureOkSinceRef = useRef<number | null>(null)
+  const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const countdownValueRef = useRef(5)
+  const beginCountdownRef = useRef<() => void>(() => {})
+  const abortCountdownToWaitingRef = useRef<(message?: string) => void>(() => {})
 
   const mirrorStyle = { transform: facingMode === 'user' ? 'scaleX(-1)' : 'scaleX(1)' }
 
@@ -392,7 +518,7 @@ export default function FitnessCounterPage() {
           counted = true
         }
       }
-      if (calibRef.current) {
+      if (calibRef.current || stageRef.current === "active") {
         recordCalibAngle(angle, counted)
       }
     } else if (exerciseRef.current === "situp") {
@@ -467,7 +593,7 @@ export default function FitnessCounterPage() {
           counted = true
         }
       }
-      if (calibRef.current) {
+      if (calibRef.current || stageRef.current === "active") {
         recordCalibAngle(angle, counted)
       }
     }
@@ -543,12 +669,35 @@ export default function FitnessCounterPage() {
             const visible = isBodyVisibleForExercise(results.poseLandmarks, exerciseRef.current)
             setBodyReady(visible)
             setWarning(visible ? "✅ الوضع مثالي" : "⚠️ تأكد من ظهور الجسم كاملاً في الكاميرا")
+          } else if (stageRef.current === "waiting") {
+            const ok = evaluateBodyVisible(results.poseLandmarks)
+            if (ok) {
+              setWarning("")
+              if (postureOkSinceRef.current == null) {
+                postureOkSinceRef.current = Date.now()
+              } else if (Date.now() - postureOkSinceRef.current >= 2000) {
+                postureOkSinceRef.current = null
+                beginCountdownRef.current()
+              }
+            } else {
+              postureOkSinceRef.current = null
+              setWarning("في انتظار ظهور الجسم في الكاميرا")
+            }
+          } else if (stageRef.current === "countdown") {
+            if (!evaluateBodyVisible(results.poseLandmarks)) {
+              abortCountdownToWaitingRef.current("في انتظار ظهور الجسم في الكاميرا")
+            }
           } else if (stageRef.current === "active") {
             detectRep(results.poseLandmarks)
           }
         } else if (stageRef.current === "prepare") {
           setBodyReady(false)
           setWarning("⚠️ تأكد من ظهور الجسم كاملاً في الكاميرا")
+        } else if (stageRef.current === "waiting") {
+          postureOkSinceRef.current = null
+          setWarning("في انتظار ظهور الجسم في الكاميرا")
+        } else if (stageRef.current === "countdown") {
+          abortCountdownToWaitingRef.current("في انتظار ظهور الجسم في الكاميرا")
         }
       })
 
@@ -558,7 +707,10 @@ export default function FitnessCounterPage() {
         if (
           poseRef.current &&
           video &&
-          (stageRef.current === "prepare" || stageRef.current === "active")
+          (stageRef.current === "prepare" ||
+            stageRef.current === "waiting" ||
+            stageRef.current === "countdown" ||
+            stageRef.current === "active")
         ) {
           try {
             await poseRef.current.send({ image: video })
@@ -640,7 +792,12 @@ export default function FitnessCounterPage() {
       streamRef.current = stream
       await attachVideoStream(stream)
       setPreviewReady(true)
-      if (stageRef.current === "prepare" || stageRef.current === "active") {
+      if (
+        stageRef.current === "prepare" ||
+        stageRef.current === "waiting" ||
+        stageRef.current === "countdown" ||
+        stageRef.current === "active"
+      ) {
         await startPoseTracking()
       }
     } catch (err: any) {
@@ -655,20 +812,31 @@ export default function FitnessCounterPage() {
   useEffect(() => {
     if (stage === "prepare") {
       startPrepareCamera()
+    } else if (stage === "waiting" && !streamRef.current) {
+      startPrepareCamera()
     } else if (stage === "select" || stage === "result") {
+      clearCountdownTimer()
       stopStream()
     }
   }, [stage, startPrepareCamera, stopStream])
 
   const finishSession = useCallback(() => {
+    clearCountdownTimer()
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    const elapsed = TEST_DURATION_SECONDS - Math.max(0, timeLeftRef.current)
+    setElapsedSec(elapsed)
+    setResultAttempts([...attempts.current])
+    setSessionSaved(false)
     handFailFrames.current = 0
     lastValidAngle.current = null
     stopStream()
     updateStage("result")
   }, [stopStream])
 
-  const startActiveSession = useCallback(async () => {
-    if (!bodyReady || !mediapipeReady) return
+  const startActiveFromCountdown = useCallback(() => {
     setReps(0)
     repsRef.current = 0
     phaseRef.current = null
@@ -677,24 +845,140 @@ export default function FitnessCounterPage() {
     lastValidAngle.current = null
     skippedJumpsRef.current = 0
     setSkippedJumps(0)
-    setTimeLeft(DURATION_SEC)
-    timeLeftRef.current = DURATION_SEC
+    resetCalibSession()
+    setCalibOn(true)
+    sessionStartTimeRef.current = Date.now()
+    setTimeLeft(TEST_DURATION_SECONDS)
+    timeLeftRef.current = TEST_DURATION_SECONDS
     setCameraError(null)
     setWarning("")
-    // Reuse the same Pose instance from prepare — just switch to counting
+    setCountdown(0)
     updateStage("active")
+
+    // Restart pose loop after stage switch (processFrame may have stopped briefly)
+    if (poseLoopRef.current == null && poseRef.current && videoRef.current) {
+      const video = videoRef.current
+      const processFrame = async () => {
+        if (
+          poseRef.current &&
+          video &&
+          (stageRef.current === "prepare" ||
+            stageRef.current === "waiting" ||
+            stageRef.current === "countdown" ||
+            stageRef.current === "active")
+        ) {
+          try {
+            await poseRef.current.send({ image: video })
+          } catch {}
+          poseLoopRef.current = requestAnimationFrame(processFrame)
+        }
+      }
+      poseLoopRef.current = requestAnimationFrame(processFrame)
+    }
 
     if (timerRef.current) clearInterval(timerRef.current)
     timerRef.current = setInterval(() => {
       timeLeftRef.current -= 1
-      setTimeLeft(timeLeftRef.current)
-      if (timeLeftRef.current <= 0) {
+      const left = timeLeftRef.current
+      setTimeLeft(left)
+      if (left >= 1 && left <= 5) {
+        playBeep(880, 120)
+      }
+      if (left <= 0) {
+        playBeep(330, 800)
         if (timerRef.current) clearInterval(timerRef.current)
         timerRef.current = null
         finishSession()
       }
     }, 1000)
-  }, [bodyReady, mediapipeReady, finishSession])
+  }, [finishSession])
+
+  const abortCountdownToWaiting = useCallback((message?: string) => {
+    if (stageRef.current !== "countdown") return
+    clearCountdownTimer()
+    countdownValueRef.current = 5
+    setCountdown(5)
+    postureOkSinceRef.current = null
+    if (message) setWarning(message)
+    updateStage("waiting")
+  }, [])
+
+  const beginCountdown = useCallback(() => {
+    if (stageRef.current !== "waiting") return
+    clearCountdownTimer()
+    countdownValueRef.current = 5
+    setCountdown(5)
+    setWarning("")
+    updateStage("countdown")
+    playBeep(880, 120)
+
+    countdownTimerRef.current = setInterval(() => {
+      const next = countdownValueRef.current - 1
+      countdownValueRef.current = next
+      if (next > 0) {
+        setCountdown(next)
+        playBeep(880, 120)
+      } else {
+        clearCountdownTimer()
+        setCountdown(0)
+        playBeep(440, 500)
+        startActiveFromCountdown()
+      }
+    }, 1000)
+  }, [startActiveFromCountdown])
+
+  beginCountdownRef.current = beginCountdown
+  abortCountdownToWaitingRef.current = abortCountdownToWaiting
+
+  const enterWaiting = () => {
+    ensureAudio()
+    postureOkSinceRef.current = null
+    clearCountdownTimer()
+    countdownValueRef.current = 5
+    setCountdown(5)
+    setWarning("")
+    setCameraError(null)
+    updateStage("waiting")
+    // Keep pose loop running after prepare→waiting
+    if (poseLoopRef.current == null && poseRef.current && videoRef.current) {
+      const video = videoRef.current
+      const processFrame = async () => {
+        if (
+          poseRef.current &&
+          video &&
+          (stageRef.current === "prepare" ||
+            stageRef.current === "waiting" ||
+            stageRef.current === "countdown" ||
+            stageRef.current === "active")
+        ) {
+          try {
+            await poseRef.current.send({ image: video })
+          } catch {}
+          poseLoopRef.current = requestAnimationFrame(processFrame)
+        }
+      }
+      poseLoopRef.current = requestAnimationFrame(processFrame)
+    }
+  }
+
+  const cancelActiveSession = () => {
+    clearCountdownTimer()
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    handFailFrames.current = 0
+    lastValidAngle.current = null
+    resetCalibSession()
+    setCalibOn(false)
+    setReps(0)
+    repsRef.current = 0
+    setTimeLeft(TEST_DURATION_SECONDS)
+    timeLeftRef.current = TEST_DURATION_SECONDS
+    setWarning("")
+    stopStream()
+    updateStage("prepare")
+  }
 
   const selectExercise = (ex: Exercise) => {
     setVideoReady(false)
@@ -704,30 +988,143 @@ export default function FitnessCounterPage() {
   }
 
   const goHome = () => {
+    clearCountdownTimer()
     handFailFrames.current = 0
     lastValidAngle.current = null
+    resetCalibSession()
+    setCalibOn(false)
     stopStream()
     setExercise(null)
     exerciseRef.current = null
     setReps(0)
-    setTimeLeft(DURATION_SEC)
+    setTimeLeft(TEST_DURATION_SECONDS)
     setBodyReady(false)
     setVideoReady(false)
     setWarning("")
+    setResultAttempts([])
+    setElapsedSec(0)
+    setSessionSaved(false)
     updateStage("select")
   }
 
-  const retry = () => {
+  const prepareNextTrainee = () => {
+    clearCountdownTimer()
     handFailFrames.current = 0
     lastValidAngle.current = null
-    stopStream()
+    resetCalibSession()
+    setCalibOn(false)
     setReps(0)
-    setTimeLeft(DURATION_SEC)
-    setBodyReady(false)
-    setVideoReady(false)
+    repsRef.current = 0
+    phaseRef.current = null
+    lastRepTime.current = 0
+    setTimeLeft(TEST_DURATION_SECONDS)
+    timeLeftRef.current = TEST_DURATION_SECONDS
+    setResultAttempts([])
+    setElapsedSec(0)
+    setSessionSaved(false)
     setWarning("")
-    updateStage("prepare")
+    setBodyReady(false)
+    postureOkSinceRef.current = null
+    countdownValueRef.current = 5
+    setCountdown(5)
+    updateStage("waiting")
   }
+
+  const saveCurrentSession = () => {
+    if (!exercise) return
+    const session: SavedSession = {
+      id: Date.now(),
+      exercise,
+      reps,
+      durationSec: elapsedSec,
+      savedAt: new Date().toISOString(),
+      attempts: resultAttempts,
+    }
+    const next = [session, ...loadSavedSessions()]
+    persistSavedSessions(next)
+    setSavedSessions(next)
+    setSessionSaved(true)
+  }
+
+  const deleteSession = (id: number) => {
+    const next = loadSavedSessions().filter((s) => s.id !== id)
+    persistSavedSessions(next)
+    setSavedSessions(next)
+    if (expandedSessionId === id) setExpandedSessionId(null)
+  }
+
+  const deleteAllSessions = () => {
+    if (!window.confirm("هل أنت متأكد من حذف كل الجلسات المحفوظة؟")) return
+    persistSavedSessions([])
+    setSavedSessions([])
+    setExpandedSessionId(null)
+  }
+
+  const exportAllSessions = async () => {
+    const sessions = loadSavedSessions()
+    const text = sessions
+      .map((s) => {
+        const label = s.exercise === "pushup" ? "ضغط" : "بطن"
+        const header = `${new Date(s.savedAt).toLocaleString("en-GB")} | ${label} | ${s.reps} تكرار | ${s.durationSec} ث`
+        const rows = s.attempts
+          .map((a, i) => {
+            const top = a.top == null ? "—" : String(a.top)
+            const sec = (a.at / 1000).toFixed(1)
+            return `${i + 1} | ${a.bottom} | ${top} | ${a.counted ? "محسوب" : "مرفوض"} | ${sec}`
+          })
+          .join("\n")
+        return `${header}\n${rows || "(لا محاولات)"}`
+      })
+      .join("\n\n---\n\n")
+    try {
+      await navigator.clipboard.writeText(text || "لا توجد جلسات")
+      setExportCopied(true)
+      setTimeout(() => setExportCopied(false), 2000)
+    } catch {}
+  }
+
+  const renderAttemptsTable = (rows: Attempt[]) => (
+    <div className="max-h-[300px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
+      <table className="w-full text-xs font-bold text-slate-800" dir="rtl">
+        <thead className="sticky top-0 bg-slate-100">
+          <tr>
+            <th className="px-2 py-1.5 text-center">#</th>
+            <th className="px-2 py-1.5 text-center">النزول</th>
+            <th className="px-2 py-1.5 text-center">الصعود</th>
+            <th className="px-2 py-1.5 text-center">الحالة</th>
+            <th className="px-2 py-1.5 text-center">الزمن (ثانية)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="px-2 py-3 text-center text-slate-500">
+                لا توجد محاولات
+              </td>
+            </tr>
+          ) : (
+            rows.map((a, i) => (
+              <tr key={i} className={a.counted ? "bg-emerald-50" : "bg-amber-50"}>
+                <td className="px-2 py-1 text-center" dir="ltr">
+                  {i + 1}
+                </td>
+                <td className="px-2 py-1 text-center" dir="ltr">
+                  {a.bottom}
+                </td>
+                <td className="px-2 py-1 text-center" dir="ltr">
+                  {a.top == null ? "—" : a.top}
+                </td>
+                <td className="px-2 py-1 text-center">{a.counted ? "✅" : "❌"}</td>
+                <td className="px-2 py-1 text-center" dir="ltr">
+                  {(a.at / 1000).toFixed(1)}
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
 
   const exerciseLabel = exercise === "pushup" ? "ضغط" : exercise === "situp" ? "بطن" : ""
 
@@ -742,7 +1139,7 @@ export default function FitnessCounterPage() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl md:text-3xl font-black text-slate-900">🤖 العد الذكي</h1>
-              <p className="text-sm text-slate-500 font-medium">تجريبي — بدون حفظ في قاعدة البيانات</p>
+              <p className="text-sm text-slate-500 font-medium">حفظ الجلسات محلياً على هذا الجهاز</p>
             </div>
             <Button variant="outline" onClick={() => router.push("/dashboard")} className="gap-2 font-bold">
               <ArrowRight className="w-4 h-4" /> لوحة التحكم
@@ -750,53 +1147,129 @@ export default function FitnessCounterPage() {
           </div>
 
           {stage === "select" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card
-                className="cursor-pointer border-2 hover:border-emerald-500 hover:shadow-lg transition-all rounded-3xl overflow-hidden"
-                onClick={() => selectExercise("pushup")}
-              >
-                <CardContent className="p-6 flex flex-col items-center gap-4 text-center">
-                  <div className="w-20 h-20 rounded-2xl bg-emerald-100 flex items-center justify-center">
-                    <Dumbbell className="w-10 h-10 text-emerald-700" />
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Card
+                  className="cursor-pointer border-2 hover:border-emerald-500 hover:shadow-lg transition-all rounded-3xl overflow-hidden"
+                  onClick={() => selectExercise("pushup")}
+                >
+                  <CardContent className="p-6 flex flex-col items-center gap-4 text-center">
+                    <div className="w-20 h-20 rounded-2xl bg-emerald-100 flex items-center justify-center">
+                      <Dumbbell className="w-10 h-10 text-emerald-700" />
+                    </div>
+                    <h2 className="text-2xl font-black text-slate-900">ضغط</h2>
+                    <p className="text-sm text-slate-500">عدّاد ضغط الأرض بالكاميرا</p>
+                    <div className="w-full space-y-2 text-right mt-2">
+                      {EXERCISE_TIPS.map((tip) => (
+                        <div key={tip.title} className="rounded-xl bg-emerald-50/80 border border-emerald-100 px-3 py-2">
+                          <p className="text-xs font-black text-slate-800">
+                            {tip.icon} {tip.title}: <span className="font-medium text-slate-600">{tip.text}</span>
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card
+                  className="cursor-pointer border-2 hover:border-sky-500 hover:shadow-lg transition-all rounded-3xl overflow-hidden"
+                  onClick={() => selectExercise("situp")}
+                >
+                  <CardContent className="p-6 flex flex-col items-center gap-4 text-center">
+                    <div className="w-20 h-20 rounded-2xl bg-sky-100 flex items-center justify-center">
+                      <Dumbbell className="w-10 h-10 text-sky-700 rotate-90" />
+                    </div>
+                    <h2 className="text-2xl font-black text-slate-900">بطن</h2>
+                    <p className="text-sm text-slate-500">عدّاد تمارين البطن بالكاميرا</p>
+                    <div className="w-full space-y-2 text-right mt-2">
+                      {EXERCISE_TIPS.map((tip) => (
+                        <div key={tip.title} className="rounded-xl bg-sky-50/80 border border-sky-100 px-3 py-2">
+                          <p className="text-xs font-black text-slate-800">
+                            {tip.icon} {tip.title}: <span className="font-medium text-slate-600">{tip.text}</span>
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="rounded-3xl border border-slate-200 shadow-sm">
+                <CardContent className="p-5 space-y-4" dir="rtl">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-lg font-black text-slate-900">📁 الجلسات المحفوظة</h3>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 text-xs font-black"
+                        onClick={exportAllSessions}
+                        disabled={savedSessions.length === 0}
+                      >
+                        {exportCopied ? "✅ تم النسخ" : "📋 تصدير الكل"}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 text-xs font-black text-red-700 border-red-200 hover:bg-red-50"
+                        onClick={deleteAllSessions}
+                        disabled={savedSessions.length === 0}
+                      >
+                        🗑️ حذف الكل
+                      </Button>
+                    </div>
                   </div>
-                  <h2 className="text-2xl font-black text-slate-900">ضغط</h2>
-                  <p className="text-sm text-slate-500">عدّاد ضغط الأرض بالكاميرا</p>
-                  <div className="w-full space-y-2 text-right mt-2">
-                    {EXERCISE_TIPS.map((tip) => (
-                      <div key={tip.title} className="rounded-xl bg-emerald-50/80 border border-emerald-100 px-3 py-2">
-                        <p className="text-xs font-black text-slate-800">
-                          {tip.icon} {tip.title}: <span className="font-medium text-slate-600">{tip.text}</span>
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card
-                className="cursor-pointer border-2 hover:border-sky-500 hover:shadow-lg transition-all rounded-3xl overflow-hidden"
-                onClick={() => selectExercise("situp")}
-              >
-                <CardContent className="p-6 flex flex-col items-center gap-4 text-center">
-                  <div className="w-20 h-20 rounded-2xl bg-sky-100 flex items-center justify-center">
-                    <Dumbbell className="w-10 h-10 text-sky-700 rotate-90" />
-                  </div>
-                  <h2 className="text-2xl font-black text-slate-900">بطن</h2>
-                  <p className="text-sm text-slate-500">عدّاد تمارين البطن بالكاميرا</p>
-                  <div className="w-full space-y-2 text-right mt-2">
-                    {EXERCISE_TIPS.map((tip) => (
-                      <div key={tip.title} className="rounded-xl bg-sky-50/80 border border-sky-100 px-3 py-2">
-                        <p className="text-xs font-black text-slate-800">
-                          {tip.icon} {tip.title}: <span className="font-medium text-slate-600">{tip.text}</span>
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                  {savedSessions.length === 0 ? (
+                    <p className="text-sm text-slate-500 font-medium">لا توجد جلسات محفوظة بعد.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {savedSessions.map((s) => {
+                        const label = s.exercise === "pushup" ? "ضغط" : "بطن"
+                        const open = expandedSessionId === s.id
+                        return (
+                          <div key={s.id} className="rounded-2xl border border-slate-200 bg-slate-50 overflow-hidden">
+                            <button
+                              type="button"
+                              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-right"
+                              onClick={() => setExpandedSessionId(open ? null : s.id)}
+                            >
+                              <div className="space-y-0.5">
+                                <p className="text-sm font-black text-slate-900">
+                                  {label} — {s.reps} تكرار
+                                </p>
+                                <p className="text-xs text-slate-500 font-medium" dir="ltr">
+                                  {new Date(s.savedAt).toLocaleString("en-GB")} · {s.durationSec}s
+                                </p>
+                              </div>
+                              <span className="text-slate-400 text-sm">{open ? "▲" : "▼"}</span>
+                            </button>
+                            {open && (
+                              <div className="px-4 pb-4 space-y-3">
+                                {renderAttemptsTable(s.attempts)}
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-9 text-xs font-black text-red-700 border-red-200"
+                                  onClick={() => deleteSession(s.id)}
+                                >
+                                  حذف هذه الجلسة
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
           )}
 
-          {(stage === "prepare" || stage === "active") && exercise && (
+          {(stage === "prepare" ||
+            stage === "waiting" ||
+            stage === "countdown" ||
+            stage === "active") &&
+            exercise && (
             <Card className="rounded-3xl overflow-hidden shadow-md">
               <CardContent className="p-0">
                 <div className="relative bg-slate-900 w-full aspect-video md:w-[640px] md:h-[480px] md:mx-auto rounded-2xl overflow-hidden">
@@ -814,7 +1287,7 @@ export default function FitnessCounterPage() {
                     }}
                     style={mirrorStyle}
                   />
-                  {stage === "active" && (
+                  {(stage === "waiting" || stage === "countdown" || stage === "active") && (
                     <canvas
                       ref={canvasRef}
                       className="w-full h-full object-contain rounded-2xl absolute inset-0 z-10"
@@ -852,11 +1325,46 @@ export default function FitnessCounterPage() {
                   >
                     <SwitchCamera className="w-5 h-5" />
                   </button>
+                  {stage === "waiting" && (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none bg-black/35 px-4">
+                      <p className="text-white text-xl md:text-2xl font-black text-center drop-shadow">
+                        في انتظار ظهور الجسم في الكاميرا
+                      </p>
+                      {warning && (
+                        <p className="mt-3 text-amber-200 text-sm font-bold text-center bg-black/50 rounded-xl px-3 py-2">
+                          {warning}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {stage === "countdown" && (
+                    <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none bg-black/40">
+                      <span className="text-white text-8xl md:text-9xl font-black drop-shadow-lg" dir="ltr">
+                        {countdown}
+                      </span>
+                    </div>
+                  )}
                   {stage === "active" && (
                     <>
                       <div className="absolute top-3 left-3 right-14 flex justify-between gap-2 pointer-events-none z-10">
-                        <div className="bg-black/70 text-white rounded-2xl px-4 py-2 flex items-center gap-2 font-black">
-                          <Timer className="w-4 h-4 text-amber-400" />
+                        <div
+                          className={`rounded-2xl px-4 py-2 flex items-center gap-2 font-black text-xl ${
+                            timeLeft <= 5
+                              ? "bg-red-600/95 text-white"
+                              : timeLeft <= 10
+                                ? "bg-amber-500/95 text-white"
+                                : "bg-black/70 text-white"
+                          }`}
+                        >
+                          <Timer
+                            className={`w-5 h-5 ${
+                              timeLeft <= 5
+                                ? "text-white"
+                                : timeLeft <= 10
+                                  ? "text-white"
+                                  : "text-amber-400"
+                            }`}
+                          />
                           {timeLeft}s
                         </div>
                         <div className="bg-emerald-600/90 text-white rounded-2xl px-4 py-2 font-black text-lg">
@@ -881,13 +1389,22 @@ export default function FitnessCounterPage() {
                           معدل المعالجة: {fps} إطار/ثانية
                         </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={finishSession}
-                        className="absolute bottom-3 inset-x-3 z-10 mx-auto max-w-xs bg-red-600 hover:bg-red-700 text-white font-black rounded-full h-12 flex items-center justify-center gap-2 shadow-lg"
-                      >
-                        ⏹️ إيقاف
-                      </button>
+                      <div className="absolute bottom-3 inset-x-3 z-10 mx-auto max-w-md flex gap-2">
+                        <button
+                          type="button"
+                          onClick={finishSession}
+                          className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black rounded-full h-12 flex items-center justify-center gap-2 shadow-lg"
+                        >
+                          ⏹️ إيقاف
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelActiveSession}
+                          className="flex-1 bg-red-700 hover:bg-red-800 text-white font-black rounded-full h-12 flex items-center justify-center gap-2 shadow-lg"
+                        >
+                          إلغاء
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>
@@ -915,15 +1432,15 @@ export default function FitnessCounterPage() {
                     )}
                     <div className="flex gap-3">
                       <Button
-                        onClick={startActiveSession}
-                        disabled={!bodyReady || !mediapipeReady}
+                        onClick={enterWaiting}
+                        disabled={!mediapipeReady || !previewReady}
                         className={`flex-1 h-12 font-black gap-2 ${
-                          !bodyReady || !mediapipeReady
+                          !mediapipeReady || !previewReady
                             ? "opacity-50 cursor-not-allowed bg-gray-400 hover:bg-gray-400"
                             : "bg-emerald-600 hover:bg-emerald-700"
                         }`}
                       >
-                        <Play className="w-5 h-5" /> ابدأ
+                        <Play className="w-5 h-5" /> استعداد
                       </Button>
                       <Button variant="outline" onClick={goHome} className="font-bold">
                         رجوع
@@ -1177,6 +1694,16 @@ export default function FitnessCounterPage() {
                     )}
                   </div>
                 )}
+                {(stage === "waiting" || stage === "countdown") && (
+                  <div className="p-4 flex flex-col gap-2 items-center">
+                    {cameraError && (
+                      <p className="text-red-600 text-sm font-bold">{cameraError}</p>
+                    )}
+                    <Button variant="outline" onClick={goHome} className="font-bold">
+                      رجوع
+                    </Button>
+                  </div>
+                )}
                 {stage === "active" && (
                   <div className="p-4 flex flex-col gap-2 items-center">
                     {warning && (
@@ -1228,37 +1755,7 @@ export default function FitnessCounterPage() {
                             {calibCopied ? "✅ تم النسخ" : "📋 نسخ"}
                           </button>
                         </div>
-                        {attempts.current.length > 0 && (
-                          <div className="max-h-[300px] overflow-y-auto rounded-xl border border-slate-200 bg-white">
-                            <table className="w-full text-xs font-bold text-slate-800" dir="rtl">
-                              <thead className="sticky top-0 bg-slate-100">
-                                <tr>
-                                  <th className="px-2 py-1.5 text-center">#</th>
-                                  <th className="px-2 py-1.5 text-center">النزول</th>
-                                  <th className="px-2 py-1.5 text-center">الصعود</th>
-                                  <th className="px-2 py-1.5 text-center">الحالة</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {attempts.current.map((a, i) => (
-                                  <tr
-                                    key={i}
-                                    className={a.counted ? "bg-emerald-50" : "bg-amber-50"}
-                                  >
-                                    <td className="px-2 py-1 text-center" dir="ltr">{i + 1}</td>
-                                    <td className="px-2 py-1 text-center" dir="ltr">{a.bottom}</td>
-                                    <td className="px-2 py-1 text-center" dir="ltr">
-                                      {a.top == null ? "—" : a.top}
-                                    </td>
-                                    <td className="px-2 py-1 text-center">
-                                      {a.counted ? "✅" : "❌"}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
+                        {attempts.current.length > 0 && renderAttemptsTable(attempts.current)}
                         {(skippedJumps > 0 || trackingLoss > 0) && (
                           <div className="text-[11px] font-bold text-slate-600 space-y-0.5">
                             {skippedJumps > 0 && (
@@ -1293,17 +1790,31 @@ export default function FitnessCounterPage() {
                   </div>
                   <div className="bg-amber-50 rounded-2xl p-4">
                     <p className="text-xs text-amber-700 font-bold mb-1">الزمن</p>
-                    <p className="text-xl font-black text-amber-800">{DURATION_SEC} ث</p>
+                    <p className="text-xl font-black text-amber-800">{elapsedSec} ث</p>
                   </div>
                 </div>
-                <div className="flex gap-3">
-                  <Button onClick={retry} className="flex-1 h-12 font-black gap-2 bg-sky-600 hover:bg-sky-700">
-                    <RotateCcw className="w-4 h-4" /> إعادة
+                <div className="text-right space-y-2" dir="rtl">
+                  <p className="text-sm font-black text-slate-800">جدول المحاولات</p>
+                  {renderAttemptsTable(resultAttempts)}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button
+                    onClick={saveCurrentSession}
+                    disabled={sessionSaved}
+                    className="flex-1 h-12 font-black gap-2 bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    {sessionSaved ? "✅ تم الحفظ" : "💾 حفظ"}
                   </Button>
-                  <Button onClick={goHome} variant="outline" className="flex-1 h-12 font-black">
-                    الرئيسية
+                  <Button
+                    onClick={prepareNextTrainee}
+                    className="flex-1 h-12 font-black gap-2 bg-sky-600 hover:bg-sky-700"
+                  >
+                    استعداد للمتدرب التالي
                   </Button>
                 </div>
+                <Button onClick={goHome} variant="outline" className="w-full h-11 font-black">
+                  الرئيسية
+                </Button>
               </CardContent>
             </Card>
           )}
