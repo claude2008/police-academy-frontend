@@ -114,9 +114,25 @@ const canDeletePhoto = useMemo(() => {
 
   const [newSoldier, setNewSoldier] = useState({
     name: "", militaryId: "", rank: "", nationality: "", phone: "",
-    course: "", batch: "", company: "", platoon: "", 
+    course: "", batch: "", course_id: null as number | null, company: "", platoon: "", 
     dob: "", height: "", weight: ""
   })
+
+  const applyCourseSelection = (
+    courseIdStr: string,
+    setter: (patch: { course: string; batch: string | null; course_id: number }) => void
+  ) => {
+    const selected = coursesList.find((c) => String(c.id) === courseIdStr)
+    if (!selected) return
+    setter({
+      course: selected.name,
+      batch: selected.batch || null,
+      course_id: selected.id,
+    })
+  }
+
+  const courseOptionLabel = (c: any) =>
+    `${c.name} — ${c.batch && c.batch !== "all" ? c.batch : "لا يوجد"}`
   
   const [editingSoldier, setEditingSoldier] = useState<any>(null)
 
@@ -437,6 +453,7 @@ const confirmPhotoDelete = async () => {
         phone: soldier.phone || "",
         course: soldier.course || "",
         batch: soldier.batch || "",
+        course_id: soldier.course_id ?? null,
         company: soldier.company || "",
         platoon: soldier.platoon || "",
         nationality: soldier.nationality || "",
@@ -460,9 +477,9 @@ const confirmPhotoDelete = async () => {
 
  const handleAddSoldier = async () => {
     // 🛡️ التحقق من الحقول الإجبارية (الاسم، الرقم، والدورة)
-    if (!newSoldier.name || !newSoldier.militaryId || !newSoldier.course) { 
+    if (!newSoldier.name || !newSoldier.militaryId || !newSoldier.course_id) { 
         toast.error("بيانات ناقصة", {
-            description: "يرجى التأكد من إدخال الاسم، الرقم العسكري، واسم الدورة."
+            description: "يرجى التأكد من إدخال الاسم، الرقم العسكري، واختيار الدورة."
         }); 
         return; 
     }
@@ -473,8 +490,9 @@ const confirmPhotoDelete = async () => {
             name: newSoldier.name.trim(), 
             rank: newSoldier.rank?.trim() || "مستجد",
             
-            // 🟢 الدورة إجبارية
+            // 🟢 الدورة + الربط بالمعرف
             course: newSoldier.course.trim(), 
+            course_id: newSoldier.course_id,
             
             // 🟢 تحويل الفراغات إلى null لضمان عدم ظهور كلمة "عام"
             batch: newSoldier.batch?.trim() || null, 
@@ -504,7 +522,7 @@ const confirmPhotoDelete = async () => {
             // إعادة تعيين النموذج للوضع الفارغ
             setNewSoldier({ 
                 name: "", militaryId: "", rank: "", nationality: "", 
-                phone: "", course: "", batch: "", company: "", 
+                phone: "", course: "", batch: "", course_id: null, company: "", 
                 platoon: "", dob: "", height: "", weight: "" 
             });
 
@@ -526,9 +544,9 @@ const confirmPhotoDelete = async () => {
     if (!editingSoldier) return;
 
     // 🛡️ 1. فحص الحقول الإجبارية قبل الإرسال
-    if (!editingSoldier.name?.trim() || !editingSoldier.military_id?.trim() || !editingSoldier.course?.trim()) {
+    if (!editingSoldier.name?.trim() || !editingSoldier.military_id?.trim() || !editingSoldier.course_id) {
         toast.error("بيانات ناقصة", {
-            description: "لا يمكن ترك الاسم أو الرقم العسكري أو الدورة فارغة."
+            description: "لا يمكن ترك الاسم أو الرقم العسكري أو الدورة فارغة. اختر الدورة من القائمة."
         });
         return;
     }
@@ -544,6 +562,7 @@ const confirmPhotoDelete = async () => {
             // الحقول التي نريدها أن تظهر فارغة (Null) بدلاً من "عام"
             course: editingSoldier.course.trim(), 
             batch: editingSoldier.batch?.trim() || null,
+            course_id: editingSoldier.course_id,
             company: editingSoldier.company?.trim() || null, 
             platoon: editingSoldier.platoon?.trim() || null,
             
@@ -757,8 +776,28 @@ console.log("الحمولة المرسلة للسيرفر:", payload);
                                 <Input value={newSoldier.phone} onChange={e => setNewSoldier({...newSoldier, phone: normalizeInput(e.target.value).replace(/\D/g, '')})} />
                             </div>
                             <div className="space-y-2"><Label>الرتبة</Label><Input value={newSoldier.rank} onChange={e => setNewSoldier({...newSoldier, rank: e.target.value})} /></div>
-                            <div className="space-y-2"><Label>الدورة</Label><Input value={newSoldier.course} onChange={e => setNewSoldier({...newSoldier, course: e.target.value})} /></div>
-                            <div className="space-y-2"><Label>الدفعة</Label><Input value={newSoldier.batch} onChange={e => setNewSoldier({...newSoldier, batch: e.target.value})} /></div>
+                            <div className="space-y-2 md:col-span-2">
+                              <Label>الدورة / الدفعة *</Label>
+                              <Select
+                                value={newSoldier.course_id != null ? String(newSoldier.course_id) : undefined}
+                                onValueChange={(val) =>
+                                  applyCourseSelection(val, (patch) =>
+                                    setNewSoldier({ ...newSoldier, ...patch })
+                                  )
+                                }
+                              >
+                                <SelectTrigger dir="rtl" className="bg-slate-50">
+                                  <SelectValue placeholder="اختر الدورة والدفعة" />
+                                </SelectTrigger>
+                                <SelectContent align="end" className="max-h-72">
+                                  {coursesList.map((c: any) => (
+                                    <SelectItem key={c.id} value={String(c.id)}>
+                                      {courseOptionLabel(c)}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                             <div className="space-y-2"><Label>السرية</Label><Input value={newSoldier.company} onChange={e => setNewSoldier({...newSoldier, company: e.target.value})} /></div>
                             <div className="space-y-2"><Label>الفصيل</Label><Input value={newSoldier.platoon} onChange={e => setNewSoldier({...newSoldier, platoon: e.target.value})} /></div>
                             <div className="space-y-2"><Label>الطول</Label><Input type="text" value={newSoldier.height} onChange={e => setNewSoldier({...newSoldier, height: normalizeInput(e.target.value).replace(/[^0-9.]/g, '')})} /></div>
@@ -1193,8 +1232,28 @@ console.log("الحمولة المرسلة للسيرفر:", payload);
         className="focus:border-blue-400"
     />
 </div>
-                    <div className="space-y-2"><Label>الدورة</Label><Input value={editingSoldier.course} onChange={e => setEditingSoldier({...editingSoldier, course: e.target.value})} /></div>
-                    <div className="space-y-2"><Label>الدفعة</Label><Input value={editingSoldier.batch} onChange={e => setEditingSoldier({...editingSoldier, batch: e.target.value})} /></div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>الدورة / الدفعة *</Label>
+                      <Select
+                        value={editingSoldier.course_id != null ? String(editingSoldier.course_id) : undefined}
+                        onValueChange={(val) =>
+                          applyCourseSelection(val, (patch) =>
+                            setEditingSoldier({ ...editingSoldier, ...patch })
+                          )
+                        }
+                      >
+                        <SelectTrigger dir="rtl" className="bg-slate-50">
+                          <SelectValue placeholder="اختر الدورة والدفعة" />
+                        </SelectTrigger>
+                        <SelectContent align="end" className="max-h-72">
+                          {coursesList.map((c: any) => (
+                            <SelectItem key={c.id} value={String(c.id)}>
+                              {courseOptionLabel(c)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="space-y-2"><Label>السرية</Label><Input value={editingSoldier.company} onChange={e => setEditingSoldier({...editingSoldier, company: e.target.value})} /></div>
                     <div className="space-y-2"><Label>الفصيل</Label><Input value={editingSoldier.platoon} onChange={e => setEditingSoldier({...editingSoldier, platoon: e.target.value})} /></div>
                     <div className="space-y-2"><Label>الطول</Label><Input type="text" value={editingSoldier.height} onChange={e => setEditingSoldier({...editingSoldier, height: normalizeInput(e.target.value).replace(/[^0-9.]/g, '')})} /></div>
