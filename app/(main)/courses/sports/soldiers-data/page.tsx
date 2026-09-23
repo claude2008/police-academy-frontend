@@ -120,13 +120,13 @@ const canDeletePhoto = useMemo(() => {
 
   const applyCourseSelection = (
     courseIdStr: string,
-    setter: (patch: { course: string; batch: string | null; course_id: number }) => void
+    setter: (patch: { course: string; batch: string; course_id: number }) => void
   ) => {
     const selected = coursesList.find((c) => String(c.id) === courseIdStr)
     if (!selected) return
     setter({
       course: selected.name,
-      batch: selected.batch || null,
+      batch: selected.batch ?? "",
       course_id: selected.id,
     })
   }
