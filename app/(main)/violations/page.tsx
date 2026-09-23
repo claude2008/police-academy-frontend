@@ -119,6 +119,12 @@ const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, soldierId: st
 });
   useEffect(() => { setMounted(true); fetchRegulations(); }, []);
   useEffect(() => { if (selectedSoldier) fetchTodaySessions(); }, [selectedSoldier]);
+  useEffect(() => {
+    setSelectedViolation(null);
+  }, [housingSystem]);
+  useEffect(() => {
+    setSelectedViolation(null);
+  }, [selectedSoldier]);
 useEffect(() => {
     // 🟢 التعديل: لا نحفظ المرفقات (attachments) في الـ localStorage لأن حجمها ضخم
     const safeQueue = sessionQueue.map(({ attachments, ...rest }) => rest);
@@ -309,6 +315,20 @@ const hasSpecificPlatoonConstraints = allowedPlatoons.some((p: string) => p.star
     // 2. التحقق من اكتمال البيانات الأساسية
     if (!selectedSoldier || !selectedViolation || !selectedPeriod) {
         return toast.warning("أكمل البيانات أولاً");
+    }
+
+    // 🛡️ تأكد أن المخالفة المختارة تطابق النظام الحالي
+    const isRecruit =
+      selectedSoldier.course.includes("مستجدين") ||
+      selectedSoldier.course.includes("دبلوم");
+    const expectedType = isRecruit
+      ? housingSystem === "sleeping"
+        ? "recruits"
+        : "recruits_fixed"
+      : "specialized";
+    if (selectedViolation.regulation_type !== expectedType) {
+      setSelectedViolation(null);
+      return toast.error("⚠️ أعد اختيار المخالفة بعد تغيير النظام");
     }
 
     // 3. تجهيز السجل الجديد
@@ -617,9 +637,52 @@ if (isSaved && entryToDelete) {
           <Card className="lg:col-span-8 shadow-xl border-slate-100 flex flex-col min-h-[320px]">
             <CardHeader className="bg-slate-50 border-b py-3 px-6 flex flex-row items-center justify-between shrink-0">
               <CardTitle className="text-sm font-black flex items-center gap-2 text-slate-600 uppercase"><Clock className="w-4 h-4 text-blue-600"/> تفاصيل الحصة والمخالفة</CardTitle>
-              <div className="flex p-0.5 bg-slate-200 rounded-lg shadow-inner">
-                <button onClick={()=>setHousingSystem('sleeping')} className={cn("px-6 py-1.5 text-xs font-black rounded-md transition-all", housingSystem==='sleeping'?"bg-white text-amber-800 shadow-sm":"text-slate-500")}>مبيت</button>
-                <button onClick={()=>setHousingSystem('fixed')} className={cn("px-6 py-1.5 text-xs font-black rounded-md transition-all", housingSystem==='fixed'?"bg-white text-amber-800 shadow-sm":"text-slate-500")}>ثابت صبح</button>
+              <div className="flex flex-col items-end gap-1">
+                <div
+                  className={cn(
+                    "flex p-0.5 rounded-lg shadow-inner transition-all",
+                    selectedViolation
+                      ? "bg-amber-100 ring-2 ring-amber-400 ring-offset-1"
+                      : "bg-slate-200"
+                  )}
+                  title={
+                    selectedViolation
+                      ? "تغيير النظام يلغي اختيار المخالفة الحالية"
+                      : undefined
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={() => setHousingSystem("sleeping")}
+                    className={cn(
+                      "px-6 py-1.5 text-xs font-black rounded-md transition-all",
+                      housingSystem === "sleeping"
+                        ? "bg-white text-amber-800 shadow-sm"
+                        : "text-slate-500",
+                      selectedViolation && "opacity-80"
+                    )}
+                  >
+                    مبيت
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHousingSystem("fixed")}
+                    className={cn(
+                      "px-6 py-1.5 text-xs font-black rounded-md transition-all",
+                      housingSystem === "fixed"
+                        ? "bg-white text-amber-800 shadow-sm"
+                        : "text-slate-500",
+                      selectedViolation && "opacity-80"
+                    )}
+                  >
+                    ثابت صبح
+                  </button>
+                </div>
+                {selectedViolation && (
+                  <span className="text-[10px] font-bold text-amber-700">
+                    ⚠️ تغيير النظام يعيد اختيار المخالفة
+                  </span>
+                )}
               </div>
             </CardHeader>
 

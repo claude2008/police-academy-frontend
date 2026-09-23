@@ -29,7 +29,7 @@ import { useSearchParams } from "next/navigation";
 // --- ثوابت النظام ---
 const STATUS_TRANSLATIONS: any = {
     "medical": "طبية", "clinic": "عيادة", "leave": "إجازة", "admin_leave": "إجازة إدارية",
-    "death_leave": "إجازة وفاة", "late_parade": "تأخير", "late_class": "تأخير حصة",
+    "death_leave": "إجازة وفاة", "late_parade": "تأخير تكميل", "late_class": "تأخير حصة",
     "absent": "غياب", "exempt": "إعفاء", "rest": "استراحة", "hospital": "مستشفى", "other": "أخرى"
 };
 
@@ -438,6 +438,15 @@ export default function SessionAuditPage() {
             const startDate = new Date(row.attendance_start_date || date);
             const duration = parseInt(row.attendance_duration) || 1;
             const endDate = addDays(startDate, duration - 1);
+            const statusKey = row.attendance_status_key || row.attendance_status;
+            const isLateness = statusKey === "late_parade" || statusKey === "late_class";
+            const statusLabel =
+              STATUS_TRANSLATIONS[statusKey] ||
+              STATUS_TRANSLATIONS[row.attendance_status] ||
+              row.attendance_status;
+            const durationLabel = isLateness
+              ? (row.minutes != null && row.minutes !== "" ? `${row.minutes} دقيقة` : "—")
+              : duration;
 
             return {
                 "#": index + 1,
@@ -447,8 +456,8 @@ export default function SessionAuditPage() {
                 "الفصيل": row.platoon,
                 "الاسم": row.name,
                 "الرقم العسكري": row.military_id,
-                "الحالة": STATUS_TRANSLATIONS[row.attendance_status] || row.attendance_status,
-                "المدة": duration,
+                "الحالة": statusLabel,
+                "المدة": durationLabel,
                 "من": format(startDate, "yyyy-MM-dd"),
                 "إلى": format(endDate, "yyyy-MM-dd"),
                 "الملاحظات": row.attendance_note || "-",
@@ -728,25 +737,25 @@ export default function SessionAuditPage() {
     <table className="w-full text-center text-sm border-collapse print:table-fixed print:w-full">
         <thead className="bg-[#c5b391] text-black font-black print:bg-[#c5b391]! [-webkit-print-color-adjust:exact]">
             <tr className="divide-x divide-black print:divide-black">
-                <th className="p-2 print:p-1 print:text-[9px] print:w-[8%] border-black">القوة</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">طبية</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">عيادة</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">مستشفى</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">إجازة</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">إ.إدارية</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">إ.وفاة</th>
-                <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">تأخير</th>
+                <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">تأخير.ت</th>
+                <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">تأخير.ح</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">استراحة</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black bg-[#b5a381]! print:bg-[#b5a381]!">إعفاء</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">غياب</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[7%] border-black">أخرى</th>
                 <th className="p-2 print:p-1 print:text-[9px] print:w-[8%] border-black bg-blue-50/50">الحالات</th>
-                <th className="p-2 print:p-1 print:text-[9px] print:w-[10%] border-black bg-green-50/50">الموجود</th>
+                <th className="p-2 print:p-1 print:text-[9px] print:w-[8%] border-black bg-green-50/50">الموجود</th>
+                <th className="p-2 print:p-1 print:text-[9px] print:w-[8%] border-black">الأصل</th>
             </tr>
         </thead>
         <tbody className="bg-white font-black text-slate-700 print:text-black">
             <tr className="divide-x divide-black border-b border-black print:divide-black">
-                <td className="p-2 print:p-1 print:text-[10px] bg-slate-50">{stats.total}</td>
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.medical || "-"}</td>
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.clinic || "-"}</td>
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.hospital || "-"}</td>
@@ -754,12 +763,14 @@ export default function SessionAuditPage() {
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.admin_leave || "-"}</td>
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.death_leave || "-"}</td>
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.late_parade || "-"}</td>
+                <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.late_class || "-"}</td>
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.rest || "-"}</td>
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.exempt || "-"}</td>
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.absent || "-"}</td>
                 <td className="p-2 print:p-1 print:text-[10px] text-red-600">{stats.other || "-"}</td>
                 <td className="p-2 print:p-1 print:text-[11px] text-red-700 bg-blue-50/30">{stats.cases}</td>
                 <td className="p-2 print:p-1 print:text-[11px] text-green-700 bg-green-50/30">{stats.present}</td>
+                <td className="p-2 print:p-1 print:text-[10px] bg-slate-50">{stats.total}</td>
             </tr>
         </tbody>
     </table>
@@ -798,6 +809,9 @@ export default function SessionAuditPage() {
     const startDate = new Date(rawStart);
     const duration = parseInt(row.attendance_duration) || 1;
     const endDate = addDays(startDate, duration - 1);
+    const statusKey = row.attendance_status_key || row.attendance_status;
+    const isLateness = statusKey === "late_parade" || statusKey === "late_class"
+      || row.attendance_status === "تأخير تكميل" || row.attendance_status === "تأخير حصة";
     
     return (
         <TableRow key={idx} className="border-b border-slate-300 print:border-black hover:bg-slate-50">
@@ -823,7 +837,11 @@ export default function SessionAuditPage() {
 </TableCell>
 
             <TableCell className="text-center font-black border-l border-slate-300 print:border-black">
-                {duration} {duration > 2 ? "أيام" : "يوم"}
+                {isLateness
+                  ? (row.minutes != null && row.minutes !== ""
+                      ? `${row.minutes} دقيقة`
+                      : "—")
+                  : `${duration} ${duration > 2 ? "أيام" : "يوم"}`}
             </TableCell>
 
             <TableCell className="text-center text-xs font-bold border-l border-slate-300 print:border-black">

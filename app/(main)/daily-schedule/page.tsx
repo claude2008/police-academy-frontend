@@ -441,7 +441,8 @@ const saveStatus = async () => {
                                 duration: isSingleSession ? 1 : durationCount, 
                                 start_date: baseStartDate, 
                                 note: activeEntry.note || "",
-                                group_id: newGroupId
+                                group_id: newGroupId,
+                                minutes: activeEntry.minutes ?? null
                             })
                         });
 
