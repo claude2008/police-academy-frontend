@@ -10,7 +10,7 @@ const securityHeaders = [
   {
     key: 'Content-Security-Policy',
     value: "default-src 'self'; " +
-           "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; " +
+           "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; " +
            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
            "font-src 'self' https://fonts.gstatic.com; " +
            "img-src 'self' data: blob: https://*.supabase.co https://*.onrender.com https://www.qatarradio.qa https://grainy-gradients.vercel.app http://localhost:8000 http://172.20.10.10:8000 http://172.20.10.4:8000 http://172.20.10.3:8000 http://192.168.1.22:8000; " +
@@ -47,6 +47,12 @@ const withNextJsObfuscator = require('nextjs-obfuscator')(obfuscatorConfig, obfu
 const withPWA = withPWAInit({
   dest: "public",
   disable: process.env.NODE_ENV === "development",
+  // public/ is precached wholesale (additionalManifestEntries), which is where
+  // the pose model and wasm live. The size cap also covers those entries if a
+  // file's size is known; the wasm binaries are ~12 MB each.
+  workboxOptions: {
+    maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,
+  },
 });
 
 // 4. إعدادات Next.js العامة

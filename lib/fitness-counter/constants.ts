@@ -57,20 +57,14 @@ export const DEFAULT_FRAME = { width: 640, height: 480 }
 export const AUTOPLAY_CHECK_MS = 3000
 export const LOW_FPS_WARN = 15
 
-export const POSE_CDN_BASE = "https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404"
-export const POSE_SCRIPT_URL = `${POSE_CDN_BASE}/pose.js`
-export const DRAWING_UTILS_SCRIPT_URL =
-  "https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js"
-export const MEDIAPIPE_SETTLE_MS = 500
-export const POSE_POLL_ATTEMPTS = 50
-export const POSE_POLL_INTERVAL_MS = 200
+/** Served from public/ by scripts/setup-mediapipe.mjs (wasm is git-ignored, the model is committed). */
+export const WASM_PATH = "/mediapipe/wasm"
+export const MODEL_PATH = "/models/pose/pose_landmarker_full.task"
 export const POSE_INIT_TIMEOUT_MS = 10000
-export const POSE_OPTIONS = {
-  modelComplexity: 1,
-  smoothLandmarks: true,
-  minDetectionConfidence: 0.5,
-  minTrackingConfidence: 0.5,
-}
+export const POSE_NUM_POSES = 1
+export const POSE_MIN_POSE_DETECTION_CONFIDENCE = 0.5
+export const POSE_MIN_POSE_PRESENCE_CONFIDENCE = 0.5
+export const POSE_MIN_TRACKING_CONFIDENCE = 0.5
 
 export const SKELETON_STYLE = { color: "#00FF00", lineWidth: 2 }
 export const LANDMARK_STYLE = { color: "#FF0000", lineWidth: 1 }

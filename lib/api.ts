@@ -21,7 +21,8 @@ export function setupFetchInterceptor() {
         inputUrl.includes('jsdelivr.net') || 
         inputUrl.includes('mediapipe') ||
         inputUrl.includes('.wasm') ||
-        inputUrl.includes('.tflite')
+        inputUrl.includes('.tflite') ||
+        inputUrl.includes('.task')
     )
 
     if (isMediaPipe) {

@@ -3,6 +3,7 @@ export type Exercise = "pushup" | "situp"
 export type Strictness = "easy" | "normal" | "strict" | "custom"
 export type PresetStrictness = Exclude<Strictness, "custom">
 export type FacingMode = "user" | "environment"
+export type PoseDelegate = "GPU" | "CPU"
 
 export type Attempt = { bottom: number; top: number | null; counted: boolean; at: number }
 

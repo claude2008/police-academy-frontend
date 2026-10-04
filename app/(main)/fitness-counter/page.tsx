@@ -203,6 +203,7 @@ export default function FitnessCounterPage() {
     mediapipeReady,
     facingMode,
     fps,
+    delegate,
     startPrepareCamera: startCamera,
     flipCamera: flipCameraStream,
     stopStream: stopCamera,
@@ -534,6 +535,7 @@ export default function FitnessCounterPage() {
               reps={reps}
               strictnessLabel={strictnessLabel}
               fps={fps}
+              delegate={delegate}
               onStop={finishSession}
               onCancel={cancelActiveSession}
             >

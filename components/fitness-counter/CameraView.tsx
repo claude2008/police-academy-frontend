@@ -7,7 +7,7 @@ import {
   TIMER_WARN_SECONDS,
   WARNINGS,
 } from "@/lib/fitness-counter/constants"
-import type { FacingMode, Stage } from "@/lib/fitness-counter/types"
+import type { FacingMode, PoseDelegate, Stage } from "@/lib/fitness-counter/types"
 
 type Props = {
   stage: Stage
@@ -26,6 +26,7 @@ type Props = {
   reps: number
   strictnessLabel: string | null
   fps: number
+  delegate: PoseDelegate | null
   onStop: () => void
   onCancel: () => void
   children?: ReactNode
@@ -49,6 +50,7 @@ export default function CameraView({
   reps,
   strictnessLabel,
   fps,
+  delegate,
   onStop,
   onCancel,
   children,
@@ -161,7 +163,10 @@ export default function CameraView({
                       : "bg-black/70 text-white"
                   }`}
                 >
-                  معدل المعالجة: {fps} إطار/ثانية
+                  <span className="block">معدل المعالجة: {fps} إطار/ثانية</span>
+                  {delegate && (
+                    <span className="block text-[10px] font-medium opacity-80">{delegate}</span>
+                  )}
                 </span>
               </div>
               <div className="absolute bottom-3 inset-x-3 z-10 mx-auto max-w-md flex gap-2">

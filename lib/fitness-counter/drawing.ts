@@ -1,11 +1,15 @@
 import { DEFAULT_FRAME, LANDMARK_STYLE, SKELETON_STYLE } from "./constants"
-import type { PoseResults } from "./types"
+import type { Landmark, PoseResults } from "./types"
 
-/** Paints the camera frame plus the MediaPipe skeleton (drawing_utils globals from the CDN script). */
+/** Draws connectors and landmark dots. Supplied by the pose engine (tasks-vision DrawingUtils). */
+export type SkeletonDrawer = (ctx: CanvasRenderingContext2D, landmarks: Landmark[]) => void
+
+/** Paints the camera frame, then the skeleton: green connections, red points, all landmarks. */
 export const drawPoseFrame = (
   canvas: HTMLCanvasElement | null,
   video: HTMLVideoElement,
-  results: PoseResults
+  results: PoseResults,
+  drawSkeleton: SkeletonDrawer | null
 ) => {
   const ctx = canvas?.getContext("2d")
   if (!canvas || !ctx) return
@@ -13,10 +17,7 @@ export const drawPoseFrame = (
   canvas.height = video.videoHeight || DEFAULT_FRAME.height
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height)
-  if (!results.poseLandmarks) return
-  const drawingUtils = window as any
-  if (drawingUtils.drawConnectors && drawingUtils.drawLandmarks) {
-    drawingUtils.drawConnectors(ctx, results.poseLandmarks, drawingUtils.POSE_CONNECTIONS, { ...SKELETON_STYLE })
-    drawingUtils.drawLandmarks(ctx, results.poseLandmarks, { ...LANDMARK_STYLE })
+  if (results.poseLandmarks && drawSkeleton) {
+    drawSkeleton(ctx, results.poseLandmarks)
   }
 }
