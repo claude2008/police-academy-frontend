@@ -52,17 +52,13 @@ export const ONE_EURO_BETA = 0.5
 export const ONE_EURO_D_CUTOFF = 1
 export const ONE_EURO_INITIAL_FREQ = 30
 export const TRACKING_LOSS_DEG = 30
-export const SITUP_REJECT_ASCENT_DEG = 150
-export const REJECT_MIN_DEPTH_DEG = 25
-export const MERGE_BOTTOM_TOLERANCE_DEG = 3
-export const MERGE_WINDOW_MS = 1500
+/** A movement is logged only after the counting angle leaves its last extreme by at least this much. */
+export const ATTEMPT_MIN_SWING_DEG = 20
 export const MAX_ATTEMPTS = 100
 export const HAND_FAIL_WARN_FRAMES = 8
 export const MIN_SHOULDER_WIDTH = 0.02
 export const CHEST_CENTER_RATIO = 0.3
 export const GROUND_REF_OFFSET = 0.3
-export const INITIAL_MIN_ANGLE = 999
-
 // Camera and model
 export const MOBILE_BREAKPOINT_PX = 768
 export const MOBILE_VIDEO_HEIGHT_RATIO = 0.7

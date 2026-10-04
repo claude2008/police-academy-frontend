@@ -1,17 +1,13 @@
 import {
   CHEST_CENTER_RATIO,
   GROUND_REF_OFFSET,
+  ATTEMPT_MIN_SWING_DEG,
   HAND_FAIL_WARN_FRAMES,
-  INITIAL_MIN_ANGLE,
   JUMP_FILTER_DEG,
   JUMP_FILTER_MAX_FRAMES,
   JUMP_FILTER_RECOVER_MS,
   MAX_ATTEMPTS,
-  MERGE_BOTTOM_TOLERANCE_DEG,
-  MERGE_WINDOW_MS,
   MIN_SHOULDER_WIDTH,
-  REJECT_MIN_DEPTH_DEG,
-  SITUP_REJECT_ASCENT_DEG,
   TRACKING_LOSS_DEG,
   VISIBILITY_MIN,
   WARNINGS,
@@ -143,7 +139,12 @@ export type FrameOutcome = {
   skippedJump: boolean
 }
 
-const gated = (warning: string): FrameOutcome => ({ warning, angle: null, counted: false, skippedJump: false })
+const gated = (warning: string, angle: number | null = null): FrameOutcome => ({
+  warning,
+  angle,
+  counted: false,
+  skippedJump: false,
+})
 
 const SKIPPED_JUMP: FrameOutcome = { warning: "", angle: null, counted: false, skippedJump: true }
 
@@ -186,10 +187,10 @@ export const detectPushupFrame = (
   frame: FrameSize = UNIT_FRAME
 ): FrameOutcome => {
   const pixels = toPixelLandmarks(landmarks, frame)
-  if (!isBodyStraight(pixels, t)) return gated(WARNINGS.bodyNotStraight)
-
   const s = getBestSide(pixels)
   const angle = calculateAngle(pixels[s.shoulder], pixels[s.elbow], pixels[s.wrist])
+  // Form failures still expose the elbow angle for the attempt log. Phase and reps stay untouched.
+  if (!isBodyStraight(pixels, t)) return gated(WARNINGS.bodyNotStraight, angle)
   if (rejectJump(state, angle, now)) return SKIPPED_JUMP
   state.lastValidAngle = angle
 
@@ -211,15 +212,22 @@ export const detectSitupFrame = (
 ): FrameOutcome => {
   const pixels = toPixelLandmarks(landmarks, frame)
   const s = getBestSide(pixels)
+  const hip = pixels[s.hip]
+  const shoulder = pixels[s.shoulder]
+  const torsoLength = distanceBetween(shoulder, hip)
+  const drop = Math.max(torsoLength, frame.height * GROUND_REF_OFFSET)
+  const groundRef = { x: hip.x, y: hip.y + drop }
+  const angle = calculateAngle(shoulder, hip, groundRef)
 
   const kneeAngle = calculateAngle(pixels[s.hip], pixels[s.knee], pixels[s.ankle])
-  if (kneeAngle > t.kneeMax) return gated(WARNINGS.kneesStraight)
+  // Form failures still expose the torso angle for the attempt log. Phase and reps stay untouched.
+  if (kneeAngle > t.kneeMax) return gated(WARNINGS.kneesStraight, angle)
 
   const lShoulder = pixels[LM.leftShoulder]
   const rShoulder = pixels[LM.rightShoulder]
   const shoulderWidth = distanceBetween(lShoulder, rShoulder)
   // 0.02 meant 2% of the frame; compare against the frame width in pixels.
-  if (shoulderWidth < MIN_SHOULDER_WIDTH * frame.width) return gated(WARNINGS.comeCloser)
+  if (shoulderWidth < MIN_SHOULDER_WIDTH * frame.width) return gated(WARNINGS.comeCloser, angle)
 
   const midShoulder = { x: (lShoulder.x + rShoulder.x) / 2, y: (lShoulder.y + rShoulder.y) / 2 }
   const lHip = pixels[LM.leftHip]
@@ -237,16 +245,10 @@ export const detectSitupFrame = (
   )
   if (!handsInPosition) {
     state.handFailFrames += 1
-    return gated(state.handFailFrames > HAND_FAIL_WARN_FRAMES ? WARNINGS.handsPosition : "")
+    return gated(state.handFailFrames > HAND_FAIL_WARN_FRAMES ? WARNINGS.handsPosition : "", angle)
   }
   state.handFailFrames = 0
 
-  const hip = pixels[s.hip]
-  const shoulder = pixels[s.shoulder]
-  const torsoLength = distanceBetween(shoulder, hip)
-  const drop = Math.max(torsoLength, frame.height * GROUND_REF_OFFSET)
-  const groundRef = { x: hip.x, y: hip.y + drop }
-  const angle = calculateAngle(shoulder, hip, groundRef)
   if (rejectJump(state, angle, now)) return SKIPPED_JUMP
   state.lastValidAngle = angle
 
@@ -277,24 +279,27 @@ export const detectRepFrame = (
 
 export type AttemptLog = {
   attempts: Attempt[]
-  currentMin: number
-  currentMax: number
   lastAngle: number | null
-  rejectArmed: boolean
-  rejectMin: number
   trackingLoss: number
   skippedJumps: number
+  /** Highest resting angle. A descent is a fall of at least ATTEMPT_MIN_SWING_DEG from here. */
+  origin: number | null
+  /** Lowest angle of the open descent. Null while no movement is open. */
+  bottom: number | null
+  /** Highest angle reached on the way back up. */
+  returnPeak: number | null
+  returning: boolean
 }
 
 export const createAttemptLog = (): AttemptLog => ({
   attempts: [],
-  currentMin: INITIAL_MIN_ANGLE,
-  currentMax: 0,
   lastAngle: null,
-  rejectArmed: false,
-  rejectMin: INITIAL_MIN_ANGLE,
   trackingLoss: 0,
   skippedJumps: 0,
+  origin: null,
+  bottom: null,
+  returnPeak: null,
+  returning: false,
 })
 
 export const resetAttemptLog = (log: AttemptLog) => {
@@ -305,15 +310,18 @@ export const noteSkippedJump = (log: AttemptLog) => {
   log.skippedJumps += 1
 }
 
-/** Push-ups re-arm rejection below elbowUp; sit-ups use a fixed threshold regardless of preset. */
-export const getRejectAscentThreshold = (exercise: Exercise | null, pushup: PushupThresholds) =>
-  exercise === "situp" ? SITUP_REJECT_ASCENT_DEG : pushup.elbowUp
-
 const pushAttempt = (log: AttemptLog, entry: Attempt) => {
   log.attempts.push(entry)
   if (log.attempts.length > MAX_ATTEMPTS) {
     log.attempts.splice(0, log.attempts.length - MAX_ATTEMPTS)
   }
+}
+
+const restAt = (log: AttemptLog, angle: number) => {
+  log.origin = angle
+  log.bottom = null
+  log.returnPeak = null
+  log.returning = false
 }
 
 export type RecordResult = {
@@ -323,16 +331,18 @@ export type RecordResult = {
 }
 
 /**
- * Logs one accepted angle. `at` is ms since session start.
- * Counted frames close the current attempt; otherwise a dip below `rejectThreshold`
- * that recovers is logged as a rejected attempt when it went at least REJECT_MIN_DEPTH_DEG deep.
+ * Logs one counting angle. `at` is ms since session start.
+ * Descent is a falling angle (push-up elbow, and the sit-up torso motion that completes a rep).
+ * نزول is that low point. صعود is how high the return got, or the high point a counted
+ * sit-up descended from when the rep is counted before a return.
+ * One movement becomes one row: ✅ when a rep is counted, ❌ when the angle reverses
+ * again by ATTEMPT_MIN_SWING_DEG without a count.
  */
 export const recordAngle = (
   log: AttemptLog,
   angle: number,
   counted: boolean,
-  at: number,
-  rejectThreshold: number
+  at: number
 ): RecordResult => {
   const rounded = Math.round(angle)
   let trackingLossChanged = false
@@ -342,50 +352,50 @@ export const recordAngle = (
   }
   log.lastAngle = rounded
 
-  log.currentMin = Math.min(log.currentMin, angle)
-  log.currentMax = Math.max(log.currentMax, angle)
+  if (log.origin == null) log.origin = angle
+
+  if (!counted && log.bottom == null) {
+    if (angle > log.origin) log.origin = angle
+    if (log.origin - angle >= ATTEMPT_MIN_SWING_DEG) log.bottom = angle
+    return { rounded, trackingLossChanged, attemptsChanged: false }
+  }
+
+  if (log.bottom != null && !log.returning && angle < log.bottom) log.bottom = angle
+  if (log.bottom != null && !log.returning && angle - log.bottom >= ATTEMPT_MIN_SWING_DEG) {
+    log.returning = true
+    log.returnPeak = angle
+  } else if (log.returning && angle > (log.returnPeak ?? angle)) {
+    log.returnPeak = angle
+  }
 
   if (counted) {
-    const entry: Attempt = {
-      bottom: Math.round(log.currentMin),
-      top: Math.round(log.currentMax),
+    const bottom = log.bottom ?? angle
+    const top = log.returning ? (log.returnPeak ?? angle) : log.origin
+    pushAttempt(log, {
+      bottom: Math.round(bottom),
+      top: Math.round(top),
       counted: true,
       at,
-    }
-    const last = log.attempts[log.attempts.length - 1]
-    if (
-      last &&
-      last.counted === false &&
-      Math.abs(last.bottom - entry.bottom) <= MERGE_BOTTOM_TOLERANCE_DEG &&
-      Math.abs(at - last.at) <= MERGE_WINDOW_MS
-    ) {
-      log.attempts[log.attempts.length - 1] = entry
-    } else {
-      pushAttempt(log, entry)
-    }
-    log.currentMin = INITIAL_MIN_ANGLE
-    log.currentMax = 0
-    log.rejectArmed = false
-    log.rejectMin = INITIAL_MIN_ANGLE
+    })
+    restAt(log, angle)
     return { rounded, trackingLossChanged, attemptsChanged: true }
   }
 
-  let attemptsChanged = false
-  if (angle < rejectThreshold) {
-    log.rejectArmed = true
-    log.rejectMin = Math.min(log.rejectMin, angle)
-  } else if (angle > rejectThreshold && log.rejectArmed) {
-    if (log.rejectMin <= rejectThreshold - REJECT_MIN_DEPTH_DEG) {
-      pushAttempt(log, {
-        bottom: Math.round(log.rejectMin),
-        top: null,
-        counted: false,
-        at,
-      })
-      attemptsChanged = true
-    }
-    log.rejectArmed = false
-    log.rejectMin = INITIAL_MIN_ANGLE
+  if (log.returning && (log.returnPeak ?? angle) - angle >= ATTEMPT_MIN_SWING_DEG) {
+    const bottom = log.bottom ?? angle
+    const top = log.returnPeak ?? angle
+    pushAttempt(log, {
+      bottom: Math.round(bottom),
+      top: Math.round(top),
+      counted: false,
+      at,
+    })
+    log.origin = top
+    log.bottom = angle
+    log.returnPeak = null
+    log.returning = false
+    return { rounded, trackingLossChanged, attemptsChanged: true }
   }
-  return { rounded, trackingLossChanged, attemptsChanged }
+
+  return { rounded, trackingLossChanged, attemptsChanged: false }
 }

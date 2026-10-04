@@ -32,7 +32,6 @@ import {
   createAttemptLog,
   createRepCounterState,
   detectRepFrame,
-  getRejectAscentThreshold,
   isBodyVisible,
   noteSkippedJump,
   recordAngle,
@@ -134,13 +133,7 @@ export default function FitnessCounterPage() {
 
   const recordCalibAngle = (angle: number, counted: boolean) => {
     const log = logRef.current
-    const result = recordAngle(
-      log,
-      angle,
-      counted,
-      Date.now() - sessionStartTimeRef.current,
-      getRejectAscentThreshold(exerciseRef.current, thresholdsRef.current)
-    )
+    const result = recordAngle(log, angle, counted, Date.now() - sessionStartTimeRef.current)
     if (result.trackingLossChanged) setTrackingLoss(log.trackingLoss)
     setCalibData((prev) => [...prev, result.rounded])
     if (result.attemptsChanged) setCalibTick((t) => t + 1)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { MAX_ATTEMPTS, PRESETS, SITUP_PRESETS, WARNINGS } from "./constants"
+import { ATTEMPT_MIN_SWING_DEG, MAX_ATTEMPTS, PRESETS, SITUP_PRESETS, WARNINGS } from "./constants"
 import {
   LEFT_SIDE,
   RIGHT_SIDE,
@@ -8,7 +8,6 @@ import {
   createRepCounterState,
   detectRepFrame,
   getBestSide,
-  getRejectAscentThreshold,
   isBodyVisible,
   noteSkippedJump,
   recordAngle,
@@ -123,7 +122,7 @@ const run = (
     if (log) {
       if (o.skippedJump) noteSkippedJump(log)
       if (o.angle != null) {
-        recordAngle(log, o.angle, o.counted, f.at, getRejectAscentThreshold(exercise, THRESHOLDS.pushup))
+        recordAngle(log, o.angle, o.counted, f.at)
       }
     }
     outcomes.push(o)
@@ -220,7 +219,11 @@ describe("push-up counting (normal preset: down < 100°, up > 155°, cooldown 65
   it("rejects a sagging hip (shoulder-hip-knee ≤ 135°)", () => {
     const state = createRepCounterState()
     const o = detectRepFrame("pushup", state, pushupPose({ elbow: 90, hip: 120 }), THRESHOLDS, 0)
-    expect(o).toEqual({ warning: WARNINGS.bodyNotStraight, angle: null, counted: false, skippedJump: false })
+    expect(o.warning).toBe(WARNINGS.bodyNotStraight)
+    expect(o.counted).toBe(false)
+    expect(o.skippedJump).toBe(false)
+    expect(o.angle).toBeCloseTo(90)
+    expect(state.reps).toBe(0)
     expect(state.phase).toBeNull()
   })
 
@@ -272,13 +275,17 @@ describe("sit-up counting (normal preset: down > 140°, up < 75°, kneeMax 155°
 
   it("rejects straight legs (knee angle > kneeMax)", () => {
     const o = detectRepFrame("situp", createRepCounterState(), situpPose({ torso: 150, knee: 170 }), THRESHOLDS, 0)
-    expect(o).toEqual({ warning: WARNINGS.kneesStraight, angle: null, counted: false, skippedJump: false })
+    expect(o.warning).toBe(WARNINGS.kneesStraight)
+    expect(o.counted).toBe(false)
+    expect(o.skippedJump).toBe(false)
+    expect(o.angle).toBeCloseTo(150)
   })
 
   it("asks to come closer when shoulder width is below 0.02", () => {
     const o = detectRepFrame("situp", createRepCounterState(), situpPose({ torso: 150, shoulderWidth: 0.01 }), THRESHOLDS, 0)
     expect(o.warning).toBe(WARNINGS.comeCloser)
-    expect(o.angle).toBeNull()
+    expect(o.counted).toBe(false)
+    expect(o.angle).toBeCloseTo(150)
   })
 
   it("checks the knee gate before the distance gate", () => {
@@ -297,7 +304,10 @@ describe("sit-up counting (normal preset: down > 140°, up < 75°, kneeMax 155°
     const away = situpPose({ torso: 150, handsInPlace: false })
     for (let i = 1; i <= 8; i++) {
       const o = detectRepFrame("situp", state, away, THRESHOLDS, i)
-      expect(o).toEqual({ warning: "", angle: null, counted: false, skippedJump: false })
+      expect(o.warning).toBe("")
+      expect(o.counted).toBe(false)
+      expect(o.skippedJump).toBe(false)
+      expect(o.angle).toBeCloseTo(150)
     }
     expect(detectRepFrame("situp", state, away, THRESHOLDS, 9).warning).toBe(WARNINGS.handsPosition)
     expect(state.handFailFrames).toBe(9)
@@ -388,62 +398,77 @@ describe("jump filter (> 35° between accepted frames)", () => {
   })
 })
 
-describe("attempts log and rejected-attempt detection", () => {
-  const feed = (log: AttemptLog, angles: number[], threshold: number, start = 0, step = 100) =>
-    angles.map((a, i) => recordAngle(log, a, false, start + i * step, threshold))
+describe("attempts log", () => {
+  const feed = (log: AttemptLog, angles: number[], countedAt = -1, start = 0, step = 100) =>
+    angles.map((a, i) => recordAngle(log, a, i === countedAt, start + i * step))
 
-  it("uses elbowUp as the push-up rejection threshold and a fixed 150° for sit-ups", () => {
-    expect(getRejectAscentThreshold("pushup", PRESETS.normal)).toBe(155)
-    expect(getRejectAscentThreshold(null, PRESETS.strict)).toBe(160)
-    expect(getRejectAscentThreshold("situp", PRESETS.easy)).toBe(150)
+  it("logs one counted push-up with that rep's bottom and return top", () => {
+    const log = createAttemptLog()
+    feed(log, [170, 140, 80, 165], 3)
+    expect(log.attempts).toEqual([{ bottom: 80, top: 165, counted: true, at: 300 }])
   })
 
-  it("logs a rejected attempt when a dip reaches 25° below the threshold and recovers", () => {
+  it("logs one shallow attempt with the real top, and no counted row", () => {
     const log = createAttemptLog()
-    const results = feed(log, [170, 150, 130, 160], 155)
-    expect(log.attempts).toEqual([{ bottom: 130, top: null, counted: false, at: 300 }])
-    expect(results.map((r) => r.attemptsChanged)).toEqual([false, false, false, true])
-    expect(log.rejectArmed).toBe(false)
+    const results = feed(log, [170, 140, 100, 120, 100])
+    expect(log.attempts).toEqual([{ bottom: 100, top: 120, counted: false, at: 400 }])
+    expect(results.map((r) => r.attemptsChanged)).toEqual([false, false, false, false, true])
   })
 
-  it("does not log a shallow dip", () => {
+  it("ignores jitter smaller than the minimum swing", () => {
     const log = createAttemptLog()
-    feed(log, [170, 140, 160], 155)
+    const origin = 170
+    feed(log, [origin, origin - (ATTEMPT_MIN_SWING_DEG - 1), origin - 5, origin])
     expect(log.attempts).toEqual([])
   })
 
-  it("logs sit-up rejections against 150°", () => {
+  it("logs a form-failed full-range push-up as one rejected row and does not count it", () => {
     const log = createAttemptLog()
-    feed(log, [170, 140, 120, 160], 150)
-    expect(log.attempts).toEqual([{ bottom: 120, top: null, counted: false, at: 300 }])
+    const angles = [170, 140, 90, 120, 160, 170, 150]
+    const frames = angles.map((elbow, i) => ({
+      lm: pushupPose({ elbow, hip: 120 }),
+      at: i * 100,
+    }))
+    const { state } = run("pushup", frames, createRepCounterState(), log)
+    expect(state.reps).toBe(0)
+    expect(state.phase).toBeNull()
+    expect(log.attempts).toEqual([{ bottom: 90, top: 170, counted: false, at: 600 }])
   })
 
-  it("records a counted attempt with the min/max angle since the previous counted rep", () => {
+  it("logs a form-failed sit-up (straight knees) with the torso angles and does not count it", () => {
     const log = createAttemptLog()
-    feed(log, [170, 140, 110, 90, 120, 150], 155)
-    recordAngle(log, 170, true, 600, 155)
-    expect(log.attempts).toEqual([{ bottom: 90, top: 170, counted: true, at: 600 }])
-    expect(log.currentMin).toBe(999)
-    expect(log.currentMax).toBe(0)
+    const angles = [170, 140, 100, 70, 100, 70]
+    const frames = angles.map((torso, i) => ({
+      lm: situpPose({ torso, knee: 170 }),
+      at: i * 100,
+    }))
+    const { state } = run("situp", frames, createRepCounterState(), log)
+    expect(state.reps).toBe(0)
+    expect(log.attempts).toEqual([{ bottom: 70, top: 100, counted: false, at: 500 }])
   })
 
-  it("replaces a just-logged rejection with the counted attempt (bottom within 3°, within 1500 ms)", () => {
+  it("keeps mixed counted and rejected rows in time order, with one row per movement", () => {
+    const angles = [170, 140, 110, 90, 120, 150, 170, 145, 115, 100, 130, 100, 90, 120, 150, 170]
+    const frames = angles.map((elbow, i) => ({ lm: pushupPose({ elbow }), at: 1000 + i * 100 }))
     const log = createAttemptLog()
-    feed(log, [170, 150, 130, 160], 155)
-    recordAngle(log, 165, true, 1000, 155)
-    expect(log.attempts).toEqual([{ bottom: 130, top: 170, counted: true, at: 1000 }])
+    const { state } = run("pushup", frames, createRepCounterState(), log)
+    expect(state.reps).toBe(2)
+    expect(log.attempts).toEqual([
+      { bottom: 90, top: 170, counted: true, at: 1600 },
+      { bottom: 100, top: 130, counted: false, at: 2100 },
+      { bottom: 90, top: 170, counted: true, at: 2500 },
+    ])
   })
 
-  it("keeps both entries when the counted rep comes more than 1500 ms later", () => {
+  it("a counted sit-up is one row: نزول is the low torso angle, صعود is the high point it left", () => {
     const log = createAttemptLog()
-    feed(log, [170, 150, 130, 160], 155)
-    recordAngle(log, 165, true, 1801, 155)
-    expect(log.attempts.map((a) => a.counted)).toEqual([false, true])
+    run("situp", situpFrames([170, 150, 120, 95, 80, 70]), createRepCounterState(), log)
+    expect(log.attempts).toEqual([{ bottom: 70, top: 170, counted: true, at: 1500 }])
   })
 
   it("counts tracking loss when consecutive rounded angles differ by more than 30°", () => {
     const log = createAttemptLog()
-    const r = feed(log, [170, 139, 100], 155)
+    const r = feed(log, [170, 139, 100])
     expect(r.map((x) => x.trackingLossChanged)).toEqual([false, true, true])
     expect(log.trackingLoss).toBe(2)
   })
@@ -451,15 +476,16 @@ describe("attempts log and rejected-attempt detection", () => {
   it(`keeps only the last ${MAX_ATTEMPTS} attempts`, () => {
     const log = createAttemptLog()
     for (let i = 0; i < MAX_ATTEMPTS + 5; i++) {
-      recordAngle(log, 170, true, i * 2000, 155)
+      recordAngle(log, 170, true, i * 2000)
     }
     expect(log.attempts).toHaveLength(MAX_ATTEMPTS)
     expect(log.attempts[0].at).toBe(5 * 2000)
+    expect(log.attempts.every((a) => a.counted)).toBe(true)
   })
 
   it("resetAttemptLog clears attempts, trackers and diagnostics", () => {
     const log = createAttemptLog()
-    feed(log, [170, 150, 130, 160, 100], 155)
+    feed(log, [170, 140, 100, 120, 100])
     noteSkippedJump(log)
     const before = log.attempts
     resetAttemptLog(log)
@@ -467,14 +493,9 @@ describe("attempts log and rejected-attempt detection", () => {
     expect(log.attempts).not.toBe(before)
   })
 
-  it("end to end: a full push-up logs one counted attempt; a half rep logs one rejection", () => {
+  it("end to end: a full push-up logs one counted attempt", () => {
     const fullLog = createAttemptLog()
     run("pushup", pushupFrames(FULL_PUSHUP), createRepCounterState(), fullLog)
     expect(fullLog.attempts).toEqual([{ bottom: 90, top: 170, counted: true, at: 1600 }])
-
-    const halfLog = createAttemptLog()
-    const { state } = run("pushup", pushupFrames([170, 140, 120, 140, 170]), createRepCounterState(), halfLog)
-    expect(state.reps).toBe(0)
-    expect(halfLog.attempts).toEqual([{ bottom: 120, top: null, counted: false, at: 1400 }])
   })
 })
