@@ -1,6 +1,7 @@
 /**
- * Runs before dev and build (never in the browser).
- * - Copies tasks-vision wasm into public/mediapipe/wasm (git-ignored).
+ * Manual refresh after upgrading @mediapipe/tasks-vision.
+ * May run before dev. Never exits with an error, so a build does not depend on it.
+ * - Copies tasks-vision wasm into public/mediapipe/wasm when the package is installed.
  * - Downloads the Full pose model once if it is not already on disk.
  */
 import { cpSync, createWriteStream, existsSync, mkdirSync, statSync } from "node:fs"
@@ -16,25 +17,36 @@ const modelDest = join(root, "public", "models", "pose", "pose_landmarker_full.t
 const modelUrl =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
 
-if (!existsSync(wasmSrc)) {
-  console.error("setup-mediapipe: @mediapipe/tasks-vision is not installed")
-  process.exit(1)
+const warn = (message) => {
+  console.warn(message)
 }
 
-mkdirSync(wasmDest, { recursive: true })
-cpSync(wasmSrc, wasmDest, { recursive: true })
-console.log("setup-mediapipe: wasm copied to public/mediapipe/wasm")
+if (!existsSync(wasmSrc)) {
+  warn("setup-mediapipe: @mediapipe/tasks-vision wasm not found; keeping the committed copy")
+} else {
+  try {
+    mkdirSync(wasmDest, { recursive: true })
+    cpSync(wasmSrc, wasmDest, { recursive: true })
+    console.log("setup-mediapipe: wasm copied to public/mediapipe/wasm")
+  } catch (err) {
+    warn(`setup-mediapipe: wasm copy failed (${err instanceof Error ? err.message : err}); keeping the committed copy`)
+  }
+}
 
 if (existsSync(modelDest) && statSync(modelDest).size > 0) {
   console.log("setup-mediapipe: model already present")
 } else {
-  console.log("setup-mediapipe: downloading pose_landmarker_full.task")
-  mkdirSync(dirname(modelDest), { recursive: true })
-  const response = await fetch(modelUrl)
-  if (!response.ok || !response.body) {
-    console.error(`setup-mediapipe: model download failed (${response.status})`)
-    process.exit(1)
+  try {
+    console.log("setup-mediapipe: downloading pose_landmarker_full.task")
+    mkdirSync(dirname(modelDest), { recursive: true })
+    const response = await fetch(modelUrl)
+    if (!response.ok || !response.body) {
+      warn(`setup-mediapipe: model download failed (${response.status}); keeping the committed copy`)
+    } else {
+      await pipeline(Readable.fromWeb(response.body), createWriteStream(modelDest))
+      console.log(`setup-mediapipe: model saved (${statSync(modelDest).size} bytes)`)
+    }
+  } catch (err) {
+    warn(`setup-mediapipe: model download failed (${err instanceof Error ? err.message : err}); keeping the committed copy`)
   }
-  await pipeline(Readable.fromWeb(response.body), createWriteStream(modelDest))
-  console.log(`setup-mediapipe: model saved (${statSync(modelDest).size} bytes)`)
 }

@@ -5,7 +5,6 @@
   "scripts": {
     "predev": "node scripts/setup-mediapipe.mjs",
     "dev": "next dev --webpack",
-    "prebuild": "node scripts/setup-mediapipe.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
