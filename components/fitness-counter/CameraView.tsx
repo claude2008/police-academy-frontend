@@ -1,6 +1,8 @@
-import type { ReactNode, RefObject } from "react"
-import { Camera, SwitchCamera, Timer } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
+"use client"
+
+import { useEffect, useState, type ReactNode, type RefObject } from "react"
+import { createPortal } from "react-dom"
+import { Camera, SwitchCamera, Timer, X } from "lucide-react"
 import {
   LOW_FPS_WARN,
   TIMER_DANGER_SECONDS,
@@ -20,6 +22,8 @@ type Props = {
   onVideoReady: () => void
   onTapToPlay: () => void
   onFlipCamera: () => void
+  onClose: () => void
+  onViewReady: (ready: boolean) => void
   warning: string
   countdown: number
   timeLeft: number
@@ -32,7 +36,12 @@ type Props = {
   children?: ReactNode
 }
 
-/** Video box with the pose canvas and stage overlays; `children` renders below the video. */
+const sidePad = {
+  paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+  paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+}
+
+/** Full-screen camera for the camera stages. Select and result stay on the page. */
 export default function CameraView({
   stage,
   videoRef,
@@ -44,6 +53,8 @@ export default function CameraView({
   onVideoReady,
   onTapToPlay,
   onFlipCamera,
+  onClose,
+  onViewReady,
   warning,
   countdown,
   timeLeft,
@@ -55,141 +66,189 @@ export default function CameraView({
   onCancel,
   children,
 }: Props) {
+  const [mounted, setMounted] = useState(false)
   const mirrorStyle = { transform: facingMode === "user" ? "scaleX(-1)" : "scaleX(1)" }
+  const closeLabel = stage === "active" ? "إلغاء" : "رجوع"
 
-  return (
-    <Card className="rounded-3xl overflow-hidden shadow-md">
-      <CardContent className="p-0">
-        <div className="relative bg-slate-900 w-full aspect-video md:w-[640px] md:h-[480px] md:mx-auto rounded-2xl overflow-hidden">
-          <video
-            ref={videoRef}
-            className="w-full h-full object-contain rounded-2xl absolute inset-0 z-0"
-            playsInline
-            muted
-            autoPlay
-            onLoadedMetadata={onVideoReady}
-            onPlaying={onVideoReady}
-            style={mirrorStyle}
-          />
-          {(stage === "waiting" || stage === "countdown" || stage === "active") && (
-            <canvas
-              ref={canvasRef}
-              className="w-full h-full object-contain rounded-2xl absolute inset-0 z-10"
-              style={mirrorStyle}
-            />
-          )}
-          {stage === "prepare" && !videoReady && !cameraError && !needsTap && (
-            <div className="absolute inset-0 flex items-center justify-center text-white/80 gap-2 z-[5] pointer-events-none">
-              <Camera className="w-5 h-5 animate-pulse" /> جاري تشغيل الكاميرا...
-            </div>
-          )}
-          {needsTap && (
-            <button
-              type="button"
-              onClick={onTapToPlay}
-              className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
-            >
-              <span className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-lg rounded-full px-8 py-4 shadow-lg">
-                ▶️ اضغط لتشغيل الكاميرا
-              </span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={onFlipCamera}
-            className="absolute top-3 right-3 z-10 bg-black/70 hover:bg-black/90 text-white rounded-full p-2.5 shadow-lg"
-            title="تبديل الكاميرا"
-          >
-            <SwitchCamera className="w-5 h-5" />
-          </button>
-          {stage === "waiting" && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center pointer-events-none bg-black/35 px-4">
-              <p className="text-white text-xl md:text-2xl font-black text-center drop-shadow">
-                {WARNINGS.waitingForBody}
-              </p>
-              {warning && (
-                <p className="mt-3 text-amber-200 text-sm font-bold text-center bg-black/50 rounded-xl px-3 py-2">
-                  {warning}
-                </p>
-              )}
-            </div>
-          )}
-          {stage === "countdown" && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none bg-black/40">
-              <span className="text-white text-8xl md:text-9xl font-black drop-shadow-lg" dir="ltr">
-                {countdown}
-              </span>
-            </div>
-          )}
-          {stage === "active" && (
-            <>
-              <div className="absolute top-3 left-3 right-14 flex justify-between gap-2 pointer-events-none z-10">
-                <div
-                  className={`rounded-2xl px-4 py-2 flex items-center gap-2 font-black text-xl ${
-                    timeLeft <= TIMER_DANGER_SECONDS
-                      ? "bg-red-600/95 text-white"
-                      : timeLeft <= TIMER_WARN_SECONDS
-                        ? "bg-amber-500/95 text-white"
-                        : "bg-black/70 text-white"
-                  }`}
-                >
-                  <Timer
-                    className={`w-5 h-5 ${
-                      timeLeft <= TIMER_DANGER_SECONDS
-                        ? "text-white"
-                        : timeLeft <= TIMER_WARN_SECONDS
-                          ? "text-white"
-                          : "text-amber-400"
-                    }`}
-                  />
-                  {timeLeft}s
-                </div>
-                <div className="bg-emerald-600/90 text-white rounded-2xl px-4 py-2 font-black text-lg">
-                  {reps} تكرار
-                </div>
-              </div>
-              {strictnessLabel != null && (
-                <div className="absolute top-14 left-3 z-10 pointer-events-none">
-                  <span className="bg-black/70 text-white text-xs font-bold rounded-full px-3 py-1">
-                    {strictnessLabel}
-                  </span>
-                </div>
-              )}
-              <div className="absolute top-14 right-3 z-10 pointer-events-none">
-                <span
-                  className={`text-xs font-bold rounded-full px-3 py-1 ${
-                    fps > 0 && fps < LOW_FPS_WARN
-                      ? "bg-amber-500/90 text-white"
-                      : "bg-black/70 text-white"
-                  }`}
-                >
-                  <span className="block">معدل المعالجة: {fps} إطار/ثانية</span>
-                  {delegate && (
-                    <span className="block text-[10px] font-medium opacity-80">{delegate}</span>
-                  )}
-                </span>
-              </div>
-              <div className="absolute bottom-3 inset-x-3 z-10 mx-auto max-w-md flex gap-2">
-                <button
-                  type="button"
-                  onClick={onStop}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white font-black rounded-full h-12 flex items-center justify-center gap-2 shadow-lg"
-                >
-                  ⏹️ إيقاف
-                </button>
-                <button
-                  type="button"
-                  onClick={onCancel}
-                  className="flex-1 bg-red-700 hover:bg-red-800 text-white font-black rounded-full h-12 flex items-center justify-center gap-2 shadow-lg"
-                >
-                  إلغاء
-                </button>
-              </div>
-            </>
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+    onViewReady(true)
+    return () => onViewReady(false)
+  }, [mounted, onViewReady])
+
+  useEffect(() => {
+    if (!mounted) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose()
+    }
+    window.addEventListener("keydown", onKey)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener("keydown", onKey)
+    }
+  }, [mounted, onClose])
+
+  if (!mounted) return null
+
+  return createPortal(
+    <div dir="rtl" className="fixed inset-0 z-[250] overflow-hidden bg-black text-white">
+      <video
+        ref={videoRef}
+        className="absolute inset-0 z-0 h-full w-full object-contain"
+        playsInline
+        muted
+        autoPlay
+        onLoadedMetadata={onVideoReady}
+        onPlaying={onVideoReady}
+        style={mirrorStyle}
+      />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 z-10 h-full w-full object-contain"
+        style={mirrorStyle}
+      />
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-36 bg-gradient-to-b from-black/75 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-48 bg-gradient-to-t from-black/80 to-transparent" />
+
+      {stage === "prepare" && !videoReady && !cameraError && !needsTap && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-2 text-white/80">
+          <Camera className="h-5 w-5 animate-pulse" /> جاري تشغيل الكاميرا...
+        </div>
+      )}
+      {needsTap && (
+        <button
+          type="button"
+          onClick={onTapToPlay}
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/60"
+        >
+          <span className="rounded-full bg-emerald-600 px-8 py-4 text-lg font-black text-white shadow-lg">
+            ▶️ اضغط لتشغيل الكاميرا
+          </span>
+        </button>
+      )}
+
+      {stage === "waiting" && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/35 px-4">
+          <p className="text-center text-xl font-black text-white drop-shadow md:text-2xl">
+            {WARNINGS.waitingForBody}
+          </p>
+          {warning && (
+            <p className="mt-3 rounded-xl bg-black/50 px-3 py-2 text-center text-sm font-bold text-amber-200">
+              {warning}
+            </p>
           )}
         </div>
-        {children}
-      </CardContent>
-    </Card>
+      )}
+      {stage === "countdown" && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/40">
+          <span className="text-8xl font-black text-white drop-shadow-lg md:text-9xl" dir="ltr">
+            {countdown}
+          </span>
+        </div>
+      )}
+
+      <div
+        className="absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-2"
+        style={{ ...sidePad, paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          title={closeLabel}
+          aria-label={closeLabel}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/70 text-white shadow-lg"
+        >
+          <X className="h-5 w-5" />
+        </button>
+        {stage === "active" && (
+          <div className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-2 pt-0.5">
+            <div className="flex flex-col gap-2">
+              <div
+                className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-xl font-black ${
+                  timeLeft <= TIMER_DANGER_SECONDS
+                    ? "bg-red-600/95 text-white"
+                    : timeLeft <= TIMER_WARN_SECONDS
+                      ? "bg-amber-500/95 text-white"
+                      : "bg-black/70 text-white"
+                }`}
+              >
+                <Timer
+                  className={`h-5 w-5 ${
+                    timeLeft <= TIMER_DANGER_SECONDS || timeLeft <= TIMER_WARN_SECONDS
+                      ? "text-white"
+                      : "text-amber-400"
+                  }`}
+                />
+                {timeLeft}s
+              </div>
+              {strictnessLabel != null && (
+                <span className="w-fit rounded-full bg-black/70 px-3 py-1 text-xs font-bold text-white">
+                  {strictnessLabel}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <div className="rounded-2xl bg-emerald-600/90 px-4 py-2 text-lg font-black text-white">
+                {reps} تكرار
+              </div>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-bold ${
+                  fps > 0 && fps < LOW_FPS_WARN ? "bg-amber-500/90 text-white" : "bg-black/70 text-white"
+                }`}
+              >
+                <span className="block">معدل المعالجة: {fps} إطار/ثانية</span>
+                {delegate && <span className="block text-[10px] font-medium opacity-80">{delegate}</span>}
+              </span>
+            </div>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onFlipCamera}
+          title="تبديل الكاميرا"
+          aria-label="تبديل الكاميرا"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/70 text-white shadow-lg"
+        >
+          <SwitchCamera className="h-5 w-5" />
+        </button>
+      </div>
+
+      <div
+        className="absolute inset-x-0 bottom-0 z-30"
+        style={{ ...sidePad, paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        {stage === "active" && (
+          <div className="mx-auto mb-2 flex max-w-md gap-2">
+            <button
+              type="button"
+              onClick={onStop}
+              className="flex h-12 min-h-11 flex-1 items-center justify-center gap-2 rounded-full bg-red-600 font-black text-white shadow-lg"
+            >
+              ⏹️ إيقاف
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex h-12 min-h-11 flex-1 items-center justify-center gap-2 rounded-full bg-red-700 font-black text-white shadow-lg"
+            >
+              إلغاء
+            </button>
+          </div>
+        )}
+        {children && (
+          <div className="mx-auto max-h-[42dvh] max-w-lg overflow-y-auto overscroll-contain rounded-2xl [&_button]:min-h-11">
+            {children}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
   )
 }

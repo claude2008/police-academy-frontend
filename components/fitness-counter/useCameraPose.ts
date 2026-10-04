@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { AUTOPLAY_CHECK_MS, CAMERA_ERRORS, DEFAULT_FRAME, isCameraStage } from "@/lib/fitness-counter/constants"
-import { drawPoseFrame, type SkeletonDrawer } from "@/lib/fitness-counter/drawing"
+import { drawPoseFrame, type AngleGuide, type SkeletonDrawer } from "@/lib/fitness-counter/drawing"
 import { LandmarkSmoother } from "@/lib/fitness-counter/one-euro"
 import {
   cancelFrameLoop,
@@ -19,7 +19,11 @@ import type { FacingMode, PoseDelegate, PoseResults, Ref, Stage } from "@/lib/fi
  * Camera stream + one PoseLandmarker, created once and reused across flips and sessions.
  * `onResults` is read through a ref, so it always sees the latest render.
  */
-export function useCameraPose(stageRef: Ref<Stage>, onResults: (results: PoseResults) => void) {
+export function useCameraPose(
+  stageRef: Ref<Stage>,
+  onResults: (results: PoseResults) => void,
+  angleGuideRef: Ref<Omit<AngleGuide, "mirrored">>
+) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -68,9 +72,13 @@ export function useCameraPose(stageRef: Ref<Stage>, onResults: (results: PoseRes
         height: video.videoHeight || DEFAULT_FRAME.height,
       },
     }
-    drawPoseFrame(canvasRef.current, video, smoothed, drawSkeletonRef.current)
+    const guide = angleGuideRef.current
+    drawPoseFrame(canvasRef.current, video, smoothed, drawSkeletonRef.current, {
+      ...guide,
+      mirrored: facingModeRef.current === "user",
+    })
     onResultsRef.current(smoothed)
-  }, [])
+  }, [angleGuideRef])
 
   const runLoop = useCallback(() => {
     const video = videoRef.current

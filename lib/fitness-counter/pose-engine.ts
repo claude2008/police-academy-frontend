@@ -13,7 +13,7 @@ import {
   WASM_PATH,
 } from "./constants"
 import type { PoseLandmarker } from "@mediapipe/tasks-vision"
-import type { SkeletonDrawer } from "./drawing"
+import { overlayLineWidth, overlayPointRadius, type SkeletonDrawer } from "./drawing"
 import type { FacingMode, Landmark, PoseDelegate, PoseResults, Ref } from "./types"
 
 export type { SkeletonDrawer }
@@ -63,7 +63,7 @@ export const createPoseRuntime = async (): Promise<PoseRuntime> => {
   const { DrawingUtils, FilesetResolver, PoseLandmarker } = await import("@mediapipe/tasks-vision")
   const fileset = await FilesetResolver.forVisionTasks(WASM_PATH)
 
-  const drawSkeleton: SkeletonDrawer = (ctx, landmarks) => {
+  const drawSkeleton: SkeletonDrawer = (ctx, landmarks, scale) => {
     const utils = new DrawingUtils(ctx)
     const points = landmarks.map((l) => ({
       x: l.x,
@@ -71,8 +71,15 @@ export const createPoseRuntime = async (): Promise<PoseRuntime> => {
       z: l.z ?? 0,
       visibility: l.visibility ?? 0,
     }))
-    utils.drawConnectors(points, PoseLandmarker.POSE_CONNECTIONS, { ...SKELETON_STYLE })
-    utils.drawLandmarks(points, { ...LANDMARK_STYLE, radius: 1 })
+    utils.drawConnectors(points, PoseLandmarker.POSE_CONNECTIONS, {
+      color: SKELETON_STYLE.color,
+      lineWidth: overlayLineWidth(scale),
+    })
+    utils.drawLandmarks(points, {
+      color: LANDMARK_STYLE.color,
+      lineWidth: LANDMARK_STYLE.lineWidth * scale,
+      radius: overlayPointRadius(scale),
+    })
   }
 
   const create = async (delegate: PoseDelegate): Promise<PoseLandmarker> => {

@@ -12,6 +12,7 @@ import ResultScreen from "@/components/fitness-counter/ResultScreen"
 import SavedSessions from "@/components/fitness-counter/SavedSessions"
 import StrictnessPanel from "@/components/fitness-counter/StrictnessPanel"
 import { useCameraPose } from "@/components/fitness-counter/useCameraPose"
+import type { AngleGuide } from "@/lib/fitness-counter/drawing"
 import { ensureAudio, playBeep } from "@/lib/fitness-counter/audio"
 import {
   BEEPS,
@@ -69,6 +70,10 @@ export default function FitnessCounterPage() {
   const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS)
   const [bodyReady, setBodyReady] = useState(false)
   const [warning, setWarning] = useState("")
+  const [cameraViewReady, setCameraViewReady] = useState(false)
+  const onCameraViewReady = useCallback((ready: boolean) => {
+    setCameraViewReady(ready)
+  }, [])
   const [resultAttempts, setResultAttempts] = useState<Attempt[]>([])
   const [elapsedSec, setElapsedSec] = useState(0)
   const [sessionSaved, setSessionSaved] = useState(false)
@@ -99,6 +104,12 @@ export default function FitnessCounterPage() {
   const countdownValueRef = useRef(COUNTDOWN_SECONDS)
   const postureOkSinceRef = useRef<number | null>(null)
   const audioCtxRef = useRef<AudioContext | null>(null)
+  const angleGuideRef = useRef<Omit<AngleGuide, "mirrored">>({
+    exercise: null,
+    pushup: PRESETS.normal,
+    situp: SITUP_PRESETS.normal,
+  })
+  angleGuideRef.current = { exercise, pushup: thresholds, situp: situpThresholds }
 
   useEffect(() => { thresholdsRef.current = thresholds }, [thresholds])
   useEffect(() => {
@@ -213,7 +224,7 @@ export default function FitnessCounterPage() {
     ensureFrameLoop,
     playAfterTap,
     resetSmoothing,
-  } = useCameraPose(stageRef, handlePoseResults)
+  } = useCameraPose(stageRef, handlePoseResults, angleGuideRef)
 
   const clearAngleTracking = () => {
     resetAngleTracking(counterRef.current)
@@ -255,15 +266,16 @@ export default function FitnessCounterPage() {
   }, [stopStream])
 
   useEffect(() => {
-    if (stage === "prepare") {
-      startPrepareCamera()
-    } else if (stage === "waiting" && !streamRef.current) {
-      startPrepareCamera()
-    } else if (stage === "select" || stage === "result") {
+    if (stage === "select" || stage === "result") {
       clearCountdownTimer()
       stopStream()
+      return
     }
-  }, [stage, startPrepareCamera, stopStream, streamRef])
+    if (!cameraViewReady) return
+    if (stage === "prepare" || (stage === "waiting" && !streamRef.current)) {
+      startPrepareCamera()
+    }
+  }, [stage, cameraViewReady, startPrepareCamera, stopStream, streamRef])
 
   const finishSession = useCallback(() => {
     clearCountdownTimer()
@@ -547,6 +559,8 @@ export default function FitnessCounterPage() {
               delegate={delegate}
               onStop={finishSession}
               onCancel={cancelActiveSession}
+              onClose={stage === "active" ? cancelActiveSession : goHome}
+              onViewReady={onCameraViewReady}
             >
               {stage === "prepare" && (
                 <div className="p-6 space-y-4">
