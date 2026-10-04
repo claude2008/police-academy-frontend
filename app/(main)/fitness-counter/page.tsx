@@ -17,6 +17,7 @@ import {
   BEEPS,
   COPIED_FEEDBACK_MS,
   COUNTDOWN_SECONDS,
+  DEFAULT_FRAME,
   EXERCISE_LABELS,
   FINAL_BEEP_SECONDS,
   POSTURE_HOLD_MS,
@@ -34,6 +35,7 @@ import {
   isBodyVisible,
   noteSkippedJump,
   recordAngle,
+  resetAngleTracking,
   resetAttemptLog,
 } from "@/lib/fitness-counter/counting"
 import {
@@ -133,14 +135,15 @@ export default function FitnessCounterPage() {
     if (result.attemptsChanged) setCalibTick((t) => t + 1)
   }
 
-  const detectRep = (landmarks: Landmark[]) => {
+  const detectRep = (landmarks: Landmark[], frame = DEFAULT_FRAME) => {
     const counter = counterRef.current
     const outcome = detectRepFrame(
       exerciseRef.current,
       counter,
       landmarks,
       { pushup: thresholdsRef.current, situp: situpThresholdsRef.current },
-      Date.now()
+      Date.now(),
+      frame
     )
     setWarning(outcome.warning)
     if (outcome.skippedJump) {
@@ -177,7 +180,7 @@ export default function FitnessCounterPage() {
           abortCountdownToWaiting(WARNINGS.waitingForBody)
         }
       } else if (current === "active") {
-        detectRep(landmarks)
+        detectRep(landmarks, results.frame ?? DEFAULT_FRAME)
       }
     } else if (current === "prepare") {
       setBodyReady(false)
@@ -209,7 +212,13 @@ export default function FitnessCounterPage() {
     stopStream: stopCamera,
     ensureFrameLoop,
     playAfterTap,
+    resetSmoothing,
   } = useCameraPose(stageRef, handlePoseResults)
+
+  const clearAngleTracking = () => {
+    resetAngleTracking(counterRef.current)
+    resetSmoothing()
+  }
 
   const clearTestTimer = () => {
     if (timerRef.current) {
@@ -264,7 +273,7 @@ export default function FitnessCounterPage() {
     setResultAttempts([...logRef.current.attempts])
     setSessionSaved(false)
     counterRef.current.handFailFrames = 0
-    counterRef.current.lastValidAngle = null
+    clearAngleTracking()
     stopStream()
     updateStage("result")
   }, [stopStream])
@@ -276,7 +285,7 @@ export default function FitnessCounterPage() {
     counter.phase = null
     counter.lastRepTime = 0
     counter.handFailFrames = 0
-    counter.lastValidAngle = null
+    clearAngleTracking()
     logRef.current.skippedJumps = 0
     setSkippedJumps(0)
     resetCalibSession()
@@ -356,7 +365,7 @@ export default function FitnessCounterPage() {
     clearCountdownTimer()
     clearTestTimer()
     counterRef.current.handFailFrames = 0
-    counterRef.current.lastValidAngle = null
+    clearAngleTracking()
     resetCalibSession()
     setCalibOn(false)
     setReps(0)
@@ -378,7 +387,7 @@ export default function FitnessCounterPage() {
   const goHome = () => {
     clearCountdownTimer()
     counterRef.current.handFailFrames = 0
-    counterRef.current.lastValidAngle = null
+    clearAngleTracking()
     resetCalibSession()
     setCalibOn(false)
     stopStream()
@@ -399,7 +408,7 @@ export default function FitnessCounterPage() {
     const counter = counterRef.current
     clearCountdownTimer()
     counter.handFailFrames = 0
-    counter.lastValidAngle = null
+    clearAngleTracking()
     resetCalibSession()
     setCalibOn(false)
     setReps(0)

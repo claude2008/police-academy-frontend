@@ -1,8 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { AUTOPLAY_CHECK_MS, CAMERA_ERRORS, isCameraStage } from "@/lib/fitness-counter/constants"
+import { AUTOPLAY_CHECK_MS, CAMERA_ERRORS, DEFAULT_FRAME, isCameraStage } from "@/lib/fitness-counter/constants"
 import { drawPoseFrame, type SkeletonDrawer } from "@/lib/fitness-counter/drawing"
+import { LandmarkSmoother } from "@/lib/fitness-counter/one-euro"
 import {
   cancelFrameLoop,
   closeLandmarker,
@@ -27,6 +28,7 @@ export function useCameraPose(stageRef: Ref<Stage>, onResults: (results: PoseRes
   const creatingRef = useRef<Promise<void> | null>(null)
   const poseLoopRef = useRef<number | null>(null)
   const fpsTickRef = useRef({ count: 0, lastTs: Date.now() })
+  const smootherRef = useRef(new LandmarkSmoother())
   const onResultsRef = useRef(onResults)
   onResultsRef.current = onResults
   const mountedRef = useRef(true)
@@ -55,8 +57,19 @@ export function useCameraPose(stageRef: Ref<Stage>, onResults: (results: PoseRes
       tick.count = 0
       tick.lastTs = nowTs
     }
-    drawPoseFrame(canvasRef.current, video, results, drawSkeletonRef.current)
-    onResultsRef.current(results)
+    const poseLandmarks = results.poseLandmarks
+      ? smootherRef.current.smooth(results.poseLandmarks, performance.now())
+      : undefined
+    const smoothed = {
+      ...results,
+      poseLandmarks,
+      frame: {
+        width: video.videoWidth || DEFAULT_FRAME.width,
+        height: video.videoHeight || DEFAULT_FRAME.height,
+      },
+    }
+    drawPoseFrame(canvasRef.current, video, smoothed, drawSkeletonRef.current)
+    onResultsRef.current(smoothed)
   }, [])
 
   const runLoop = useCallback(() => {
@@ -167,6 +180,7 @@ export function useCameraPose(stageRef: Ref<Stage>, onResults: (results: PoseRes
     const next: FacingMode = facingModeRef.current === "user" ? "environment" : "user"
     setFacingMode(next)
     facingModeRef.current = next
+    smootherRef.current.reset()
     setCameraError(null)
     setPreviewReady(false)
     setVideoReady(false)
@@ -218,5 +232,6 @@ export function useCameraPose(stageRef: Ref<Stage>, onResults: (results: PoseRes
     stopStream,
     ensureFrameLoop,
     playAfterTap,
+    resetSmoothing: () => smootherRef.current.reset(),
   }
 }

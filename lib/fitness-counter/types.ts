@@ -38,6 +38,7 @@ export type Landmark = Point & { z?: number; visibility?: number }
 export type PoseResults = {
   image: CanvasImageSource
   poseLandmarks?: Landmark[]
+  frame?: { width: number; height: number }
 }
 
 export type Ref<T> = { current: T }

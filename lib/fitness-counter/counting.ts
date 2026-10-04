@@ -4,6 +4,8 @@ import {
   HAND_FAIL_WARN_FRAMES,
   INITIAL_MIN_ANGLE,
   JUMP_FILTER_DEG,
+  JUMP_FILTER_MAX_FRAMES,
+  JUMP_FILTER_RECOVER_MS,
   MAX_ATTEMPTS,
   MERGE_BOTTOM_TOLERANCE_DEG,
   MERGE_WINDOW_MS,
@@ -61,6 +63,17 @@ export const distanceBetween = (a: Point, b: Point): number => {
   return Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2))
 }
 
+/** Image size in pixels. A 1×1 frame leaves normalized coordinates unchanged. */
+export type FrameSize = { width: number; height: number }
+
+export const UNIT_FRAME: FrameSize = { width: 1, height: 1 }
+
+/** Normalized MediaPipe coordinates → pixels, so angles do not depend on the frame aspect ratio. */
+export const toPixelLandmarks = (landmarks: Landmark[], frame: FrameSize): Landmark[] =>
+  landmarks.map((landmark) =>
+    landmark ? { ...landmark, x: landmark.x * frame.width, y: landmark.y * frame.height } : landmark
+  )
+
 // ---------- Side selection and visibility ----------
 
 export const getBestSide = (landmarks: Landmark[]): SideIndices => {
@@ -96,6 +109,10 @@ export type RepCounterState = {
   lastRepTime: number
   lastValidAngle: number | null
   handFailFrames: number
+  /** Consecutive frames whose angle was past the jump limit. */
+  jumpRun: number
+  /** Timestamp of the first frame in the current jump run. */
+  jumpSince: number | null
 }
 
 export const createRepCounterState = (): RepCounterState => ({
@@ -104,7 +121,15 @@ export const createRepCounterState = (): RepCounterState => ({
   lastRepTime: 0,
   lastValidAngle: null,
   handFailFrames: 0,
+  jumpRun: 0,
+  jumpSince: null,
 })
+
+export const resetAngleTracking = (state: RepCounterState) => {
+  state.lastValidAngle = null
+  state.jumpRun = 0
+  state.jumpSince = null
+}
 
 /**
  * Result of one active-stage frame.
@@ -122,9 +147,28 @@ const gated = (warning: string): FrameOutcome => ({ warning, angle: null, counte
 
 const SKIPPED_JUMP: FrameOutcome = { warning: "", angle: null, counted: false, skippedJump: true }
 
-/** True when the angle jumped too far from the last accepted one; the frame must be skipped. */
-const isImpossibleJump = (state: RepCounterState, angle: number) =>
-  state.lastValidAngle !== null && Math.abs(angle - state.lastValidAngle) > JUMP_FILTER_DEG
+/**
+ * Returns a skip outcome when the angle jumped more than JUMP_FILTER_DEG.
+ * A jump that lasts more than JUMP_FILTER_MAX_FRAMES frames, or longer than
+ * JUMP_FILTER_RECOVER_MS, is accepted and becomes the new baseline.
+ */
+const rejectJump = (state: RepCounterState, angle: number, now: number): FrameOutcome | null => {
+  const baseline = state.lastValidAngle
+  if (baseline === null || Math.abs(angle - baseline) <= JUMP_FILTER_DEG) {
+    state.jumpRun = 0
+    state.jumpSince = null
+    return null
+  }
+  if (state.jumpSince == null) state.jumpSince = now
+  state.jumpRun += 1
+  const elapsed = now - state.jumpSince
+  if (state.jumpRun > JUMP_FILTER_MAX_FRAMES || elapsed > JUMP_FILTER_RECOVER_MS) {
+    state.jumpRun = 0
+    state.jumpSince = null
+    return null
+  }
+  return SKIPPED_JUMP
+}
 
 const tryCountRep = (state: RepCounterState, now: number, cooldownMs: number): boolean => {
   if (now - state.lastRepTime < cooldownMs) return false
@@ -138,13 +182,15 @@ export const detectPushupFrame = (
   state: RepCounterState,
   landmarks: Landmark[],
   t: PushupThresholds,
-  now: number
+  now: number,
+  frame: FrameSize = UNIT_FRAME
 ): FrameOutcome => {
-  if (!isBodyStraight(landmarks, t)) return gated(WARNINGS.bodyNotStraight)
+  const pixels = toPixelLandmarks(landmarks, frame)
+  if (!isBodyStraight(pixels, t)) return gated(WARNINGS.bodyNotStraight)
 
-  const s = getBestSide(landmarks)
-  const angle = calculateAngle(landmarks[s.shoulder], landmarks[s.elbow], landmarks[s.wrist])
-  if (isImpossibleJump(state, angle)) return SKIPPED_JUMP
+  const s = getBestSide(pixels)
+  const angle = calculateAngle(pixels[s.shoulder], pixels[s.elbow], pixels[s.wrist])
+  if (rejectJump(state, angle, now)) return SKIPPED_JUMP
   state.lastValidAngle = angle
 
   let counted = false
@@ -160,21 +206,24 @@ export const detectSitupFrame = (
   state: RepCounterState,
   landmarks: Landmark[],
   t: SitupThresholds,
-  now: number
+  now: number,
+  frame: FrameSize = UNIT_FRAME
 ): FrameOutcome => {
-  const s = getBestSide(landmarks)
+  const pixels = toPixelLandmarks(landmarks, frame)
+  const s = getBestSide(pixels)
 
-  const kneeAngle = calculateAngle(landmarks[s.hip], landmarks[s.knee], landmarks[s.ankle])
+  const kneeAngle = calculateAngle(pixels[s.hip], pixels[s.knee], pixels[s.ankle])
   if (kneeAngle > t.kneeMax) return gated(WARNINGS.kneesStraight)
 
-  const lShoulder = landmarks[LM.leftShoulder]
-  const rShoulder = landmarks[LM.rightShoulder]
+  const lShoulder = pixels[LM.leftShoulder]
+  const rShoulder = pixels[LM.rightShoulder]
   const shoulderWidth = distanceBetween(lShoulder, rShoulder)
-  if (shoulderWidth < MIN_SHOULDER_WIDTH) return gated(WARNINGS.comeCloser)
+  // 0.02 meant 2% of the frame; compare against the frame width in pixels.
+  if (shoulderWidth < MIN_SHOULDER_WIDTH * frame.width) return gated(WARNINGS.comeCloser)
 
   const midShoulder = { x: (lShoulder.x + rShoulder.x) / 2, y: (lShoulder.y + rShoulder.y) / 2 }
-  const lHip = landmarks[LM.leftHip]
-  const rHip = landmarks[LM.rightHip]
+  const lHip = pixels[LM.leftHip]
+  const rHip = pixels[LM.rightHip]
   const midHip = { x: (lHip.x + rHip.x) / 2, y: (lHip.y + rHip.y) / 2 }
   const chestCenter = {
     x: midShoulder.x + (midHip.x - midShoulder.x) * CHEST_CENTER_RATIO,
@@ -182,9 +231,9 @@ export const detectSitupFrame = (
   }
 
   const maxHandDist = shoulderWidth * t.handRatio
-  const anchorPoints = [landmarks[LM.leftEar], landmarks[LM.rightEar], lShoulder, rShoulder, chestCenter]
+  const anchorPoints = [pixels[LM.leftEar], pixels[LM.rightEar], lShoulder, rShoulder, chestCenter]
   const handsInPosition = [LM.leftWrist, LM.rightWrist].every((w) =>
-    anchorPoints.some((an) => distanceBetween(landmarks[w], an) < maxHandDist)
+    anchorPoints.some((an) => distanceBetween(pixels[w], an) < maxHandDist)
   )
   if (!handsInPosition) {
     state.handFailFrames += 1
@@ -192,10 +241,13 @@ export const detectSitupFrame = (
   }
   state.handFailFrames = 0
 
-  const hip = landmarks[s.hip]
-  const groundRef = { x: hip.x, y: hip.y + GROUND_REF_OFFSET }
-  const angle = calculateAngle(landmarks[s.shoulder], hip, groundRef)
-  if (isImpossibleJump(state, angle)) return SKIPPED_JUMP
+  const hip = pixels[s.hip]
+  const shoulder = pixels[s.shoulder]
+  const torsoLength = distanceBetween(shoulder, hip)
+  const drop = Math.max(torsoLength, frame.height * GROUND_REF_OFFSET)
+  const groundRef = { x: hip.x, y: hip.y + drop }
+  const angle = calculateAngle(shoulder, hip, groundRef)
+  if (rejectJump(state, angle, now)) return SKIPPED_JUMP
   state.lastValidAngle = angle
 
   let counted = false
@@ -212,12 +264,13 @@ export const detectRepFrame = (
   state: RepCounterState,
   landmarks: Landmark[],
   thresholds: { pushup: PushupThresholds; situp: SitupThresholds },
-  now: number
+  now: number,
+  frame: FrameSize = UNIT_FRAME
 ): FrameOutcome => {
   if (!exercise || !isBodyVisible(landmarks)) return gated(WARNINGS.bodyNotVisible)
   return exercise === "pushup"
-    ? detectPushupFrame(state, landmarks, thresholds.pushup, now)
-    : detectSitupFrame(state, landmarks, thresholds.situp, now)
+    ? detectPushupFrame(state, landmarks, thresholds.pushup, now, frame)
+    : detectSitupFrame(state, landmarks, thresholds.situp, now, frame)
 }
 
 // ---------- Attempts log (counted + rejected attempts, diagnostics) ----------

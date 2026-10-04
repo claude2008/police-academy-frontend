@@ -38,6 +38,19 @@ export const SITUP_PRESETS: Record<PresetStrictness, SitupThresholds> = {
 
 export const VISIBILITY_MIN = 0.5
 export const JUMP_FILTER_DEG = 35
+/** A jump that lasts longer than this many frames, or longer than JUMP_FILTER_RECOVER_MS, becomes the new baseline. */
+export const JUMP_FILTER_MAX_FRAMES = 3
+export const JUMP_FILTER_RECOVER_MS = 150
+
+/**
+ * One Euro Filter for landmark x/y in normalized (0–1) coordinates, at 15–30 FPS.
+ * minCutoff: smoothing while still (Hz). beta: how fast the cutoff rises with speed.
+ * dCutoff: smoothing of the speed estimate (Hz).
+ */
+export const ONE_EURO_MIN_CUTOFF = 1
+export const ONE_EURO_BETA = 0.5
+export const ONE_EURO_D_CUTOFF = 1
+export const ONE_EURO_INITIAL_FREQ = 30
 export const TRACKING_LOSS_DEG = 30
 export const SITUP_REJECT_ASCENT_DEG = 150
 export const REJECT_MIN_DEPTH_DEG = 25

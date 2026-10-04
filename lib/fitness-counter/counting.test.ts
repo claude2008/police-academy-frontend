@@ -315,6 +315,38 @@ describe("sit-up counting (normal preset: down > 140°, up < 75°, kneeMax 155°
   })
 })
 
+describe("pixel angles", () => {
+  it("measures the elbow angle in pixels, so a wide frame does not skew it", () => {
+    const frame = { width: 640, height: 480 }
+    const side = RIGHT_SIDE
+    const shoulder = { x: 200, y: 200 }
+    const hip = { x: 400, y: 200 }
+    const knee = { x: 520, y: 200 }
+    const ankle = { x: 620, y: 200 }
+    const elbow = { x: 260, y: 320 }
+    const wrist = place(elbow, shoulder, 90, 70)
+    const norm = (p: Point): Landmark => ({
+      x: p.x / frame.width,
+      y: p.y / frame.height,
+      visibility: 0.9,
+    })
+    const lm = blankPose()
+    lm[side.shoulder] = norm(shoulder)
+    lm[side.hip] = norm(hip)
+    lm[side.knee] = norm(knee)
+    lm[side.ankle] = norm(ankle)
+    lm[side.elbow] = norm(elbow)
+    lm[side.wrist] = norm(wrist)
+
+    const normalizedAngle = calculateAngle(norm(shoulder), norm(elbow), norm(wrist))
+    expect(Math.abs(normalizedAngle - 90)).toBeGreaterThan(1)
+
+    const outcome = detectRepFrame("pushup", createRepCounterState(), lm, THRESHOLDS, 0, frame)
+    expect(outcome.warning).toBe("")
+    expect(outcome.angle).toBeCloseTo(90, 0)
+  })
+})
+
 describe("jump filter (> 35° between accepted frames)", () => {
   it("skips a frame that jumps more than 35° and keeps the last accepted angle", () => {
     const state = createRepCounterState()
@@ -330,11 +362,18 @@ describe("jump filter (> 35° between accepted frames)", () => {
     expect(detectRepFrame("pushup", state, pushupPose({ elbow: 136 }), THRESHOLDS, 100).angle).toBeCloseTo(136)
   })
 
-  it("keeps skipping while the angle stays far from the stale reference (lock-out)", () => {
+  it("keeps skipping a short jump, then accepts the new angle once it has lasted more than 150 ms", () => {
     const { state, outcomes } = run("pushup", pushupFrames([170, 100, 100, 100, 100]))
-    expect(outcomes.slice(1).every((o) => o.skippedJump)).toBe(true)
-    expect(state.lastValidAngle).toBeCloseTo(170)
-    expect(state.phase).toBeNull()
+    expect(outcomes.map((o) => o.skippedJump)).toEqual([false, true, true, false, false])
+    expect(state.lastValidAngle).toBeCloseTo(100)
+  })
+
+  it("accepts a new baseline after more than 3 consecutive jump frames", () => {
+    const { state, outcomes } = run("pushup", pushupFrames([170, 90, 90, 90, 90], 0, 10))
+    expect(outcomes.map((o) => o.skippedJump)).toEqual([false, true, true, true, false])
+    expect(state.lastValidAngle).toBeCloseTo(90)
+    expect(state.phase).toBe("down")
+    expect(state.jumpRun).toBe(0)
   })
 
   it("applies to sit-ups too", () => {
