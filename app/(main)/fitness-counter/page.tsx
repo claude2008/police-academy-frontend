@@ -1,8 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
-import { ArrowRight, Play } from "lucide-react"
+import { ArrowRight, Play, X } from "lucide-react"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import { Button } from "@/components/ui/button"
 import CalibrationPanel from "@/components/fitness-counter/CalibrationPanel"
@@ -81,6 +82,7 @@ export default function FitnessCounterPage() {
   const [exportCopied, setExportCopied] = useState(false)
 
   const [strictness, setStrictness] = useState<Strictness>("normal")
+  const [strictnessOpen, setStrictnessOpen] = useState(false)
   const [thresholds, setThresholds] = useState(PRESETS.normal)
   const thresholdsRef = useRef(PRESETS.normal)
   const [situpStrictness, setSitupStrictness] = useState<Strictness>("normal")
@@ -114,6 +116,20 @@ export default function FitnessCounterPage() {
   useEffect(() => {
     if (strictness !== "custom") setThresholds(PRESETS[strictness])
   }, [strictness])
+  useEffect(() => {
+    if (stage !== "prepare") setStrictnessOpen(false)
+  }, [stage])
+  useEffect(() => {
+    if (!strictnessOpen) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setStrictnessOpen(false)
+    }
+    window.addEventListener("keydown", onKey, true)
+    return () => window.removeEventListener("keydown", onKey, true)
+  }, [strictnessOpen])
   useEffect(() => { situpThresholdsRef.current = situpThresholds }, [situpThresholds])
   useEffect(() => {
     if (situpStrictness !== "custom") setSitupThresholds(SITUP_PRESETS[situpStrictness])
@@ -593,17 +609,57 @@ export default function FitnessCounterPage() {
                       رجوع
                     </Button>
                   </div>
-                  <StrictnessPanel
-                    exercise={exercise}
-                    strictness={strictness}
-                    onStrictnessChange={setStrictness}
-                    thresholds={thresholds}
-                    onThresholdsChange={setThresholds}
-                    situpStrictness={situpStrictness}
-                    onSitupStrictnessChange={setSitupStrictness}
-                    situpThresholds={situpThresholds}
-                    onSitupThresholdsChange={setSitupThresholds}
-                  />
+                  <button
+                    type="button"
+                    onClick={() => setStrictnessOpen(true)}
+                    className="mx-auto flex min-h-11 min-w-11 items-center gap-2 rounded-full bg-black/70 px-4 text-sm font-bold text-white"
+                  >
+                    <span aria-hidden>⚙️</span>
+                    <span>{strictnessLabel}</span>
+                  </button>
+                  {strictnessOpen &&
+                    createPortal(
+                      <div className="fixed inset-0 z-[400]" dir="rtl">
+                        <button
+                          type="button"
+                          aria-label="إغلاق"
+                          className="absolute inset-0 bg-black/60"
+                          onClick={() => setStrictnessOpen(false)}
+                        />
+                        <div
+                          className="absolute inset-x-0 bottom-0 max-h-[75vh] overflow-y-auto overscroll-contain rounded-t-3xl bg-slate-50 shadow-2xl"
+                          style={{
+                            paddingTop: "0.5rem",
+                            paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+                            paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+                            paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+                          }}
+                        >
+                          <div className="sticky top-0 z-10 flex justify-end pb-2">
+                            <button
+                              type="button"
+                              aria-label="إغلاق"
+                              onClick={() => setStrictnessOpen(false)}
+                              className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-200 text-slate-900"
+                            >
+                              <X className="h-5 w-5" />
+                            </button>
+                          </div>
+                          <StrictnessPanel
+                            exercise={exercise}
+                            strictness={strictness}
+                            onStrictnessChange={setStrictness}
+                            thresholds={thresholds}
+                            onThresholdsChange={setThresholds}
+                            situpStrictness={situpStrictness}
+                            onSitupStrictnessChange={setSitupStrictness}
+                            situpThresholds={situpThresholds}
+                            onSitupThresholdsChange={setSitupThresholds}
+                          />
+                        </div>
+                      </div>,
+                      document.body
+                    )}
                 </div>
               )}
               {(stage === "waiting" || stage === "countdown") && (
