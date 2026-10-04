@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { NextConfig } from "next";
 import withPWAInit from "@ducanh2912/next-pwa";
 
@@ -44,14 +46,35 @@ const obfuscatorOptions = {
 const withNextJsObfuscator = require('nextjs-obfuscator')(obfuscatorConfig, obfuscatorOptions);
 
 // 3. إعدادات الـ PWA
+const mediapipeVersion = (
+  JSON.parse(
+    readFileSync(join(process.cwd(), "node_modules/@mediapipe/tasks-vision/package.json"), "utf8")
+  ) as { version: string }
+).version
 const withPWA = withPWAInit({
   dest: "public",
   disable: process.env.NODE_ENV === "development",
-  // public/ is precached wholesale (additionalManifestEntries), which is where
-  // the pose model and wasm live. The size cap also covers those entries if a
-  // file's size is known; the wasm binaries are ~12 MB each.
+  extendDefaultRuntimeCaching: true,
+  // Keep the plugin default, and leave the pose model and wasm out of the install precache.
+  publicExcludes: [
+    "!noprecache/**/*",
+    "!mediapipe/wasm/*",
+    "!models/pose/*",
+  ],
   workboxOptions: {
     maximumFileSizeToCacheInBytes: 20 * 1024 * 1024,
+    runtimeCaching: [
+      {
+        urlPattern: /\/(?:mediapipe\/wasm|models\/pose)\//,
+        handler: "CacheFirst",
+        options: {
+          cacheName: `mediapipe-assets-${mediapipeVersion}`,
+          cacheableResponse: {
+            statuses: [0, 200],
+          },
+        },
+      },
+    ],
   },
 });
 
