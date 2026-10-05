@@ -36,11 +36,6 @@ type Props = {
   children?: ReactNode
 }
 
-const sidePad = {
-  paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
-  paddingRight: "max(0.75rem, env(safe-area-inset-right))",
-}
-
 /** Full-screen camera for the camera stages. Select and result stay on the page. */
 export default function CameraView({
   stage,
@@ -76,6 +71,14 @@ export default function CameraView({
 
   useEffect(() => {
     if (!mounted) return
+    document.body.dataset.hideBottomNav = "true"
+    return () => {
+      delete document.body.dataset.hideBottomNav
+    }
+  }, [mounted])
+
+  useEffect(() => {
+    if (!mounted) return
     onViewReady(true)
     return () => onViewReady(false)
   }, [mounted, onViewReady])
@@ -97,7 +100,80 @@ export default function CameraView({
   if (!mounted) return null
 
   return createPortal(
-    <div dir="rtl" className="fixed inset-0 z-[250] overflow-hidden bg-black text-white">
+    <div
+      dir="rtl"
+      className="fixed inset-0 z-[1100] flex flex-col overflow-hidden bg-black text-white"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
+      }}
+    >
+      <header className="flex shrink-0 flex-col gap-2 px-3 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            title={closeLabel}
+            aria-label={closeLabel}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/70 text-white shadow-lg"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {strictnessLabel != null && (
+            <span className="rounded-full bg-black/70 px-3 py-1 text-xs font-bold text-white">
+              {strictnessLabel}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onFlipCamera}
+            title="تبديل الكاميرا"
+            aria-label="تبديل الكاميرا"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/70 text-white shadow-lg"
+          >
+            <SwitchCamera className="h-5 w-5" />
+          </button>
+        </div>
+        {stage === "active" && (
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div
+              className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-xl font-black ${
+                timeLeft <= TIMER_DANGER_SECONDS
+                  ? "bg-red-600/95 text-white"
+                  : timeLeft <= TIMER_WARN_SECONDS
+                    ? "bg-amber-500/95 text-white"
+                    : "bg-black/70 text-white"
+              }`}
+            >
+              <Timer
+                className={`h-5 w-5 ${
+                  timeLeft <= TIMER_DANGER_SECONDS || timeLeft <= TIMER_WARN_SECONDS
+                    ? "text-white"
+                    : "text-amber-400"
+                }`}
+              />
+              {timeLeft}s
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <div className="rounded-2xl bg-emerald-600/90 px-4 py-2 text-lg font-black text-white">
+                {reps} تكرار
+              </div>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-bold ${
+                  fps > 0 && fps < LOW_FPS_WARN ? "bg-amber-500/90 text-white" : "bg-black/70 text-white"
+                }`}
+              >
+                <span className="block">معدل المعالجة: {fps} إطار/ثانية</span>
+                {delegate && <span className="block text-[10px] font-medium opacity-80">{delegate}</span>}
+              </span>
+            </div>
+          </div>
+        )}
+      </header>
+
+      <div className="relative min-h-0 flex-1">
       <video
         ref={videoRef}
         className="absolute inset-0 z-0 h-full w-full object-contain"
@@ -113,9 +189,6 @@ export default function CameraView({
         className="absolute inset-0 z-10 h-full w-full object-contain"
         style={mirrorStyle}
       />
-
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 h-36 bg-gradient-to-b from-black/75 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-48 bg-gradient-to-t from-black/80 to-transparent" />
 
       {stage === "prepare" && !videoReady && !cameraError && !needsTap && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-2 text-white/80">
@@ -153,77 +226,9 @@ export default function CameraView({
           </span>
         </div>
       )}
-
-      <div
-        className="absolute inset-x-0 top-0 z-30 flex items-start justify-between gap-2"
-        style={{ ...sidePad, paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          title={closeLabel}
-          aria-label={closeLabel}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/70 text-white shadow-lg"
-        >
-          <X className="h-5 w-5" />
-        </button>
-        {stage === "active" && (
-          <div className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-2 pt-0.5">
-            <div className="flex flex-col gap-2">
-              <div
-                className={`flex items-center gap-2 rounded-2xl px-4 py-2 text-xl font-black ${
-                  timeLeft <= TIMER_DANGER_SECONDS
-                    ? "bg-red-600/95 text-white"
-                    : timeLeft <= TIMER_WARN_SECONDS
-                      ? "bg-amber-500/95 text-white"
-                      : "bg-black/70 text-white"
-                }`}
-              >
-                <Timer
-                  className={`h-5 w-5 ${
-                    timeLeft <= TIMER_DANGER_SECONDS || timeLeft <= TIMER_WARN_SECONDS
-                      ? "text-white"
-                      : "text-amber-400"
-                  }`}
-                />
-                {timeLeft}s
-              </div>
-              {strictnessLabel != null && (
-                <span className="w-fit rounded-full bg-black/70 px-3 py-1 text-xs font-bold text-white">
-                  {strictnessLabel}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <div className="rounded-2xl bg-emerald-600/90 px-4 py-2 text-lg font-black text-white">
-                {reps} تكرار
-              </div>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-bold ${
-                  fps > 0 && fps < LOW_FPS_WARN ? "bg-amber-500/90 text-white" : "bg-black/70 text-white"
-                }`}
-              >
-                <span className="block">معدل المعالجة: {fps} إطار/ثانية</span>
-                {delegate && <span className="block text-[10px] font-medium opacity-80">{delegate}</span>}
-              </span>
-            </div>
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={onFlipCamera}
-          title="تبديل الكاميرا"
-          aria-label="تبديل الكاميرا"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-black/70 text-white shadow-lg"
-        >
-          <SwitchCamera className="h-5 w-5" />
-        </button>
       </div>
 
-      <div
-        className="absolute inset-x-0 bottom-0 z-30"
-        style={{ ...sidePad, paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
-      >
+      <div className="shrink-0 px-3 py-3">
         {stage === "active" && (
           <div className="mx-auto mb-2 flex max-w-md gap-2">
             <button

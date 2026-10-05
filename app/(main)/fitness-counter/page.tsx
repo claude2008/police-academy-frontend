@@ -1,9 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { createPortal } from "react-dom"
 import { useRouter } from "next/navigation"
-import { ArrowRight, Play, X } from "lucide-react"
+import { ArrowRight, Play } from "lucide-react"
 import ProtectedRoute from "@/components/ProtectedRoute"
 import { Button } from "@/components/ui/button"
 import CalibrationPanel from "@/components/fitness-counter/CalibrationPanel"
@@ -82,7 +81,6 @@ export default function FitnessCounterPage() {
   const [exportCopied, setExportCopied] = useState(false)
 
   const [strictness, setStrictness] = useState<Strictness>("normal")
-  const [strictnessOpen, setStrictnessOpen] = useState(false)
   const [thresholds, setThresholds] = useState(PRESETS.normal)
   const thresholdsRef = useRef(PRESETS.normal)
   const [situpStrictness, setSitupStrictness] = useState<Strictness>("normal")
@@ -116,20 +114,6 @@ export default function FitnessCounterPage() {
   useEffect(() => {
     if (strictness !== "custom") setThresholds(PRESETS[strictness])
   }, [strictness])
-  useEffect(() => {
-    if (stage !== "prepare") setStrictnessOpen(false)
-  }, [stage])
-  useEffect(() => {
-    if (!strictnessOpen) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      setStrictnessOpen(false)
-    }
-    window.addEventListener("keydown", onKey, true)
-    return () => window.removeEventListener("keydown", onKey, true)
-  }, [strictnessOpen])
   useEffect(() => { situpThresholdsRef.current = situpThresholds }, [situpThresholds])
   useEffect(() => {
     if (situpStrictness !== "custom") setSitupThresholds(SITUP_PRESETS[situpStrictness])
@@ -402,6 +386,15 @@ export default function FitnessCounterPage() {
     setVideoReady(false)
     setExercise(ex)
     exerciseRef.current = ex
+  }
+
+  const backToExerciseList = () => {
+    setExercise(null)
+    exerciseRef.current = null
+  }
+
+  const openCamera = () => {
+    setVideoReady(false)
     updateStage("prepare")
   }
 
@@ -528,7 +521,7 @@ export default function FitnessCounterPage() {
             </Button>
           </div>
 
-          {stage === "select" && (
+          {stage === "select" && !exercise && (
             <div className="space-y-6">
               <ExercisePicker onSelect={selectExercise} />
               <SavedSessions
@@ -540,6 +533,33 @@ export default function FitnessCounterPage() {
                 onDeleteAll={deleteAllSessions}
                 onDelete={deleteSession}
               />
+            </div>
+          )}
+
+          {stage === "select" && exercise && (
+            <div className="space-y-4">
+              <StrictnessPanel
+                exercise={exercise}
+                strictness={strictness}
+                onStrictnessChange={setStrictness}
+                thresholds={thresholds}
+                onThresholdsChange={setThresholds}
+                situpStrictness={situpStrictness}
+                onSitupStrictnessChange={setSitupStrictness}
+                situpThresholds={situpThresholds}
+                onSitupThresholdsChange={setSitupThresholds}
+              />
+              <div className="flex gap-3">
+                <Button
+                  onClick={openCamera}
+                  className="h-12 min-h-11 flex-1 bg-emerald-600 font-black hover:bg-emerald-700"
+                >
+                  فتح الكاميرا
+                </Button>
+                <Button variant="outline" onClick={backToExerciseList} className="min-h-11 font-bold">
+                  رجوع
+                </Button>
+              </div>
             </div>
           )}
 
@@ -605,61 +625,14 @@ export default function FitnessCounterPage() {
                     >
                       <Play className="w-5 h-5" /> استعداد
                     </Button>
-                    <Button variant="outline" onClick={goHome} className="font-bold">
+                    <Button
+                      variant="outline"
+                      onClick={goHome}
+                      className="h-11 min-h-11 border-white/80 bg-black/40 font-bold text-white hover:bg-white/15 hover:text-white dark:border-white/80 dark:bg-black/40 dark:hover:bg-white/15"
+                    >
                       رجوع
                     </Button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setStrictnessOpen(true)}
-                    className="mx-auto flex min-h-11 min-w-11 items-center gap-2 rounded-full bg-black/70 px-4 text-sm font-bold text-white"
-                  >
-                    <span aria-hidden>⚙️</span>
-                    <span>{strictnessLabel}</span>
-                  </button>
-                  {strictnessOpen &&
-                    createPortal(
-                      <div className="fixed inset-0 z-[400]" dir="rtl">
-                        <button
-                          type="button"
-                          aria-label="إغلاق"
-                          className="absolute inset-0 bg-black/60"
-                          onClick={() => setStrictnessOpen(false)}
-                        />
-                        <div
-                          className="absolute inset-x-0 bottom-0 max-h-[75vh] overflow-y-auto overscroll-contain rounded-t-3xl bg-slate-50 shadow-2xl"
-                          style={{
-                            paddingTop: "0.5rem",
-                            paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
-                            paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
-                            paddingRight: "max(0.75rem, env(safe-area-inset-right))",
-                          }}
-                        >
-                          <div className="sticky top-0 z-10 flex justify-end pb-2">
-                            <button
-                              type="button"
-                              aria-label="إغلاق"
-                              onClick={() => setStrictnessOpen(false)}
-                              className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-200 text-slate-900"
-                            >
-                              <X className="h-5 w-5" />
-                            </button>
-                          </div>
-                          <StrictnessPanel
-                            exercise={exercise}
-                            strictness={strictness}
-                            onStrictnessChange={setStrictness}
-                            thresholds={thresholds}
-                            onThresholdsChange={setThresholds}
-                            situpStrictness={situpStrictness}
-                            onSitupStrictnessChange={setSitupStrictness}
-                            situpThresholds={situpThresholds}
-                            onSitupThresholdsChange={setSitupThresholds}
-                          />
-                        </div>
-                      </div>,
-                      document.body
-                    )}
                 </div>
               )}
               {(stage === "waiting" || stage === "countdown") && (
@@ -667,7 +640,11 @@ export default function FitnessCounterPage() {
                   {cameraError && (
                     <p className="text-red-600 text-sm font-bold">{cameraError}</p>
                   )}
-                  <Button variant="outline" onClick={goHome} className="font-bold">
+                  <Button
+                    variant="outline"
+                    onClick={goHome}
+                    className="h-11 min-h-11 border-white/80 bg-black/40 font-bold text-white hover:bg-white/15 hover:text-white dark:border-white/80 dark:bg-black/40 dark:hover:bg-white/15"
+                  >
                     رجوع
                   </Button>
                 </div>

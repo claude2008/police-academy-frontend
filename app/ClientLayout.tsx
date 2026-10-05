@@ -300,6 +300,15 @@ useEffect(() => {
     return () => window.removeEventListener("db-quota-exceeded", handleQuotaExceeded);
 }, []);
 
+const [hideBottomNav, setHideBottomNav] = useState(false)
+useEffect(() => {
+    const sync = () => setHideBottomNav(document.body.dataset.hideBottomNav === "true")
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(document.body, { attributes: true, attributeFilter: ["data-hide-bottom-nav"] })
+    return () => observer.disconnect()
+}, [])
+
 
 // 🟢 أضفنا خاصية isHome
 const NavIcon = ({ active, color, icon, isHome = false }: any) => (
@@ -752,7 +761,7 @@ if (item.id === "cs-sp-sol") {
 								{/* الشريط السفلي للموبايل */}
 								
 {/* 📱 الشريط السفلي الاحترافي */}
-<nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200/50 dark:border-slate-700/50 px-6 flex justify-between items-center shadow-[0_-10px_40px_rgba(0,0,0,0.1)] h-16 pb-safe z-[999]">
+<nav className={cn("lg:hidden fixed bottom-0 left-0 right-0 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200/50 dark:border-slate-700/50 px-6 flex justify-between items-center shadow-[0_-10px_40px_rgba(0,0,0,0.1)] h-16 pb-safe z-[999]", hideBottomNav && "hidden")}>
     
     {/* 🏠 1. الرئيسية */}
     <Link href="/dashboard" className="relative flex-1 flex flex-col items-center justify-center group">
