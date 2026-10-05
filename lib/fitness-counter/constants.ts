@@ -61,7 +61,11 @@ export const CHEST_CENTER_RATIO = 0.3
 export const GROUND_REF_OFFSET = 0.3
 // Camera and model
 export const MOBILE_BREAKPOINT_PX = 768
-export const MOBILE_VIDEO_HEIGHT_RATIO = 0.7
+/** Desktop and tablet. ideal only, so a camera that cannot do 720p still opens. */
+export const DESKTOP_CAMERA_IDEAL = { width: 1280, height: 720 }
+/** Phone, matching the current orientation. ideal only. */
+export const PHONE_CAMERA_IDEAL_PORTRAIT = { width: 720, height: 1280 }
+export const PHONE_CAMERA_IDEAL_LANDSCAPE = { width: 1280, height: 720 }
 export const DEFAULT_FRAME = { width: 640, height: 480 }
 export const AUTOPLAY_CHECK_MS = 3000
 export const LOW_FPS_WARN = 15

@@ -1,9 +1,11 @@
 import {
   DEFAULT_FRAME,
+  DESKTOP_CAMERA_IDEAL,
   LANDMARK_STYLE,
   MOBILE_BREAKPOINT_PX,
-  MOBILE_VIDEO_HEIGHT_RATIO,
   MODEL_PATH,
+  PHONE_CAMERA_IDEAL_LANDSCAPE,
+  PHONE_CAMERA_IDEAL_PORTRAIT,
   POSE_INIT_TIMEOUT_MS,
   POSE_MIN_POSE_DETECTION_CONFIDENCE,
   POSE_MIN_POSE_PRESENCE_CONFIDENCE,
@@ -112,11 +114,17 @@ export const createPoseRuntime = async (): Promise<PoseRuntime> => {
 }
 
 export const getVideoConstraints = (facing: FacingMode) => {
-  const isMobile = typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT_PX
+  const isPhone = typeof window !== "undefined" && window.innerWidth < MOBILE_BREAKPOINT_PX
+  const portrait = typeof window !== "undefined" && window.innerHeight > window.innerWidth
+  const ideal = !isPhone
+    ? DESKTOP_CAMERA_IDEAL
+    : portrait
+      ? PHONE_CAMERA_IDEAL_PORTRAIT
+      : PHONE_CAMERA_IDEAL_LANDSCAPE
   return {
     video: {
-      width: isMobile ? { ideal: window.innerWidth } : DEFAULT_FRAME.width,
-      height: isMobile ? { ideal: window.innerHeight * MOBILE_VIDEO_HEIGHT_RATIO } : DEFAULT_FRAME.height,
+      width: { ideal: ideal.width },
+      height: { ideal: ideal.height },
       facingMode: facing,
     },
     audio: false as const,

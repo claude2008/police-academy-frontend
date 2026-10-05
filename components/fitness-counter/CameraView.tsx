@@ -100,17 +100,75 @@ export default function CameraView({
   if (!mounted) return null
 
   return createPortal(
-    <div
-      dir="rtl"
-      className="fixed inset-0 z-[1100] flex flex-col overflow-hidden bg-black text-white"
-      style={{
-        paddingTop: "env(safe-area-inset-top)",
-        paddingBottom: "env(safe-area-inset-bottom)",
-        paddingLeft: "env(safe-area-inset-left)",
-        paddingRight: "env(safe-area-inset-right)",
-      }}
-    >
-      <header className="flex shrink-0 flex-col gap-2 px-3 py-3">
+    <div dir="rtl" className="fixed inset-0 z-[1100] overflow-hidden bg-black text-white">
+      <video
+        ref={videoRef}
+        className="absolute inset-0 z-0 h-full w-full object-contain"
+        playsInline
+        muted
+        autoPlay
+        onLoadedMetadata={onVideoReady}
+        onPlaying={onVideoReady}
+        style={mirrorStyle}
+      />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 z-10 h-full w-full object-contain"
+        style={mirrorStyle}
+      />
+
+      <div
+        className={`pointer-events-none absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/70 to-transparent ${
+          stage === "active" ? "h-56" : "h-32"
+        }`}
+      />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-72 bg-gradient-to-t from-black/75 via-black/30 to-transparent" />
+
+      {stage === "prepare" && !videoReady && !cameraError && !needsTap && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-2 text-white/80">
+          <Camera className="h-5 w-5 animate-pulse" /> جاري تشغيل الكاميرا...
+        </div>
+      )}
+      {needsTap && (
+        <button
+          type="button"
+          onClick={onTapToPlay}
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/60"
+        >
+          <span className="rounded-full bg-emerald-600 px-8 py-4 text-lg font-black text-white shadow-lg">
+            ▶️ اضغط لتشغيل الكاميرا
+          </span>
+        </button>
+      )}
+
+      {stage === "waiting" && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/35 px-4">
+          <p className="text-center text-xl font-black text-white drop-shadow md:text-2xl">
+            {WARNINGS.waitingForBody}
+          </p>
+          {warning && (
+            <p className="mt-3 rounded-xl bg-black/50 px-3 py-2 text-center text-sm font-bold text-amber-200">
+              {warning}
+            </p>
+          )}
+        </div>
+      )}
+      {stage === "countdown" && (
+        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/40">
+          <span className="text-8xl font-black text-white drop-shadow-lg md:text-9xl" dir="ltr">
+            {countdown}
+          </span>
+        </div>
+      )}
+
+      <header
+        className="absolute inset-x-0 top-0 z-30 flex flex-col gap-2"
+        style={{
+          paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+          paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+          paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+        }}
+      >
         <div className="flex items-center justify-between gap-2">
           <button
             type="button"
@@ -173,62 +231,14 @@ export default function CameraView({
         )}
       </header>
 
-      <div className="relative min-h-0 flex-1">
-      <video
-        ref={videoRef}
-        className="absolute inset-0 z-0 h-full w-full object-contain"
-        playsInline
-        muted
-        autoPlay
-        onLoadedMetadata={onVideoReady}
-        onPlaying={onVideoReady}
-        style={mirrorStyle}
-      />
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 z-10 h-full w-full object-contain"
-        style={mirrorStyle}
-      />
-
-      {stage === "prepare" && !videoReady && !cameraError && !needsTap && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-2 text-white/80">
-          <Camera className="h-5 w-5 animate-pulse" /> جاري تشغيل الكاميرا...
-        </div>
-      )}
-      {needsTap && (
-        <button
-          type="button"
-          onClick={onTapToPlay}
-          className="absolute inset-0 z-40 flex items-center justify-center bg-black/60"
-        >
-          <span className="rounded-full bg-emerald-600 px-8 py-4 text-lg font-black text-white shadow-lg">
-            ▶️ اضغط لتشغيل الكاميرا
-          </span>
-        </button>
-      )}
-
-      {stage === "waiting" && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/35 px-4">
-          <p className="text-center text-xl font-black text-white drop-shadow md:text-2xl">
-            {WARNINGS.waitingForBody}
-          </p>
-          {warning && (
-            <p className="mt-3 rounded-xl bg-black/50 px-3 py-2 text-center text-sm font-bold text-amber-200">
-              {warning}
-            </p>
-          )}
-        </div>
-      )}
-      {stage === "countdown" && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-black/40">
-          <span className="text-8xl font-black text-white drop-shadow-lg md:text-9xl" dir="ltr">
-            {countdown}
-          </span>
-        </div>
-      )}
-      </div>
-
-      <div className="shrink-0 px-3 py-3">
+      <div
+        className="absolute inset-x-0 bottom-0 z-30"
+        style={{
+          paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+          paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+          paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+        }}
+      >
         {stage === "active" && (
           <div className="mx-auto mb-2 flex max-w-md gap-2">
             <button
