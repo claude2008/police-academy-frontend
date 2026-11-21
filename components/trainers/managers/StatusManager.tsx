@@ -251,14 +251,6 @@ const hasFullAccess = currentUser && ADMIN_ACCESS_ROLES.includes(currentUser.rol
                     th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; }
                     td { border: 1px solid black !important; }
                 }
-                .pdf-mode body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white !important; }
-                .pdf-mode nav, .pdf-mode header, .pdf-mode aside, .pdf-mode .print\\:hidden, .pdf-mode .no-print, .pdf-mode [role="tablist"], .pdf-mode .toaster, .pdf-mode .sonner-toast { display: none !important; }
-                .pdf-mode .print\\:block { display: block !important; }
-                .pdf-mode .print\\:no-shadow { box-shadow: none !important; border: none !important; }
-                .pdf-mode .actions-col { display: none !important; }
-                .pdf-mode table { width: 100% !important; direction: rtl; border-collapse: collapse !important; }
-                .pdf-mode th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; }
-                .pdf-mode td { border: 1px solid black !important; }
             `}</style>
 
             {/* ترويسة الطباعة */}

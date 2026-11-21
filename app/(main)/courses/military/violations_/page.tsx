@@ -694,21 +694,6 @@ const canApprove = APPROVE_ROLES.includes(userRole || '');
                     .status-btn { display: none !important; }
                     .status-text { display: block !important; }
                 }
-                .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode button, .pdf-mode .print\\:hidden, .pdf-mode [role="tablist"] { display: none !important; }
-                .pdf-mode body { background: white; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-                .pdf-mode .print-header-show { display: flex !important; }
-                .pdf-mode .col-image { display: none !important; }
-                .pdf-mode th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; font-size: 10px; }
-                .pdf-mode td { border: 1px solid black !important; font-size: 10px; height: 30px; }
-                .pdf-mode input { border: none !important; background: transparent !important; }
-                .pdf-mode .h-16 { height: 40px !important; }
-                .pdf-mode .signature-section-inner { display: flex !important; flex-direction: row !important; justify-content: space-between !important; align-items: flex-end !important; gap: 2rem !important; }
-                .pdf-mode .signature-block { width: 48% !important; margin: 0 !important; border: none !important; }
-                .pdf-mode .signature-block-left { order: 1 !important; border-left: 2px dashed #ccc !important; padding-left: 1rem !important; }
-                .pdf-mode .signature-block-right { order: 2 !important; }
-                .pdf-mode .signature-section { break-inside: avoid; page-break-inside: avoid; margin-top: 10px !important; }
-                .pdf-mode .status-btn { display: none !important; }
-                .pdf-mode .status-text { display: block !important; }
                 .print-header-show { display: none; }
                 .status-text { display: none; }
             `}</style>

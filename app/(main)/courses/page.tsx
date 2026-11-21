@@ -458,15 +458,6 @@ const executeSave = async (soldierId: number, startDateStr: string) => {
   .space-y-6 { display: block !important; height: auto !important; overflow: visible !important; }
 }
   }
-  .pdf-mode .print-mode-landscape { width: 100% !important; }
-  .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode .print\:hidden, .pdf-mode [data-sonner-toaster], .pdf-mode .no-print { display: none !important; }
-  .pdf-mode .print\:block { display: block !important; }
-  .pdf-mode table { width: 100% !important; border-collapse: collapse; font-size: 10px; }
-  .pdf-mode th, .pdf-mode td { border: 1px solid #000 !important; padding: 2px !important; }
-  .pdf-mode body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .pdf-mode .print\:hidden { display: none !important; }
-  .pdf-mode .only-print-content { display: block !important; }
-  .pdf-mode .space-y-6 { display: block !important; height: auto !important; overflow: visible !important; }
 `}</style>
       <div className="hidden print:flex print-header-fixed flex-row w-full items-start justify-between pb-2 mb-8">
            <div className="w-32 text-right p-2">

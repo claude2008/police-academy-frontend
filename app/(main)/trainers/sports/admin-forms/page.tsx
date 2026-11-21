@@ -534,12 +534,6 @@ const addCommitteeHeadRow = () => {
             display: block !important;
         }
     }
-    .pdf-mode body { background: white !important; padding-top: 0 !important; }
-    .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode button, .pdf-mode .print\\:hidden, .pdf-mode [role="tablist"] { display: none !important; }
-    .pdf-mode .Card { border: none !important; box-shadow: none !important; }
-    .pdf-mode input, .pdf-mode textarea { border: none !important; background: transparent !important; box-shadow: none !important; resize: none !important; }
-    .pdf-mode .bg-\\[\\#c5b391\\] { background-color: #c5b391 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    .pdf-mode .hidden.print\\:block { display: block !important; }
 `}</style>
             </div>
         </ProtectedRoute>

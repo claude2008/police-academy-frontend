@@ -510,13 +510,12 @@ setPrintReady(true);
 
 const handlePrintNow = () => {
   document.title = generateFileName("pdf").replace(".pdf", "");
-  void safePrint().finally(() => {
-    if (printPageSizeRef.current != null) {
-      setItemsPerPage(printPageSizeRef.current);
-    }
-    setCurrentPage(1);
-    setPrintReady(false);
-  });
+  safePrint()
+  if (printPageSizeRef.current != null) {
+    setItemsPerPage(printPageSizeRef.current);
+  }
+  setCurrentPage(1);
+  setPrintReady(false);
 }
 
  const handleExportExcel = async () => {
@@ -694,13 +693,6 @@ const handleExportAllExcel = async () => {
           th, td { border: 1px solid #000 !important; padding: 4px !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
-        .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode .print\\:hidden { display: none !important; }
-        .pdf-mode .print\\:block { display: block !important; }
-        .pdf-mode .table-container { overflow: visible !important; height: auto !important; }
-        .pdf-mode table { width: 100% !important; border-collapse: collapse; font-size: 10px; }
-        .pdf-mode thead th { background-color: #c5b391 !important; color: black !important; -webkit-print-color-adjust: exact; }
-        .pdf-mode th, .pdf-mode td { border: 1px solid #000 !important; padding: 4px !important; }
-        .pdf-mode, .pdf-mode * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       `}</style>
 {/* --- ترويسة الطباعة الرسمية --- */}
 <div className="hidden print:block w-full border-b-2 border-black pb-4 mb-6">

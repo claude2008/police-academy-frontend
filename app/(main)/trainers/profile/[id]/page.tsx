@@ -139,9 +139,6 @@ const [counts, setCounts] = useState({
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
           .no-break { page-break-inside: avoid; }
         }
-        .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode .print\\:hidden, .pdf-mode .action-grid { display: none !important; }
-        .pdf-mode body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
-        .pdf-mode .no-break { page-break-inside: avoid; }
       `}</style>
 
       {/* الشريط العلوي */}

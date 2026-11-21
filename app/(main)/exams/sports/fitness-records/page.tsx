@@ -2697,20 +2697,6 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
             padding-top: 10px !important;
         }
     }
-    .pdf-mode body {
-        zoom: ${selectedEvaluator !== "all" ? '0.75' : '0.85'};
-        -webkit-print-color-adjust: exact;
-    }
-    .pdf-mode .no-print { display: none !important; }
-    .pdf-mode .archive-view { display: none !important; }
-    .pdf-mode .force-print { display: table-row !important; }
-    .pdf-mode table { width: 100% !important; border-collapse: collapse !important; table-layout: auto !important; }
-    .pdf-mode th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; word-wrap: break-word; white-space: normal !important; line-height: 1.1 !important; padding: 2px !important; }
-    .pdf-mode td { border: 1px solid black !important; padding: 4px !important; font-size: 14px !important; }
-    .pdf-mode .signature-print-force { height: 40px !important; width: auto !important; display: block !important; margin: 2px auto !important; mix-blend-multiply: multiply; }
-    .pdf-mode .signature-box { gap: 1px !important; margin-top: 5px !important; }
-    .pdf-mode .signature-box span, .pdf-mode .signature-box p { font-size: 14px !important; margin: 0 !important; padding: 0 !important; }
-    .pdf-mode .signature-section-container { margin-top: 10px !important; padding-top: 10px !important; }
 `}</style>
 
 

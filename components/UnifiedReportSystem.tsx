@@ -479,6 +479,7 @@ useEffect(() => {
     setRec2({ name: r.rec2_name, rank: r.rec2_rank, signature: r.rec2_name });
     
     setActiveTab("new");
+    setPrintReady(false);
     if (!previewMode) toast.info("وضع التعديل مفعل");
 }
 
@@ -652,24 +653,6 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
                     /* 🔑 تعديل عرض توقيعات الضابط والمدير */
                     .approver-grid { grid-template-columns: 1fr 1fr 1fr !important; } /* 3 أعمدة فقط */
                 }
-                .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode .print\\:hidden, .pdf-mode .no-print, .pdf-mode [role="tablist"], .pdf-mode .card-footer { display: none !important; }
-                .pdf-mode body * { visibility: hidden; }
-                .pdf-mode .report-container, .pdf-mode .report-container * { visibility: visible; }
-                .pdf-mode .report-container { position: absolute; left: 15; top: 5; width: 97%; margin: 0; padding: 0 !important; border: none !important; box-shadow: none !important; background: white !important; display: block !important; }
-                .pdf-mode thead { display: table-header-group; }
-                .pdf-mode tbody { display: table-row-group; }
-                .pdf-mode tr { page-break-inside: avoid; }
-                .pdf-mode .content-div { display: block !important; white-space: pre-wrap !important; overflow: visible !important; }
-                .pdf-mode input, .pdf-mode textarea, .pdf-mode .select-trigger { border: none !important; background: transparent !important; padding: 0 !important; resize: none; box-shadow: none !important; }
-                .pdf-mode .input-dotted { border-bottom: 1px dotted #000 !important; border-radius: 0 !important; }
-                .pdf-mode .lucide, .pdf-mode svg { display: none !important; }
-                .pdf-mode, .pdf-mode * { color: black !important; -webkit-print-color-adjust: exact; }
-                .pdf-mode .signature-input-container { display: none !important; }
-                .pdf-mode .signature-image-container { display: block !important; }
-                .pdf-mode .break-inside-avoid { break-inside: avoid; page-break-inside: avoid; }
-                .pdf-mode .sig-h-16 { height: 64px !important; }
-                .pdf-mode input, .pdf-mode .underline, .pdf-mode .underline-offset-8 { text-decoration: none !important; border-bottom: none !important; }
-                .pdf-mode .approver-grid { grid-template-columns: 1fr 1fr 1fr !important; }
             `}</style>
 
             <div className="flex justify-between items-center print:hidden">
@@ -1007,13 +990,13 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
     </div>
 
     <div className="flex gap-3">
-        {/* زر الطباعة متاح دائماً */}
-        <Button onClick={handlePrint} variant="outline" className="gap-2 border-slate-400">
-            <Printer className="w-4 h-4" /> طباعة
-        </Button>
-        {printReady && (
+        {printReady ? (
             <Button onClick={handlePrintNow} variant="outline" className="gap-2 border-slate-900 bg-slate-900 text-white hover:bg-slate-800">
                 <Printer className="w-4 h-4" /> اطبع الآن
+            </Button>
+        ) : (
+            <Button onClick={handlePrint} variant="outline" className="gap-2 border-slate-400">
+                <Printer className="w-4 h-4" /> طباعة
             </Button>
         )}
 

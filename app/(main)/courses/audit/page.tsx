@@ -528,12 +528,6 @@ export default function SessionAuditPage() {
                         tr { page-break-inside: avoid; page-break-after: auto; }
                         input { border: none !important; background: transparent !important; }
                     }
-                    .pdf-mode body { background: white; }
-                    .pdf-mode .no-print { display: none !important; }
-                    .pdf-mode .print-border { border: 1px solid #000 !important; }
-                    .pdf-mode table { page-break-inside: auto; }
-                    .pdf-mode tr { page-break-inside: avoid; page-break-after: auto; }
-                    .pdf-mode input { border: none !important; background: transparent !important; }
                 `}</style>
 
                 {/* --- الهيدر (مشترك) --- */}

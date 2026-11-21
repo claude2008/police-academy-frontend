@@ -519,14 +519,6 @@ if (isSaved && entryToDelete) {
     
     .bg-[#c5b391] { background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
   }
-  .pdf-mode .no-print { display: none !important; }
-  .pdf-mode table { width: 100% !important; min-width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
-  .pdf-mode th, .pdf-mode td { border: 1px solid #000 !important; padding: 4px !important; word-wrap: break-word !important; overflow-wrap: break-word !important; white-space: normal !important; font-size: 10px !important; }
-  .pdf-mode th:nth-child(1), .pdf-mode td:nth-child(1) { width: 40px !important; }
-  .pdf-mode th:nth-child(2), .pdf-mode td:nth-child(2) { width: 25% !important; }
-  .pdf-mode th:nth-child(3), .pdf-mode td:nth-child(3) { width: 45% !important; }
-  .pdf-mode th:nth-child(4), .pdf-mode td:nth-child(4) { width: 20% !important; }
-  .pdf-mode .bg-\\[\\#c5b391\\] { background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
 `}</style>
 
         {/* --- 🖨️ الترويسة الرسمية --- */}

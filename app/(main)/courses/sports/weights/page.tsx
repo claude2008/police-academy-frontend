@@ -762,19 +762,6 @@ export default function WeightsPage() {
           tbody { display: table-row-group; }
           tr { page-break-inside: avoid; }
         }
-          .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode .print\\:hidden { display: none !important; }
-          .pdf-mode [data-sonner-toaster], .pdf-mode .toaster, .pdf-mode .sonner-toast { display: none !important; }
-          .pdf-mode body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; zoom: 0.75; }
-          .pdf-mode body, .pdf-mode .report-container * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-          .pdf-mode input { border: none !important; background: transparent !important; box-shadow: none !important; }
-          .pdf-mode .bg-\\[\\#d6c5a5\\] { background-color: #d6c5a5 !important; border-color: black !important; }
-          .pdf-mode .print-header { display: block !important; margin-bottom: 20px; }
-          .pdf-mode .print-table { display: table !important; width: 100%; }
-          .pdf-mode table, .pdf-mode th, .pdf-mode td, .pdf-mode input { font-size: 12px !important; color: black !important; font-weight: bold !important; }
-          .pdf-mode button, .pdf-mode .lucide { display: none !important; }
-          .pdf-mode thead { display: table-header-group; }
-          .pdf-mode tbody { display: table-row-group; }
-          .pdf-mode tr { page-break-inside: avoid; }
           tr { height: 35px !important; }
           td, th { padding: 4px !important; vertical-align: middle; }
           .add-session-col { display: none !important; }

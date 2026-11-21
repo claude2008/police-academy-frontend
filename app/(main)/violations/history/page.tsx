@@ -665,17 +665,6 @@ const confirmDeleteAll = async () => {
 
     .bg-beige-print { background-color: #c5b391 !important; -webkit-print-color-adjust: exact; }
 }
-    .pdf-mode .no-print { display: none !important; }
-    .pdf-mode body { background: white; }
-    .pdf-mode table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
-    .pdf-mode th, .pdf-mode td { border: 1px solid black !important; padding: 4px !important; font-size: 9px !important; word-wrap: break-word !important; white-space: normal !important; overflow: hidden !important; }
-    .pdf-mode th:nth-child(1), .pdf-mode td:nth-child(1) { width: 5% !important; }
-    .pdf-mode th:nth-child(2), .pdf-mode td:nth-child(2) { width: 25% !important; }
-    .pdf-mode th:nth-child(3), .pdf-mode td:nth-child(3) { width: 35% !important; }
-    .pdf-mode th:nth-child(4), .pdf-mode td:nth-child(4) { width: 15% !important; }
-    .pdf-mode th:nth-child(5), .pdf-mode td:nth-child(5) { width: 15% !important; }
-    .pdf-mode th:nth-child(6), .pdf-mode td:nth-child(6) { width: 5% !important; }
-    .pdf-mode .bg-beige-print { background-color: #c5b391 !important; -webkit-print-color-adjust: exact; }
                 `}</style>
 
                 <div className="no-print flex justify-between items-center mb-8 bg-slate-100 p-4 rounded-2xl border">

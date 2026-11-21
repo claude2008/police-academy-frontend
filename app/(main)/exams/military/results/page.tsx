@@ -957,19 +957,6 @@ const hasPlatoonData = finalReportData.some(s => s.platoon && s.platoon !== "ل�
             object-fit: contain !important;
         }
     }
-    .pdf-mode body { zoom: 0.85; -webkit-print-color-adjust: exact; }
-    .pdf-mode .no-print { display: none !important; }
-    .pdf-mode .force-print { display: table-row !important; }
-    .pdf-mode table { width: 100% !important; border-collapse: collapse !important; }
-    .pdf-mode th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; }
-    .pdf-mode td { border: 1px solid black !important; padding: 4px !important; }
-    .pdf-mode td, .pdf-mode th {
-        font-size: ${printMode !== "merged" && memberCriteria.length > 5 ? '9px' : '11px'} !important;
-        padding: ${printMode !== "merged" ? '2px' : '4px'} !important;
-    }
-    .pdf-mode .criteria-header { white-space: normal !important; word-wrap: break-word !important; line-height: 1.1 !important; min-width: 60px !important; max-width: 110px !important; vertical-align: middle !important; text-align: center !important; }
-    .pdf-mode .signature-box { background-color: transparent !important; background: none !important; border: none !important; box-shadow: none !important; height: 20px !important; display: flex !important; align-items: center !important; justify-content: center !important; }
-    .pdf-mode .signature-box img { height: 45px !important; width: auto !important; max-width: 120px !important; object-fit: contain !important; }
 `}</style>
 
                {/* 🟢 شريط التحكم الموحد - مطابق تماماً لتخطيط صفحة الرياضة */}
