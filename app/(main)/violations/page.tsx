@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { 
   Search, RefreshCw, Printer, Plus, 
   Trash2, User, ShieldAlert, CheckCircle2, Info, Save, Clock,Loader2
@@ -547,7 +546,7 @@ if (isSaved && entryToDelete) {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => window.location.reload()}><RefreshCw className="w-4 h-4 ml-2"/> تحديث</Button>
-            <Button variant="outline" onClick={() => safePrint()} className="bg-slate-900 text-white font-bold hover:bg-slate-800"><Printer className="w-4 h-4 ml-2"/> طباعة</Button>
+            <Button variant="outline" onClick={() => window.print()} className="bg-slate-900 text-white font-bold hover:bg-slate-800"><Printer className="w-4 h-4 ml-2"/> طباعة</Button>
           </div>
         </div>
 

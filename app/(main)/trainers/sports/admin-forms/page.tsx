@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -146,7 +145,7 @@ const addCommitteeHeadRow = () => {
                         <div className="p-2 bg-blue-600 rounded-lg text-white"><FileText className="w-6 h-6" /></div>
                         <h1 className="text-2xl font-bold text-slate-800">النماذج الإدارية</h1>
                     </div>
-                    <Button onClick={() => safePrint()} className="bg-slate-900 gap-2"><Printer className="w-4 h-4" /> طباعة</Button>
+                    <Button onClick={() => window.print()} className="bg-slate-900 gap-2"><Printer className="w-4 h-4" /> طباعة</Button>
                 </div>
 
                 <Tabs defaultValue="exam-committee" className="w-full">

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useMemo, useEffect, Fragment } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -801,7 +800,7 @@ export default function WeightsPage() {
               )}
             </Button>
             
-            <Button variant="outline" disabled={!isPathComplete && !showWeighedOnly} onClick={() => { document.title = `${reportTitle} - ${filterText}`; safePrint(); }} className="gap-2">
+            <Button variant="outline" disabled={!isPathComplete && !showWeighedOnly} onClick={() => { document.title = `${reportTitle} - ${filterText}`; window.print(); }} className="gap-2">
               <Printer className="w-4 h-4" /> طباعة
             </Button>
             <Button variant="outline" disabled={!isPathComplete && !showWeighedOnly} onClick={handleExportExcel} className="gap-2 border-green-600 text-green-700 hover:bg-green-50">

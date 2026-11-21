@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -467,7 +466,7 @@ useEffect(() => {
     const handlePrint = () => {
         const originalTitle = document.title;
         document.title = selectedSoldier ? `ملف_المجند_${selectedSoldier.name}` : "دليل_المجندين";
-        safePrint();
+        window.print();
         setTimeout(() => { document.title = originalTitle; }, 1000);
     }
 

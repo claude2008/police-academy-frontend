@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { 
     ArrowRight, Printer, Download, Search, 
     Loader2, RotateCcw, FileText, Paperclip, 
@@ -681,7 +680,7 @@ const confirmDeleteAll = async () => {
     document.title = fileName;
     
     // 4. فتح نافذة الطباعة
-    safePrint();
+    window.print();
     
     // 5. إعادة العنوان الأصلي بعد ثانية (لكي لا يتغير شكل التبويب دائماً)
     setTimeout(() => { document.title = originalTitle; }, 1000);

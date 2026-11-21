@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { 
     ChevronLeft, ShieldCheck, Clock, Users, Printer, 
     ArrowRight, Loader2, Calendar, FileSignature, 
@@ -709,7 +708,7 @@ export default function SessionAuditPage() {
             <FileSpreadsheet className="w-4 h-4" />  Excel
         </Button>
 
-        <Button onClick={() => safePrint()} className="bg-slate-900 text-white gap-2 font-bold">
+        <Button onClick={() => window.print()} className="bg-slate-900 text-white gap-2 font-bold">
             <Printer className="w-4 h-4"/> طباعة 
         </Button>
     </div>

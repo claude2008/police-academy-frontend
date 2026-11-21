@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -294,7 +293,7 @@ const hasFullAccess = currentUser && ADMIN_ACCESS_ROLES.includes(currentUser.rol
                     </Button>
 )}
 {hasFullAccess && (
-                    <Button variant="outline" onClick={() => safePrint()} className="col-span-1 w-full md:w-auto gap-2 px-4 h-9">
+                    <Button variant="outline" onClick={() => window.print()} className="col-span-1 w-full md:w-auto gap-2 px-4 h-9">
                         <Printer className="w-4 h-4" /> 
                         <span>طباعة</span>
                     </Button>

@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import Image from "next/image"
 import { format } from "date-fns"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -316,7 +315,7 @@ useEffect(() => {
                 </Select>
                 
                 <Button variant="outline" size="sm" onClick={handleRecalculate} disabled={loading} className="gap-1 h-9"><RefreshCcw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} /> تحديث</Button>
-                <Button size="sm" onClick={() => { document.title = reportTitle; safePrint(); }} className="bg-slate-900 text-white gap-1 h-9"><Printer className="w-3 h-3" /> طباعة</Button>
+                <Button size="sm" onClick={() => { document.title = reportTitle; window.print(); }} className="bg-slate-900 text-white gap-1 h-9"><Printer className="w-3 h-3" /> طباعة</Button>
             </div>
         </div>
 {/* شريط معايير الاختبار - للشاشة */}

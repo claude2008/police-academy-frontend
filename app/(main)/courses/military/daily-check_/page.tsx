@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -609,7 +608,7 @@ const groupedSessions = useMemo(() => {
         }
 
         document.title = customTitle; // تغيير العنوان
-        safePrint(); // أمر الطباعة
+        window.print(); // أمر الطباعة
         
         // إعادة العنوان الأصلي بعد ثانية واحدة
         setTimeout(() => { document.title = originalTitle }, 1000);

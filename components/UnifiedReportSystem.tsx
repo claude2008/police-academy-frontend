@@ -1,8 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useRef } from "react" // 🔑 إضافة useMemo
-import { safePrint } from "@/lib/safePrint"
-import { isIosHomeScreen, pdfFilename, renderPdfFile, sharePdfFile } from "@/lib/exportPdf"
+import { useState, useEffect, useMemo } from "react" // 🔑 إضافة useMemo
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -191,12 +189,6 @@ useEffect(() => {
         if (!val) return "";
         return val.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
     }
-   const preparedPrintTitle = useRef("تقرير")
-   const [printReady, setPrintReady] = useState(false)
-   const [iosHome, setIosHome] = useState(false)
-   const [pdfFile, setPdfFile] = useState<File | null>(null)
-   const [pdfBusy, setPdfBusy] = useState(false)
-   useEffect(() => { setIosHome(isIosHomeScreen()) }, [])
    const quickPrint = (report: ReportAPI) => {
     // 1. شحن كافة البيانات في النموذج
     setIsPreviewOnly(true);
@@ -213,10 +205,22 @@ useEffect(() => {
     setRec2({ name: report.rec2_name, rank: report.rec2_rank, signature: report.rec2_name });
 
     // 2. الانتقال لتبويب المحرر لكي يظهر المحتوى للمتصفح
-    preparedPrintTitle.current = report.subject || "تقرير"
     setActiveTab("new");
-    setPrintReady(true);
-    setPdfFile(null);
+
+    const toastId = toast.loading("جاري تجهيز الورقة...");
+
+    // 3. الانتظار للرسم والتحميل
+    setTimeout(() => {
+        toast.dismiss(toastId);
+        document.title = report.subject || "تقرير";
+        window.print();
+        
+        // 4. 🟢 السر هنا: تصفير كل شيء وإرجاع التاب لحالته الأصلية
+        setTimeout(() => {
+            resetForm(); // هذا سيعيد اسم التاب إلى "تحرير مستند جديد" ويصفر isPreviewOnly
+            setActiveTab("records"); // العودة لصفحة السجلات
+        }, 500);
+    }, 1000); 
 };
     // 🔑 منطق قفل التقرير للتعديل
     const isReportLocked = useMemo(() => {
@@ -485,8 +489,6 @@ useEffect(() => {
     setRec2({ name: r.rec2_name, rank: r.rec2_rank, signature: r.rec2_name });
     
     setActiveTab("new");
-    setPrintReady(false);
-    setPdfFile(null);
     if (!previewMode) toast.info("وضع التعديل مفعل");
 }
 
@@ -613,45 +615,11 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
         }
         
         toast.success("تم الإلغاء")
-        setPrintReady(false)
-        setPdfFile(null)
-    }
-
-    const handlePreparePdf = async () => {
-        setPdfBusy(true)
-        setPdfFile(null)
-        try {
-            if (activeTab !== "new") setActiveTab("new")
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-            const report = document.querySelector(".report-container") as HTMLElement | null
-            if (!report) {
-                toast.error("اعرض التقرير في المحرر أولاً")
-                return
-            }
-            const title = printReady ? (preparedPrintTitle.current || reportType) : reportType
-            const file = await renderPdfFile(report, pdfFilename(title))
-            setPdfFile(file)
-        } catch {
-            toast.error("تعذر تجهيز ملف PDF")
-        } finally {
-            setPdfBusy(false)
-        }
-    }
-
-    const handleSharePdf = () => {
-        if (!pdfFile) return
-        sharePdfFile(pdfFile)
     }
 
     const handlePrint = () => {
         document.title = reportType;
-        safePrint();
-    }
-
-    const handlePrintNow = () => {
-        document.title = preparedPrintTitle.current || reportType
-        safePrint()
+        window.print();
     }
 
     const getDayName = (dateStr: string) => {
@@ -688,14 +656,6 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
                     /* 🔑 تعديل عرض توقيعات الضابط والمدير */
                     .approver-grid { grid-template-columns: 1fr 1fr 1fr !important; } /* 3 أعمدة فقط */
                 }
-                .pdf-export .report-container, .pdf-export .report-container * { color: black !important; -webkit-print-color-adjust: exact; }
-                .pdf-export .content-div { display: block !important; white-space: pre-wrap !important; overflow: visible !important; }
-                .pdf-export .report-container input, .pdf-export .report-container textarea, .pdf-export .report-container .select-trigger { border: none !important; background: transparent !important; padding: 0 !important; resize: none; box-shadow: none !important; }
-                .pdf-export .signature-input-container { display: none !important; }
-                .pdf-export .signature-image-container { display: block !important; }
-                .pdf-export .report-container .lucide, .pdf-export .report-container svg { display: none !important; }
-                .pdf-export .sig-h-16 { height: 64px !important; }
-                .pdf-export .approver-grid { grid-template-columns: 1fr 1fr 1fr !important; }
             `}</style>
 
             <div className="flex justify-between items-center print:hidden">
@@ -1033,25 +993,10 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
     </div>
 
     <div className="flex gap-3">
-        {printReady ? (
-            <Button onClick={handlePrintNow} variant="outline" className="gap-2 border-slate-900 bg-slate-900 text-white hover:bg-slate-800">
-                <Printer className="w-4 h-4" /> اطبع الآن
-            </Button>
-        ) : (
-            <Button onClick={handlePrint} variant="outline" className="gap-2 border-slate-400">
-                <Printer className="w-4 h-4" /> طباعة
-            </Button>
-        )}
-        {iosHome && (
-            <Button onClick={handlePreparePdf} disabled={pdfBusy} variant="outline" className="gap-2 border-slate-400">
-                تجهيز PDF
-            </Button>
-        )}
-        {iosHome && pdfFile && (
-            <Button onClick={handleSharePdf} variant="outline" className="gap-2 border-slate-900 bg-slate-900 text-white hover:bg-slate-800">
-                مشاركة / طباعة PDF
-            </Button>
-        )}
+        {/* زر الطباعة متاح دائماً */}
+        <Button onClick={handlePrint} variant="outline" className="gap-2 border-slate-400">
+            <Printer className="w-4 h-4" /> طباعة
+        </Button>
 
         {/* زر الحفظ: لا يظهر أبداً إذا كنا في وضع المعاينة (العين) */}
         {!isPreviewOnly && (

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { useRouter } from "next/navigation" 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -524,7 +523,7 @@ const executeSave = async (soldierId: number, startDateStr: string) => {
                     <Button variant="outline" size="sm" onClick={handleExportExcel} className="gap-2 border-green-600 text-green-700 hover:bg-green-50">
                         <FileSpreadsheet className="w-4 h-4"/> تصدير الكشف
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => safePrint()} className="gap-2">
+                    <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
                         <Printer className="w-4 h-4"/> طباعة الكشف
                     </Button>
                 </div> 

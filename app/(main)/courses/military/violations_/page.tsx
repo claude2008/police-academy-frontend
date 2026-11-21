@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -459,7 +458,7 @@ export default function MilitaryViolationsPage() {
         }
 
         document.title = customTitle;
-        safePrint();
+        window.print();
         setTimeout(() => { document.title = originalTitle }, 1000);
     }
     

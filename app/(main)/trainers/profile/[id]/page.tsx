@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, use } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Printer, User, ArrowRight, Plus, Activity, Calendar, FileText, GraduationCap, Shield, Hash, BookOpen } from "lucide-react"
@@ -120,7 +119,7 @@ const [counts, setCounts] = useState({
   }
   const handlePrint = () => {
     document.title = trainer ? `ملف المدرب - ${trainer.name}` : "ملف مدرب";
-    safePrint();
+    window.print();
   }
   const showComingSoon = () => toast.info("هذه الميزة قيد الإنشاء")
 

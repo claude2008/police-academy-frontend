@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -1017,7 +1016,7 @@ const paginatedDrafts = useMemo(() => {
                             </>
                         )}
 
-                        <Button onClick={() => { document.title = `كشف_${selectedDate}`; safePrint(); }} className="bg-slate-900 h-9 px-3 text-white gap-1 font-bold shadow-md">
+                        <Button onClick={() => { document.title = `كشف_${selectedDate}`; window.print(); }} className="bg-slate-900 h-9 px-3 text-white gap-1 font-bold shadow-md">
                             <Printer className="w-4 h-4" /> طباعة
                         </Button>
 

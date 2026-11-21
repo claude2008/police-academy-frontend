@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -39,7 +38,6 @@ export default function FitnessManager() {
     const [currentPage, setCurrentPage] = useState(1)
     const [itemsPerPage, setItemsPerPage] = useState(10)
     const [isPrinting, setIsPrinting] = useState(false)
-    const [printReady, setPrintReady] = useState(false)
 
     // حالة نافذة الحذف
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
@@ -250,14 +248,12 @@ const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/trainer/fitness/bulk
     const paginatedData = data.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
     const getDayName = (dateStr: string) => { const d = new Date(dateStr); return !isNaN(d.getTime()) ? format(d, "EEEE", { locale: ar }) : "-"; }
     // 👇👇 2. دالة الطباعة الذكية
-    const handlePreparePrint = () => {
-        setIsPrinting(true);
-        setPrintReady(true);
-    }
-    const handlePrintNow = () => {
-        safePrint()
-        setIsPrinting(false);
-        setPrintReady(false);
+    const handlePrintAll = () => {
+        setIsPrinting(true); // 1. افتح كل الصفحات
+        setTimeout(() => {
+            window.print(); // 2. اطبع
+            setIsPrinting(false); // 3. ارجع للوضع الطبيعي بعد إغلاق نافذة الطباعة
+        }, 100); // انتظار بسيط جداً (جزء من الثانية) لضمان ظهور البيانات
     }
 // 🛡️ تحديد الأدوار المسموح لها بالعمليات الإدارية
 const ALLOWED_ADMIN_ROLES = ["owner", "manager", "admin", "assistant_admin", "military_supervisor"];
@@ -341,14 +337,9 @@ const canManage = currentUser && ALLOWED_ADMIN_ROLES.includes(currentUser.role);
         )}
 
         {/* زر الطباعة متاح للجميع */}
-        <Button onClick={handlePreparePrint} variant="outline" className="h-9 gap-2">
-            <Printer className="w-4 h-4" /> تجهيز للطباعة
+        <Button onClick={handlePrintAll} variant="outline" className="h-9 gap-2">
+            <Printer className="w-4 h-4" />
         </Button>
-        {printReady && (
-            <Button onClick={handlePrintNow} variant="outline" className="h-9 gap-2">
-                <Printer className="w-4 h-4" /> اطبع الآن
-            </Button>
-        )}
     </div>
 </div>
 

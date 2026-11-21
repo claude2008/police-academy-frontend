@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { 
     ArrowRight, Printer, Download, Search, 
     Loader2, RotateCcw, FileText, Paperclip, 
@@ -427,7 +426,7 @@ const handlePrint = () => {
     document.title = fileName;
 
     // 4. استدعاء أمر الطباعة
-    safePrint();
+    window.print();
 
     // 5. إعادة العنوان الأصلي بعد إغلاق نافذة الطباعة
     document.title = originalTitle;

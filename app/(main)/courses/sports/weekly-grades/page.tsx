@@ -3,7 +3,6 @@
 import DashboardView from "./DashboardView"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -627,7 +626,7 @@ useEffect(() => {
         document.title = fileName;
         
         // 4. تنفيذ أمر الطباعة
-        safePrint();
+        window.print();
         
         // 5. إعادة العنوان الأصلي بعد ثانية واحدة
         setTimeout(() => {

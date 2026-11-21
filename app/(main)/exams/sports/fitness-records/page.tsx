@@ -3,7 +3,6 @@
 
 
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 
 import { 
 
@@ -3207,7 +3206,7 @@ const hasPlatoonData = finalReportData.some(s => (s.platoon || s["الفصيل"]
 
         
 
-        safePrint();
+        window.print();
 
         
 

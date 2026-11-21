@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -274,7 +273,7 @@ export default function ComparisonsPage() {
                 </div>
             </div>
 
-            <Button onClick={() => { document.title = reportTitle; safePrint(); }} className="w-full bg-slate-900 text-white gap-2"><Printer className="w-4 h-4" /> طباعة التقرير الشامل</Button>
+            <Button onClick={() => { document.title = reportTitle; window.print(); }} className="w-full bg-slate-900 text-white gap-2"><Printer className="w-4 h-4" /> طباعة التقرير الشامل</Button>
         </div>
       </div>
 

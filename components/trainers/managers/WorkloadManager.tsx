@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -21,7 +20,6 @@ export default function WorkloadManager() {
     const [currentPage, setCurrentPage] = useState(1)
     const [itemsPerPage, setItemsPerPage] = useState(10)
     const [isPrinting, setIsPrinting] = useState(false)
-    const [printReady, setPrintReady] = useState(false)
 
     useEffect(() => {
         const fetchTrainers = async () => {
@@ -207,14 +205,9 @@ const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/trainer/workload/bul
         finally { setLoading(false) }
     };
 
-    const handlePreparePrint = () => {
+    const handlePrintAll = () => {
         setIsPrinting(true);
-        setPrintReady(true);
-    }
-    const handlePrintNow = () => {
-        safePrint()
-        setIsPrinting(false);
-        setPrintReady(false);
+        setTimeout(() => { window.print(); setIsPrinting(false); }, 100);
     }
 // 🛡️ الأدوار المسموح لها بالتحكم الكامل
 const ADMIN_ACCESS_ROLES = ["owner", "manager", "admin", "assistant_admin", "military_supervisor"];
@@ -300,14 +293,9 @@ const hasFullAccess = currentUser && ADMIN_ACCESS_ROLES.includes(currentUser.rol
                 )}
 
                 {/* زر الطباعة متاح للجميع */}
-                <Button onClick={handlePreparePrint} variant="outline" className="gap-2 h-9 text-sm">
-                    <Printer className="w-4 h-4" /> تجهيز للطباعة
+                <Button onClick={handlePrintAll} variant="outline" className="gap-2 h-9 text-sm">
+                    <Printer className="w-4 h-4" /> طباعة
                 </Button>
-                {printReady && (
-                    <Button onClick={handlePrintNow} variant="outline" className="gap-2 h-9 text-sm">
-                        <Printer className="w-4 h-4" /> اطبع الآن
-                    </Button>
-                )}
 
                 {/* 🔒 زر مسح القائمة (السلة): محمي بالصلاحيات */}
                 {hasFullAccess && (

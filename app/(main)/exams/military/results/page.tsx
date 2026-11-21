@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { 
     Table as TableIcon, Search, Printer, Download, 
     Eye, ShieldCheck, CheckCircle2, X, Loader2, RotateCcw, 
@@ -635,7 +634,7 @@ const exportToExcel = () => {
     document.title = `${printSuffix}_${cleanTitle}_${cleanCourse}_${cleanBatch}_${examDate}`;
 
     // 4. أمر الطباعة
-    safePrint();
+    window.print();
 
     // 5. استعادة العنوان الأصلي للمتصفح
     setTimeout(() => { document.title = originalTitle; }, 500);

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -305,7 +304,7 @@ const handleViewFinalSavedRecord = async () => {
         const originalTitle = document.title;
         // تغيير العنوان ليكون اسم الملف عند الحفظ PDF
         document.title = `درجة_المدرب_${filterBatch}_${filterCompany}_${selectedPlatoon.platoon}_${subject}`;
-        safePrint();
+        window.print();
         // إعادة العنوان الأصلي بعد الطباعة (مهلة قصيرة)
         setTimeout(() => { document.title = originalTitle; }, 1000);
     }
