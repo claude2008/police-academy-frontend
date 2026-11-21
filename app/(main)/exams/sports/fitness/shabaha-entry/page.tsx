@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import { safePrint } from "@/lib/safePrint"
+import { isIosHomeScreen, pdfFilename, renderPdfFile, sharePdfFile } from "@/lib/exportPdf"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -83,6 +84,10 @@ const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 const [resetTarget, setResetTarget] = useState<'shabaha' | 'chip' | 'notes' | null>(null);
 const [printReady, setPrintReady] = useState(false);
 const printPageSizeRef = useRef<number | null>(null);
+const pdfCaptureRef = useRef(false);
+const [iosHome, setIosHome] = useState(false);
+const [pdfFile, setPdfFile] = useState<File | null>(null);
+const [pdfBusy, setPdfBusy] = useState(false);
   // --- 1. جلب خيارات الفلاتر ---
   useEffect(() => {
     setIsOnline(navigator.onLine)
@@ -314,8 +319,13 @@ useEffect(() => {
     fetchAssignments();
 }, []);
 
+  useEffect(() => {
+      setIosHome(isIosHomeScreen())
+  }, [])
+
   // إعادة البحث عند تغيير الصفحة أو عدد الصفوف
   useEffect(() => {
+      if (pdfCaptureRef.current) return
       if (filters.course && !isSearchDisabled) fetchSoldiers()
   }, [currentPage, itemsPerPage])
 
@@ -518,6 +528,93 @@ const handlePrintNow = () => {
   setPrintReady(false);
 }
 
+const waitForRows = async (count: number) => {
+  const started = Date.now()
+  while (Date.now() - started < 3000) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    if (document.querySelectorAll(".table-container tbody tr").length >= count) return
+  }
+}
+
+const handlePreparePdf = async () => {
+  setPdfBusy(true)
+  setPdfFile(null)
+  const previousPage = currentPage
+  const previousSize = itemsPerPage
+  const previousRows = soldiers
+  pdfCaptureRef.current = true
+  try {
+    const query = new URLSearchParams({
+      skip: "0",
+      limit: totalItems.toString(),
+      course: filters.course,
+      batch: filters.batch || "all",
+      company: filters.company || "all",
+      platoon: filters.platoon || "all",
+      search: search
+    })
+    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/soldiers/?${query.toString()}`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+    })
+    if (!res.ok) {
+      toast.error("تعذر تجهيز ملف PDF")
+      return
+    }
+    const data = await res.json()
+    const mergedData = data.data.map((s: any) => {
+      const saved = assignmentsMap[s.id] || {}
+      return {
+        ...s,
+        shabaha_number: saved.shabaha_number ?? s.shabaha_number ?? "",
+        shabaha_color: saved.shabaha_color ?? s.shabaha_color ?? "",
+        chip_number: saved.chip_number ?? s.chip_number ?? "",
+        notes: saved.notes ?? s.notes ?? "",
+      }
+    })
+    setSoldiers(mergedData)
+    setCurrentPage(1)
+    setItemsPerPage(data.total || mergedData.length || 1)
+    await waitForRows(mergedData.length)
+    const header = document.querySelector(".shabaha-print-header")
+    const table = document.querySelector(".table-container")
+    if (!header || !table) {
+      toast.error("تعذر تجهيز ملف PDF")
+      return
+    }
+    const host = document.createElement("div")
+    host.className = "shabaha-pdf-root"
+    host.style.position = "fixed"
+    host.style.left = "0"
+    host.style.top = "0"
+    host.style.zIndex = "-1"
+    host.style.background = "white"
+    host.style.width = `${Math.max(table.scrollWidth, document.documentElement.clientWidth)}px`
+    host.appendChild(header.cloneNode(true))
+    host.appendChild(table.cloneNode(true))
+    document.body.appendChild(host)
+    try {
+      const title = generateFileName("pdf").replace(/\.pdf$/i, "")
+      const file = await renderPdfFile(host, pdfFilename(title))
+      setPdfFile(file)
+    } finally {
+      host.remove()
+    }
+  } catch {
+    toast.error("تعذر تجهيز ملف PDF")
+  } finally {
+    pdfCaptureRef.current = false
+    setSoldiers(previousRows)
+    setCurrentPage(previousPage)
+    setItemsPerPage(previousSize)
+    setPdfBusy(false)
+  }
+}
+
+const handleSharePdf = () => {
+  if (!pdfFile) return
+  sharePdfFile(pdfFile)
+}
+
  const handleExportExcel = async () => {
     // 1. فحص أمان: هل اختار المستخدم مساراً؟
     if (isSearchDisabled) {
@@ -693,9 +790,13 @@ const handleExportAllExcel = async () => {
           th, td { border: 1px solid #000 !important; padding: 4px !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
+        .pdf-export .shabaha-pdf-root table { width: 100% !important; border-collapse: collapse; font-size: 10px; }
+        .pdf-export .shabaha-pdf-root thead th { background-color: #c5b391 !important; color: black !important; -webkit-print-color-adjust: exact; }
+        .pdf-export .shabaha-pdf-root th, .pdf-export .shabaha-pdf-root td { border: 1px solid #000 !important; padding: 4px !important; }
+        .pdf-export .shabaha-pdf-root, .pdf-export .shabaha-pdf-root * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       `}</style>
 {/* --- ترويسة الطباعة الرسمية --- */}
-<div className="hidden print:block w-full border-b-2 border-black pb-4 mb-6">
+<div className="shabaha-print-header hidden print:block w-full border-b-2 border-black pb-4 mb-6">
   <div className="flex justify-between items-start">
       {/* اليمين: الهيكل التنظيمي */}
       <div className="text-center space-y-1 text-sm font-bold">
@@ -765,6 +866,12 @@ const handleExportAllExcel = async () => {
         <Button variant="outline" onClick={handlePreparePrint} className="gap-2"><Printer className="w-4 h-4"/> تجهيز للطباعة</Button>
         {printReady && (
           <Button variant="outline" onClick={handlePrintNow} className="gap-2"><Printer className="w-4 h-4"/> اطبع الآن</Button>
+        )}
+        {iosHome && (
+          <Button variant="outline" onClick={handlePreparePdf} disabled={pdfBusy} className="gap-2">تجهيز PDF</Button>
+        )}
+        {iosHome && pdfFile && (
+          <Button variant="outline" onClick={handleSharePdf} className="gap-2">مشاركة / طباعة PDF</Button>
         )}
         {/* زر إكسل الكل — يظهر فقط للمالك ومساعد المسؤول بمجرد اختيار الدورة */}
 {["owner", "assistant_admin"].includes(userRole) && filters.course && (
