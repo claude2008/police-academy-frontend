@@ -3,6 +3,7 @@
 import DashboardView from "./DashboardView"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useState, useEffect, useMemo } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -576,6 +577,13 @@ useEffect(() => {
                     th { background-color: #c5b391 !important; color: black !important; font-weight: bold; }
                     thead { display: table-header-group; } tbody { display: table-row-group; } tr { page-break-inside: avoid; }
                 }
+                .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode .print\\:hidden, .pdf-mode button, .pdf-mode input[type="checkbox"], .pdf-mode [role="dialog"], .pdf-mode [data-sonner-toaster] { display: none !important; }
+                .pdf-mode body { background: white; font-size: 9pt; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                .pdf-mode .print-only-table { display: table !important; width: 100%; border-collapse: collapse; }
+                .pdf-mode, .pdf-mode * { position: static !important; overflow: visible !important; box-shadow: none !important; }
+                .pdf-mode th, .pdf-mode td { border: 1px solid black !important; padding: 4px !important; text-align: center; font-size: 9pt; }
+                .pdf-mode th { background-color: #c5b391 !important; color: black !important; font-weight: bold; }
+                .pdf-mode thead { display: table-header-group; } .pdf-mode tbody { display: table-row-group; } .pdf-mode tr { page-break-inside: avoid; }
             `}</style>
 
             {/* 👇👇 التعديل الجوهري: حذفنا print:hidden من هنا */}
@@ -626,7 +634,7 @@ useEffect(() => {
         document.title = fileName;
         
         // 4. تنفيذ أمر الطباعة
-        window.print();
+        safePrint();
         
         // 5. إعادة العنوان الأصلي بعد ثانية واحدة
         setTimeout(() => {

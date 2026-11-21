@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -931,6 +932,12 @@ const paginatedDrafts = useMemo(() => {
                     td, th { border: 1px solid black !important; padding: 4px !important; font-size: 11px !important; }
                     .force-print { display: table-row !important; }
                 }
+                .pdf-mode body { zoom: 0.85; -webkit-print-color-adjust: exact; background: white; }
+                .pdf-mode .no-print { display: none !important; }
+                .pdf-mode table { width: 100% !important; border-collapse: collapse !important; }
+                .pdf-mode th { background-color: #c5b391 !important; color: black !important; }
+                .pdf-mode td, .pdf-mode th { border: 1px solid black !important; padding: 4px !important; font-size: 11px !important; }
+                .pdf-mode .force-print { display: table-row !important; }
             `}</style>
 
             <div className="flex flex-col gap-4 no-print bg-slate-50 p-3 md:p-4 rounded-xl shadow-sm border">
@@ -1016,7 +1023,7 @@ const paginatedDrafts = useMemo(() => {
                             </>
                         )}
 
-                        <Button onClick={() => { document.title = `كشف_${selectedDate}`; window.print(); }} className="bg-slate-900 h-9 px-3 text-white gap-1 font-bold shadow-md">
+                        <Button onClick={() => { document.title = `كشف_${selectedDate}`; safePrint(); }} className="bg-slate-900 h-9 px-3 text-white gap-1 font-bold shadow-md">
                             <Printer className="w-4 h-4" /> طباعة
                         </Button>
 

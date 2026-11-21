@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -466,7 +467,7 @@ useEffect(() => {
     const handlePrint = () => {
         const originalTitle = document.title;
         document.title = selectedSoldier ? `ملف_المجند_${selectedSoldier.name}` : "دليل_المجندين";
-        window.print();
+        safePrint();
         setTimeout(() => { document.title = originalTitle; }, 1000);
     }
 
@@ -697,6 +698,19 @@ const hasFullAccess = ["owner", "manager", "admin", "assistant_admin", "sports_o
                     .screen-profile-header { display: none !important; }
                     .print-path-fix { border: none !important; background: transparent !important; margin: 0 !important; padding: 0 !important; color: black !important; }
                 }
+                .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode button, .pdf-mode .print\\:hidden, .pdf-mode [role="dialog"], .pdf-mode .no-print { display: none !important; }
+                .pdf-mode body { background: white; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                .pdf-mode .print-header { display: flex !important; }
+                .pdf-mode th { background-color: #c5b391 !important; color: black !important; font-weight: bold; border: 1px solid black !important; }
+                .pdf-mode td { border: 1px solid black !important; text-align: center !important; }
+                .pdf-mode [data-state="closed"] { display: block !important; height: auto !important; visibility: visible !important; }
+                .pdf-mode .border-t { border-top: 1px solid black !important; }
+                .pdf-mode .accordion-trigger-text { font-weight: bold !important; color: black !important; font-size: 14pt !important; display: block !important; }
+                .pdf-mode button[aria-expanded] { display: flex !important; }
+                .pdf-mode .break-avoid { break-inside: avoid; page-break-inside: avoid; }
+                .pdf-mode .print-profile-card { display: flex !important; flex-direction: row !important; align-items: center !important; border: 2px solid black !important; padding: 15px !important; border-radius: 10px !important; background: white !important; margin-bottom: 20px !important; box-shadow: none !important; height: auto !important; }
+                .pdf-mode .screen-profile-header { display: none !important; }
+                .pdf-mode .print-path-fix { border: none !important; background: transparent !important; margin: 0 !important; padding: 0 !important; color: black !important; }
                 .print-header { display: none; }
             `}</style>
             

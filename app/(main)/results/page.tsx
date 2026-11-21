@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useMemo } from "react"
+import { safePrint } from "@/lib/safePrint"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
@@ -329,7 +330,7 @@ const handleRecalculate = async () => {
 
   const handlePrint = () => {
     document.title = examName || "تقرير اللياقة"
-    window.print()
+    safePrint()
   }
 
   const handleDownloadExcel = async () => {

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { 
     ArrowRight, Printer, Download, Search, 
     Loader2, RotateCcw, FileText, Paperclip, 
@@ -426,7 +427,7 @@ const handlePrint = () => {
     document.title = fileName;
 
     // 4. استدعاء أمر الطباعة
-    window.print();
+    safePrint();
 
     // 5. إعادة العنوان الأصلي بعد إغلاق نافذة الطباعة
     document.title = originalTitle;
@@ -614,6 +615,13 @@ const handlePrint = () => {
             text-align: center !important;
         }
     }
+    .pdf-mode .no-print { display: none !important; }
+    .pdf-mode body { background: white !important; padding: 0 !important; margin: 0 !important; -webkit-print-color-adjust: exact; }
+    .pdf-mode table { width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; font-size: 9px !important; }
+    .pdf-mode th, .pdf-mode td { border: 1px solid black !important; text-align: center !important; vertical-align: middle !important; padding: 2px !important; word-wrap: break-word !important; overflow: hidden !important; }
+    .pdf-mode table tr th:first-child, .pdf-mode table tr td:first-child { width: 25px !important; }
+    .pdf-mode table tr th:nth-child(2), .pdf-mode table tr td:nth-child(2) { width: 180px !important; text-align: right !important; padding-right: 5px !important; }
+    .pdf-mode .grid-cols-3 { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; margin-top: 20px !important; text-align: center !important; }
 `}</style>
 
                 <div className="no-print flex justify-between items-center mb-8 bg-slate-100 border p-4 rounded-2xl shadow-sm">

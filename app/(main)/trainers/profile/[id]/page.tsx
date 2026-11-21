@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, use } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Printer, User, ArrowRight, Plus, Activity, Calendar, FileText, GraduationCap, Shield, Hash, BookOpen } from "lucide-react"
@@ -119,7 +120,7 @@ const [counts, setCounts] = useState({
   }
   const handlePrint = () => {
     document.title = trainer ? `ملف المدرب - ${trainer.name}` : "ملف مدرب";
-    window.print();
+    safePrint();
   }
   const showComingSoon = () => toast.info("هذه الميزة قيد الإنشاء")
 
@@ -138,6 +139,9 @@ const [counts, setCounts] = useState({
           body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
           .no-break { page-break-inside: avoid; }
         }
+        .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode .print\\:hidden, .pdf-mode .action-grid { display: none !important; }
+        .pdf-mode body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white; }
+        .pdf-mode .no-break { page-break-inside: avoid; }
       `}</style>
 
       {/* الشريط العلوي */}

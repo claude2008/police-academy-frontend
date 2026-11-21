@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -207,7 +208,7 @@ const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/trainer/workload/bul
 
     const handlePrintAll = () => {
         setIsPrinting(true);
-        setTimeout(() => { window.print(); setIsPrinting(false); }, 100);
+        setTimeout(() => { void safePrint().finally(() => setIsPrinting(false)); }, 100);
     }
 // 🛡️ الأدوار المسموح لها بالتحكم الكامل
 const ADMIN_ACCESS_ROLES = ["owner", "manager", "admin", "assistant_admin", "military_supervisor"];
@@ -239,6 +240,12 @@ const hasFullAccess = currentUser && ADMIN_ACCESS_ROLES.includes(currentUser.rol
                     th { background-color: #f3e8ff !important; color: black !important; border: 1px solid black !important; font-size: 10px !important; }
                     td { border: 1px solid black !important; word-wrap: break-word !important; font-size: 10px !important; }
                 }
+                .pdf-mode body { background: white !important; }
+                .pdf-mode .print\\:hidden, .pdf-mode .no-print { display: none !important; }
+                .pdf-mode .print\\:block { display: block !important; }
+                .pdf-mode table { width: 100% !important; direction: rtl; border-collapse: collapse !important; table-layout: fixed !important; }
+                .pdf-mode th { background-color: #f3e8ff !important; color: black !important; border: 1px solid black !important; font-size: 10px !important; }
+                .pdf-mode td { border: 1px solid black !important; word-wrap: break-word !important; font-size: 10px !important; }
             `}</style>
 
             <div className="hidden print:block w-full mb-6">

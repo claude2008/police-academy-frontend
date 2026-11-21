@@ -133,3 +133,46 @@ html, body, main, div, section, .overflow-y-auto, .overflow-x-auto {
   }
 }
 }
+
+.pdf-mode .print\:hidden { display: none !important; }
+.pdf-mode .print\:block { display: block !important; }
+.pdf-mode .print\:flex { display: flex !important; }
+.pdf-mode nav,
+.pdf-mode aside,
+.pdf-mode header { display: none !important; }
+
+.pdf-mode .no-print { display: none !important; }
+.pdf-mode,
+.pdf-mode body {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.pdf-mode header,
+.pdf-mode aside,
+.pdf-mode nav,
+.pdf-mode footer,
+.pdf-mode .no-print { display: none !important; }
+.pdf-mode body,
+.pdf-mode main {
+  background-color: white !important;
+  color: black !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+.pdf-mode,
+.pdf-mode body,
+.pdf-mode main,
+.pdf-mode div,
+.pdf-mode section,
+.pdf-mode .overflow-y-auto,
+.pdf-mode .overflow-x-auto {
+  overflow: visible !important;
+  height: auto !important;
+  max-height: none !important;
+}
+.pdf-mode ::-webkit-scrollbar { display: none !important; }
+.pdf-mode .print-header { display: table-header-group; }
+.pdf-mode .print-footer { display: table-footer-group; }
+.pdf-mode .print-body { display: table-row-group; }
+.pdf-mode .break-inside-avoid { break-inside: avoid; }

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -251,8 +252,7 @@ const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/trainer/fitness/bulk
     const handlePrintAll = () => {
         setIsPrinting(true); // 1. افتح كل الصفحات
         setTimeout(() => {
-            window.print(); // 2. اطبع
-            setIsPrinting(false); // 3. ارجع للوضع الطبيعي بعد إغلاق نافذة الطباعة
+            void safePrint().finally(() => setIsPrinting(false));
         }, 100); // انتظار بسيط جداً (جزء من الثانية) لضمان ظهور البيانات
     }
 // 🛡️ تحديد الأدوار المسموح لها بالعمليات الإدارية
@@ -269,7 +269,7 @@ const canManage = currentUser && ALLOWED_ADMIN_ROLES.includes(currentUser.role);
 
     return (
         <div className="space-y-4 font-sans" dir="rtl">
-            <style jsx global>{` @media print { @page { size: A4 portrait; margin: 5mm; } body { background: white !important; } nav, header, aside, .print\\:hidden, .no-print { display: none !important; } .print\\:block { display: block !important; } .print\\:no-shadow { box-shadow: none !important; border: none !important; } table { width: 100% !important; direction: rtl; } th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; } td { border: 1px solid black !important; } } `}</style>
+            <style jsx global>{` @media print { @page { size: A4 portrait; margin: 5mm; } body { background: white !important; } nav, header, aside, .print\\:hidden, .no-print { display: none !important; } .print\\:block { display: block !important; } .print\\:no-shadow { box-shadow: none !important; border: none !important; } table { width: 100% !important; direction: rtl; } th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; } td { border: 1px solid black !important; } } .pdf-mode body { background: white !important; } .pdf-mode nav, .pdf-mode header, .pdf-mode aside, .pdf-mode .print\\:hidden, .pdf-mode .no-print { display: none !important; } .pdf-mode .print\\:block { display: block !important; } .pdf-mode .print\\:no-shadow { box-shadow: none !important; border: none !important; } .pdf-mode table { width: 100% !important; direction: rtl; } .pdf-mode th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; } .pdf-mode td { border: 1px solid black !important; } `}</style>
 
             <div className="hidden print:block w-full mb-8">
                 <div className="flex justify-between items-start w-full border-b-2 border-black pb-4 mb-2">

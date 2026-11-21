@@ -5,7 +5,10 @@ import ClientLayout from "./ClientLayout";
 export const metadata: Metadata = {
   title: "معهد الشرطة - المنظومة الذكية",
   description: "المنظومة الذكية للبيانات والاختبارات - معهد الشرطة",
-  manifest: "/manifest.json", 
+  manifest: "/manifest.json",
+  icons: {
+    apple: "/apple-touch-icon.png",
+  }, 
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

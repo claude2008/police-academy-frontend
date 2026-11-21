@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { 
     ChevronLeft, ShieldCheck, Clock, Users, Printer, 
     ArrowRight, Loader2, Calendar, FileSignature, 
@@ -527,6 +528,12 @@ export default function SessionAuditPage() {
                         tr { page-break-inside: avoid; page-break-after: auto; }
                         input { border: none !important; background: transparent !important; }
                     }
+                    .pdf-mode body { background: white; }
+                    .pdf-mode .no-print { display: none !important; }
+                    .pdf-mode .print-border { border: 1px solid #000 !important; }
+                    .pdf-mode table { page-break-inside: auto; }
+                    .pdf-mode tr { page-break-inside: avoid; page-break-after: auto; }
+                    .pdf-mode input { border: none !important; background: transparent !important; }
                 `}</style>
 
                 {/* --- الهيدر (مشترك) --- */}
@@ -708,7 +715,7 @@ export default function SessionAuditPage() {
             <FileSpreadsheet className="w-4 h-4" />  Excel
         </Button>
 
-        <Button onClick={() => window.print()} className="bg-slate-900 text-white gap-2 font-bold">
+        <Button onClick={() => safePrint()} className="bg-slate-900 text-white gap-2 font-bold">
             <Printer className="w-4 h-4"/> طباعة 
         </Button>
     </div>

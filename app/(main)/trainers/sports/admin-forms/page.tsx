@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -145,7 +146,7 @@ const addCommitteeHeadRow = () => {
                         <div className="p-2 bg-blue-600 rounded-lg text-white"><FileText className="w-6 h-6" /></div>
                         <h1 className="text-2xl font-bold text-slate-800">النماذج الإدارية</h1>
                     </div>
-                    <Button onClick={() => window.print()} className="bg-slate-900 gap-2"><Printer className="w-4 h-4" /> طباعة</Button>
+                    <Button onClick={() => safePrint()} className="bg-slate-900 gap-2"><Printer className="w-4 h-4" /> طباعة</Button>
                 </div>
 
                 <Tabs defaultValue="exam-committee" className="w-full">
@@ -533,6 +534,12 @@ const addCommitteeHeadRow = () => {
             display: block !important;
         }
     }
+    .pdf-mode body { background: white !important; padding-top: 0 !important; }
+    .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode button, .pdf-mode .print\\:hidden, .pdf-mode [role="tablist"] { display: none !important; }
+    .pdf-mode .Card { border: none !important; box-shadow: none !important; }
+    .pdf-mode input, .pdf-mode textarea { border: none !important; background: transparent !important; box-shadow: none !important; resize: none !important; }
+    .pdf-mode .bg-\\[\\#c5b391\\] { background-color: #c5b391 !important; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    .pdf-mode .hidden.print\\:block { display: block !important; }
 `}</style>
             </div>
         </ProtectedRoute>

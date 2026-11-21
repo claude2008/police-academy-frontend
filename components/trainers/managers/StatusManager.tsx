@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -250,6 +251,14 @@ const hasFullAccess = currentUser && ADMIN_ACCESS_ROLES.includes(currentUser.rol
                     th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; }
                     td { border: 1px solid black !important; }
                 }
+                .pdf-mode body { -webkit-print-color-adjust: exact; print-color-adjust: exact; background: white !important; }
+                .pdf-mode nav, .pdf-mode header, .pdf-mode aside, .pdf-mode .print\\:hidden, .pdf-mode .no-print, .pdf-mode [role="tablist"], .pdf-mode .toaster, .pdf-mode .sonner-toast { display: none !important; }
+                .pdf-mode .print\\:block { display: block !important; }
+                .pdf-mode .print\\:no-shadow { box-shadow: none !important; border: none !important; }
+                .pdf-mode .actions-col { display: none !important; }
+                .pdf-mode table { width: 100% !important; direction: rtl; border-collapse: collapse !important; }
+                .pdf-mode th { background-color: #c5b391 !important; color: black !important; border: 1px solid black !important; }
+                .pdf-mode td { border: 1px solid black !important; }
             `}</style>
 
             {/* ترويسة الطباعة */}
@@ -293,7 +302,7 @@ const hasFullAccess = currentUser && ADMIN_ACCESS_ROLES.includes(currentUser.rol
                     </Button>
 )}
 {hasFullAccess && (
-                    <Button variant="outline" onClick={() => window.print()} className="col-span-1 w-full md:w-auto gap-2 px-4 h-9">
+                    <Button variant="outline" onClick={() => safePrint()} className="col-span-1 w-full md:w-auto gap-2 px-4 h-9">
                         <Printer className="w-4 h-4" /> 
                         <span>طباعة</span>
                     </Button>

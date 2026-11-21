@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useMemo, useEffect, useCallback } from "react"
+import { useState, useMemo, useEffect, useCallback, useRef } from "react"
+import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -80,6 +81,8 @@ export default function ShabahaEntryPage() {
 const [isConfirmOpen, setIsConfirmOpen] = useState(false);
 // استبدل السطر القديم بهذا
 const [resetTarget, setResetTarget] = useState<'shabaha' | 'chip' | 'notes' | null>(null);
+const [printReady, setPrintReady] = useState(false);
+const printPageSizeRef = useRef<number | null>(null);
   // --- 1. جلب خيارات الفلاتر ---
   useEffect(() => {
     setIsOnline(navigator.onLine)
@@ -461,19 +464,16 @@ const generateFileName = (ext: string) => {
   const date = format(new Date(), "yyyy-MM-dd");
   return `كشف_الشباحات_${path}_${date}.${ext}`;
 }
-// استخدامها في الطباعة (توسيع الجدول ليشمل الكل ثم الطباعة)
-// استخدامها في الطباعة (جلب كل البيانات ثم الطباعة)
-const handlePrintPDF = async () => {
-  const originalLimit = itemsPerPage; // حفظ العدد الحالي للصفوف
-  const originalSkip = (currentPage - 1) * itemsPerPage; // حفظ الصفحة الحالية
-
-  setIsLoading(true); // تشغيل مؤشر التحميل
+// تجهيز الطباعة: جلب كل البيانات ورسم الجدول. الطباعة نفسها في نقرة لاحقة.
+const handlePreparePrint = async () => {
+  printPageSizeRef.current = itemsPerPage;
+  setPrintReady(false);
+  setIsLoading(true);
 
   try {
-    // 1. جلب كافة البيانات من السيرفر دفعة واحدة (limit = totalItems)
     const query = new URLSearchParams({
         skip: "0", 
-        limit: totalItems.toString(), // طلب كل العدد الموجود
+        limit: totalItems.toString(),
         course: filters.course,
         batch: filters.batch || "all",
         company: filters.company || "all",
@@ -487,7 +487,6 @@ const handlePrintPDF = async () => {
 
     if (res.ok) {
         const data = await res.json();
-        // دمج بيانات السيرفر مع الـ assignmentsMap لضمان ظهور الأرقام
 const mergedData = data.data.map((s: any) => {
     const saved = assignmentsMap[s.id] || {};
     return {
@@ -500,24 +499,24 @@ const mergedData = data.data.map((s: any) => {
 });
 setSoldiers(mergedData);
 setItemsPerPage(data.total);
-        
-        // 2. الانتظار قليلاً حتى يرسم المتصفح الجدول الجديد ثم الطباعة
-        setTimeout(() => {
-            document.title = generateFileName("pdf").replace(".pdf", "");
-            window.print();
-            
-            // 3. العودة للوضع الطبيعي بعد إغلاق نافذة الطباعة (أو بعد الطباعة مباشرة)
-            // سنعيد استدعاء الدالة الأصلية لتعيد الـ 10 صفوف فقط
-            setItemsPerPage(originalLimit);
-            setCurrentPage(1); // نعود للصفحة الأولى
-            // ملاحظة: سيتم تحديث الجدول تلقائياً بسبب useEffect الذي يراقب itemsPerPage
-        }, 1000); // زيادة الوقت قليلاً لضمان تحميل الصور/البيانات
+setPrintReady(true);
     }
   } catch (e) {
       toast.error("حدث خطأ أثناء تحضير الطباعة");
   } finally {
       setIsLoading(false);
   }
+}
+
+const handlePrintNow = () => {
+  document.title = generateFileName("pdf").replace(".pdf", "");
+  void safePrint().finally(() => {
+    if (printPageSizeRef.current != null) {
+      setItemsPerPage(printPageSizeRef.current);
+    }
+    setCurrentPage(1);
+    setPrintReady(false);
+  });
 }
 
  const handleExportExcel = async () => {
@@ -695,6 +694,13 @@ const handleExportAllExcel = async () => {
           th, td { border: 1px solid #000 !important; padding: 4px !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
+        .pdf-mode nav, .pdf-mode aside, .pdf-mode header, .pdf-mode .print\\:hidden { display: none !important; }
+        .pdf-mode .print\\:block { display: block !important; }
+        .pdf-mode .table-container { overflow: visible !important; height: auto !important; }
+        .pdf-mode table { width: 100% !important; border-collapse: collapse; font-size: 10px; }
+        .pdf-mode thead th { background-color: #c5b391 !important; color: black !important; -webkit-print-color-adjust: exact; }
+        .pdf-mode th, .pdf-mode td { border: 1px solid #000 !important; padding: 4px !important; }
+        .pdf-mode, .pdf-mode * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
       `}</style>
 {/* --- ترويسة الطباعة الرسمية --- */}
 <div className="hidden print:block w-full border-b-2 border-black pb-4 mb-6">
@@ -764,7 +770,10 @@ const handleExportAllExcel = async () => {
     </div>
 )}
         
-        <Button variant="outline" onClick={handlePrintPDF} className="gap-2"><Printer className="w-4 h-4"/> طباعة</Button>
+        <Button variant="outline" onClick={handlePreparePrint} className="gap-2"><Printer className="w-4 h-4"/> تجهيز للطباعة</Button>
+        {printReady && (
+          <Button variant="outline" onClick={handlePrintNow} className="gap-2"><Printer className="w-4 h-4"/> اطبع الآن</Button>
+        )}
         {/* زر إكسل الكل — يظهر فقط للمالك ومساعد المسؤول بمجرد اختيار الدورة */}
 {["owner", "assistant_admin"].includes(userRole) && filters.course && (
     <Button 
