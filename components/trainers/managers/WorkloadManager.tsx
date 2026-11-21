@@ -21,6 +21,7 @@ export default function WorkloadManager() {
     const [currentPage, setCurrentPage] = useState(1)
     const [itemsPerPage, setItemsPerPage] = useState(10)
     const [isPrinting, setIsPrinting] = useState(false)
+    const [printReady, setPrintReady] = useState(false)
 
     useEffect(() => {
         const fetchTrainers = async () => {
@@ -206,9 +207,15 @@ const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/trainer/workload/bul
         finally { setLoading(false) }
     };
 
-    const handlePrintAll = () => {
+    const handlePreparePrint = () => {
         setIsPrinting(true);
-        setTimeout(() => { void safePrint().finally(() => setIsPrinting(false)); }, 100);
+        setPrintReady(true);
+    }
+    const handlePrintNow = () => {
+        void safePrint().finally(() => {
+            setIsPrinting(false);
+            setPrintReady(false);
+        });
     }
 // 🛡️ الأدوار المسموح لها بالتحكم الكامل
 const ADMIN_ACCESS_ROLES = ["owner", "manager", "admin", "assistant_admin", "military_supervisor"];
@@ -300,9 +307,14 @@ const hasFullAccess = currentUser && ADMIN_ACCESS_ROLES.includes(currentUser.rol
                 )}
 
                 {/* زر الطباعة متاح للجميع */}
-                <Button onClick={handlePrintAll} variant="outline" className="gap-2 h-9 text-sm">
-                    <Printer className="w-4 h-4" /> طباعة
+                <Button onClick={handlePreparePrint} variant="outline" className="gap-2 h-9 text-sm">
+                    <Printer className="w-4 h-4" /> تجهيز للطباعة
                 </Button>
+                {printReady && (
+                    <Button onClick={handlePrintNow} variant="outline" className="gap-2 h-9 text-sm">
+                        <Printer className="w-4 h-4" /> اطبع الآن
+                    </Button>
+                )}
 
                 {/* 🔒 زر مسح القائمة (السلة): محمي بالصلاحيات */}
                 {hasFullAccess && (

@@ -176,3 +176,16 @@ html, body, main, div, section, .overflow-y-auto, .overflow-x-auto {
 .pdf-mode .print-footer { display: table-footer-group; }
 .pdf-mode .print-body { display: table-row-group; }
 .pdf-mode .break-inside-avoid { break-inside: avoid; }
+.pdf-mode * {
+  letter-spacing: normal !important;
+  word-spacing: normal !important;
+}
+.pdf-mode td,
+.pdf-mode th {
+  vertical-align: middle !important;
+  line-height: 1.5 !important;
+}
+.pdf-mode tr {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react" // 🔑 إضافة useMemo
+import { useState, useEffect, useMemo, useRef } from "react" // 🔑 إضافة useMemo
 import { safePrint } from "@/lib/safePrint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -190,6 +190,8 @@ useEffect(() => {
         if (!val) return "";
         return val.replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d).toString());
     }
+   const preparedPrintTitle = useRef("تقرير")
+   const [printReady, setPrintReady] = useState(false)
    const quickPrint = (report: ReportAPI) => {
     // 1. شحن كافة البيانات في النموذج
     setIsPreviewOnly(true);
@@ -206,21 +208,9 @@ useEffect(() => {
     setRec2({ name: report.rec2_name, rank: report.rec2_rank, signature: report.rec2_name });
 
     // 2. الانتقال لتبويب المحرر لكي يظهر المحتوى للمتصفح
+    preparedPrintTitle.current = report.subject || "تقرير"
     setActiveTab("new");
-
-    const toastId = toast.loading("جاري تجهيز الورقة...");
-
-    // 3. الانتظار للرسم والتحميل
-    setTimeout(() => {
-        toast.dismiss(toastId);
-        document.title = report.subject || "تقرير";
-        void safePrint().finally(() => {
-            setTimeout(() => {
-                resetForm();
-                setActiveTab("records");
-            }, 500);
-        });
-    }, 1000); 
+    setPrintReady(true);
 };
     // 🔑 منطق قفل التقرير للتعديل
     const isReportLocked = useMemo(() => {
@@ -615,11 +605,17 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
         }
         
         toast.success("تم الإلغاء")
+        setPrintReady(false)
     }
 
     const handlePrint = () => {
         document.title = reportType;
         safePrint();
+    }
+
+    const handlePrintNow = () => {
+        document.title = preparedPrintTitle.current || reportType
+        safePrint()
     }
 
     const getDayName = (dateStr: string) => {
@@ -1015,6 +1011,11 @@ const executeUnapprove = async (reportId: number, level: "officer" | "manager") 
         <Button onClick={handlePrint} variant="outline" className="gap-2 border-slate-400">
             <Printer className="w-4 h-4" /> طباعة
         </Button>
+        {printReady && (
+            <Button onClick={handlePrintNow} variant="outline" className="gap-2 border-slate-900 bg-slate-900 text-white hover:bg-slate-800">
+                <Printer className="w-4 h-4" /> اطبع الآن
+            </Button>
+        )}
 
         {/* زر الحفظ: لا يظهر أبداً إذا كنا في وضع المعاينة (العين) */}
         {!isPreviewOnly && (
